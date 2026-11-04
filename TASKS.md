@@ -5,9 +5,9 @@ Status: [ ] planned · [~] in progress · [x] merged · [-] cancelled (excluded 
 > A unit with `spec:` instead of `plan:` isn't planned yet: `/plan-feature {KEY-id}` plans it from that spec slice and replaces `spec:` with `plan:` and `prompts:`. Models are provisional until then.
 
 ## Sprint 1 — Stock ledger core   (planned 2026-11-04)
-Epic: IMS-1 · Branch base: `main` · Plan: [[Inventory System — Sprint 1 Spec]]
+Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 Spec]]
 - [x] IMS-2 — S1 Skeleton · Added · plan: [[2026-11-04-s1-skeleton]] prompts: 01, 02, 03, 04, 05, 06 · depends: — · model: sonnet (merged 2026-11-04) Skeleton: AppHost (sql 2025, api, web), ServiceDefaults, 5 module projects, Angular 22 app, T12 architecture tests (8), CI jobs `build` and `test`.
-- [ ] IMS-3 — S2 Platform · Added · spec: §12 S2 · depends: IMS-2 · model: opus
+- [ ] IMS-3 — S2 Platform · Added · plan: [[2026-11-04-s2-platform]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11 · depends: IMS-2 · model: opus
 - [ ] IMS-4 — S3 Tenancy enforcement · Added · spec: §12 S3 · depends: IMS-3 · model: opus
 - [ ] IMS-5 — S4 Master data · Added · spec: §12 S4 · depends: IMS-4 · model: sonnet
 - [ ] IMS-6 — S5a Ledger schema · Added · spec: §12 S5a · depends: IMS-5 · model: opus
@@ -30,6 +30,18 @@ Epic: IMS-1 · Branch base: `main` · Plan: [[Inventory System — Sprint 1 Spec
 - A module implementation exposes exactly one public type, `<M>ModuleExtensions`; the exception is namespaces ending in `.Migrations`, because EF generates migrations as public. Everything else is `internal`, and test projects get `InternalsVisibleTo`. Widening the surface means editing T12 in the same PR, with the reason.
 - In Platform, only the `Platform.Identity` namespace touches `System.Security.Claims`.
 - Only `src/Api` and `tests/**` reference a module implementation. A module may reference another module's `.Contracts`.
-- Aspire resources are `sql`, `api` and `web`, and the database is `inventory` (`ConnectionStrings:inventory`). S2 wires the dev proxy `/api` → `services__api__http__0`, adds the `inventory_app` password parameter, and adds a T12 rule against `Database.Migrate*` outside the migrate step.
+- Aspire resources are `sql`, `api` and `web`, and the database is `inventory` (`ConnectionStrings:inventory`). S2 wires the dev proxy `/api` → `services__api__http__0`, adds the `inventory_app` password parameter, and adds a T12 rule against `Database.Migrate*` outside the migrate step. *(Amended by IMS-3 below: resources become `sql`, `migrate`, `seed`, `api`, `web`.)*
 - npm's allowed list includes `eslint` and `typescript-eslint`, as angular-eslint's peers.
 - The CI job ids `build` and `test` are the ruleset's required check contexts. S12 adds `e2e`.
+
+**Downstream (locked by IMS-3; plan [[2026-11-04-s2-platform]]):**
+- Aspire resources are `sql`, `migrate`, `seed`, `api` and `web`. Every process reads `ConnectionStrings:inventory`, and only `migrate` gets the server admin. Later seed extensions (S4 items, S5d opening stock) go in `PlatformSeeder` or another `IDataSeeder`, and they run as `inventory_app`.
+- `inventory_app` has schema-level `SELECT, INSERT, UPDATE` on `inventory`. **S5a must `DENY UPDATE` on `inventory.StockDocuments` and `inventory.StockMovements`** (and grant the sequence), or the schema grant covers them.
+- S3:
+  - Add the `TenantId` column default, the interceptor, the named filters and RLS for `inventory.Locations`, then remove `ProvisionTenantAsync`'s explicit `TenantId` assignment and filter.
+  - T6's catalog check scopes to tenant-owned tables in `inventory` (and later module schemas). `identity.*` stays outside the policy and the TenantId-first index rule by design (§8).
+- `EnrichSqlServerDbContext` turns on EF's retrying execution strategy. S5c's posting transactions run inside `Database.CreateExecutionStrategy()` or set `DisableRetry`.
+- The `tenant_id` claim name is `Kernel.Tenancy.TenantClaims.TenantId`. Each new ProblemDetails slug lands in spec §9, Kernel `ProblemTypes` and the Angular `PROBLEM_MESSAGES` map in the same PR.
+- Integration tests copy `tests/Platform.IntegrationTests`' fixture: a Testcontainers 2025 image, `MigrateCommand` as `sa`, then the app as `inventory_app`.
+- S4 asserts that Staff gets `403` with no `Location` header on an Admin route (R1's `403` half is untested in S2).
+- Bookkeeping (`TASKS.md`, `CHANGELOG.md`) lands on the base branch, `develop`.
