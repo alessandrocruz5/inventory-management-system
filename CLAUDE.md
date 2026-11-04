@@ -36,7 +36,7 @@ You are building a multi-tenant inventory system for Philippine small businesses
 **Workflow**
 
 - One slice from section 12 per branch and pull request. Name each branch with its Jira key alone (`IMS-2`) and start PR titles with it. Tests for the slice land in the same PR.
-- `TASKS.md` (merge ledger) and `CHANGELOG.md` (Keep a Changelog) are bookkeeping: they're updated on `main` after each merge, never inside a slice's PR. Sprint 1 ends at version `0.1.0`.
+- `TASKS.md` (merge ledger) and `CHANGELOG.md` (Keep a Changelog) are bookkeeping: they're updated on `main` after each merge, never inside a slice's PR. The same goes for `docs/plans/**`. Sprint 1 ends at version `0.1.0`.
 - Request a code-guardian review on every slice that touches a High-stakes path: S2–S4, S5a–S5c, S6 and S9–S11.
 - Run every `## Commands` line below before declaring a slice done.
 
@@ -81,3 +81,4 @@ src/Modules/Inventory/Inventory/Features/{Posting,Reversals,Ledger}/**
 - ProblemDetails slugs (section 9) match the Angular error interceptor's map.
 - The RequestHash canonical form (section 6, step 2) matches what the client sends.
 - The vector tables in section 7 match the CostingPolicy unit tests.
+- The AppHost's generated passwords (`inventory-app-password`, `seed-password`) set `Min*` on `GenerateParameterDefault`: Identity's policy and SQL `CHECK_POLICY` reject a value that misses a character class, and Aspire persists it.
