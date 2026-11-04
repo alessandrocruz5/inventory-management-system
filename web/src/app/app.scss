@@ -1,0 +1,29 @@
+.shell-toolbar {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  height: auto;
+  min-height: 64px;
+  padding-block: 8px;
+}
+
+.app-name {
+  font-weight: 500;
+}
+
+.tenant {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.user {
+  font: var(--mat-sys-body-medium);
+}
+
+@media (max-width: 479.98px) {
+  .user {
+    display: none;
+  }
+}
