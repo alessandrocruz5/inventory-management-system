@@ -6,7 +6,7 @@ Status: [ ] planned · [~] in progress · [x] merged · [-] cancelled (excluded 
 
 ## Sprint 1 — Stock ledger core   (planned 2026-11-04)
 Epic: IMS-1 · Branch base: `main` · Plan: [[Inventory System — Sprint 1 Spec]]
-- [~] IMS-2 — S1 Skeleton · Added · plan: [[2026-11-04-s1-skeleton]] prompts: 01, 02, 03, 04, 05, 06 · depends: — · model: sonnet
+- [x] IMS-2 — S1 Skeleton · Added · plan: [[2026-11-04-s1-skeleton]] prompts: 01, 02, 03, 04, 05, 06 · depends: — · model: sonnet (merged 2026-11-04) Skeleton: AppHost (sql 2025, api, web), ServiceDefaults, 5 module projects, Angular 22 app, T12 architecture tests (8), CI jobs `build` and `test`.
 - [ ] IMS-3 — S2 Platform · Added · spec: §12 S2 · depends: IMS-2 · model: opus
 - [ ] IMS-4 — S3 Tenancy enforcement · Added · spec: §12 S3 · depends: IMS-3 · model: opus
 - [ ] IMS-5 — S4 Master data · Added · spec: §12 S4 · depends: IMS-4 · model: sonnet

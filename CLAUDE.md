@@ -48,7 +48,7 @@ Multi-tenant inventory ledger for Philippine small businesses (portfolio). .NET 
 
 ## Workflow
 Delivery: pr
-Base branch: main
+Base branch: develop
 Shared code: src/Shared/Kernel/**, src/Modules/*/*.Contracts/**
 
 ## Commands
