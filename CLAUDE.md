@@ -1,3 +1,5 @@
+The full spec is `docs/Inventory System — Sprint 1 Spec.md`; "section N" below means a section of it.
+
 You are building a multi-tenant inventory system for Philippine small businesses. It is a portfolio project: correctness and test evidence matter more than feature count. The core is an append-only stock movement ledger with a balance projection, built with the discipline of a payments ledger.
 
 **Stack**
@@ -33,16 +35,15 @@ You are building a multi-tenant inventory system for Philippine small businesses
 
 **Workflow**
 
-- One slice from section 12 per branch and pull request. Name branches with the Jira key (`IS-<n>-ledger-core`) and start PR titles with it. Tests for the slice land in the same PR.
+- One slice from section 12 per branch and pull request. Name each branch with its Jira key alone (`IMS-2`) and start PR titles with it. Tests for the slice land in the same PR.
 - `TASKS.md` (merge ledger) and `CHANGELOG.md` (Keep a Changelog) are bookkeeping: they're updated on `main` after each merge, never inside a slice's PR. Sprint 1 ends at version `0.1.0`.
 - Request a code-guardian review on every slice that touches a High-stakes path: S2–S4, S5a–S5c, S6 and S9–S11.
 - Run every `## Commands` line below before declaring a slice done.
 
-**Workflow profile.** The plan, audit and build tooling reads these headings from `CLAUDE.md`. Paste them as they are.
+**Workflow profile.** The plan, audit and build tooling reads the headings below.
 
-```markdown
 ## Project
-Jira key: IS
+Jira key: IMS
 Multi-tenant inventory ledger for Philippine small businesses (portfolio). .NET 10, Aspire, SQL Server 2025, Angular.
 
 ## Workflow
@@ -80,4 +81,3 @@ src/Modules/Inventory/Inventory/Features/{Posting,Reversals,Ledger}/**
 - ProblemDetails slugs (section 9) match the Angular error interceptor's map.
 - The RequestHash canonical form (section 6, step 2) matches what the client sends.
 - The vector tables in section 7 match the CostingPolicy unit tests.
-```

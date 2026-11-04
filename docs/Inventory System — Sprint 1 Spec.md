@@ -66,16 +66,16 @@ You are building a multi-tenant inventory system for Philippine small businesses
 
 **Workflow**
 
-- One slice from section 12 per branch and pull request. Name branches with the Jira key (`IS-<n>-ledger-core`) and start PR titles with it. Tests for the slice land in the same PR.
+- One slice from section 12 per branch and pull request. Name each branch with its Jira key alone (`IMS-2`) and start PR titles with it. Tests for the slice land in the same PR.
 - `TASKS.md` (merge ledger) and `CHANGELOG.md` (Keep a Changelog) are bookkeeping: they're updated on `main` after each merge, never inside a slice's PR. Sprint 1 ends at version `0.1.0`.
 - Request a code-guardian review on every slice that touches a High-stakes path: S2–S4, S5a–S5c, S6 and S9–S11.
 - Run every `## Commands` line below before declaring a slice done.
 
-**Workflow profile.** The plan, audit and build tooling reads these headings from `CLAUDE.md`. Paste them as they are.
+**Workflow profile.** The plan, audit and build tooling reads these headings from `CLAUDE.md`. Paste them without the code fence, so they're real headings.
 
 ```markdown
 ## Project
-Jira key: IS
+Jira key: IMS
 Multi-tenant inventory ledger for Philippine small businesses (portfolio). .NET 10, Aspire, SQL Server 2025, Angular.
 
 ## Workflow
@@ -681,7 +681,7 @@ Seventeen slices, one pull request each, in this order. If the sprint runs long,
 | S13 Compose output | `aspire publish` to Docker Compose, committed under `deploy/`, verified running without Aspire | Manual smoke test | Stretch |
 | S14 Azure | Container Apps (scale to zero) + Azure SQL free offer + Static Web Apps | Manual smoke test | Stretch |
 
-Tag `v0.1.0` when the sprint closes: section 13 is met, minus anything this section lets slip to sprint 2. Each slice is one Jira story in project IS.
+Tag `v0.1.0` when the sprint closes: section 13 is met, minus anything this section lets slip to sprint 2. Each slice is one Jira story in project IMS (epic IMS-1; S1–S14 are IMS-2 to IMS-18).
 
 ## 13. Definition of done
 
@@ -710,7 +710,7 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 
 | Decision | Answer | Effect on this spec |
 | --- | --- | --- |
-| Jira project | IS | One story per slice; key in branch names and PR titles |
+| Jira project | IMS | One story per slice; the key alone is the branch name and starts the PR title |
 | Sprint length | No date; the sprint is bound by scope | Ends at section 13; section 12 sets what slips first |
 | Auth | Identity cookies now, Entra External ID later | The swap stays behind `ICurrentUser` and `ITenantContext` |
 | Goal after the core | Hiring: build the AI evaluation matrix | Sprint 4+ measures accuracy, latency and cost across local and hosted open-weight models |
