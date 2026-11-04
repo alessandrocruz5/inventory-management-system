@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-04-s2-platform]]"
 id: 06
 unit: IMS-3
-status: todo
+status: done
 model: sonnet
 effort: high
 depends_on: [05]

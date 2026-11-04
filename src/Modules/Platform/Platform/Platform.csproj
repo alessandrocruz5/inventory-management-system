@@ -10,7 +10,20 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Platform.Contracts\Platform.Contracts.csproj" />
+    <ProjectReference Include="..\..\Inventory\Inventory.Contracts\Inventory.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Shared\Kernel\Kernel.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Microsoft.EntityFrameworkCore.SqlServer" Version="13.6.4" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.14" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
+    <!-- Aspire 13.6.4 pulls Pkcs 10.0.12 (CVE-2026-84008, CVE-2026-70162; fixed in 10.0.13). Drop once Aspire ships a fixed dependency. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Platform.IntegrationTests" />
   </ItemGroup>
 
 </Project>
