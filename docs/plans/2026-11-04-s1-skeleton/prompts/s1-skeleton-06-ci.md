@@ -4,7 +4,7 @@ plan: "[[2026-11-04-s1-skeleton]]"
 id: 06
 unit: IMS-2
 status: todo
-model: sonnet
+model: haiku
 effort: low
 depends_on: [05]
 parallel_group: F

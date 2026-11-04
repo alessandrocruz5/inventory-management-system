@@ -15,6 +15,7 @@ files:
     - src/AppHost/appsettings.json
     - src/AppHost/appsettings.Development.json
     - src/AppHost/Properties/launchSettings.json
+    - src/AppHost/aspire.config.json
   modify:
     - InventorySystem.slnx
   delete: []
@@ -40,6 +41,8 @@ Create the Aspire AppHost. It orchestrates a SQL Server 2025 container with a da
 2. `dotnet new aspire-apphost -n AppHost -o src/AppHost -f net10.0`.
    - Keep `Sdk="Aspire.AppHost.Sdk/13.6.4"` and the generated `UserSecretsId`.
    - Delete `AspireUseCliBundle`, plus the properties `Directory.Build.props` already sets.
+   - The template also writes `aspire.config.json` (`{"appHost":{"path":"AppHost.csproj"}}`), which the Aspire CLI reads. Keep it as generated, and check that its path names `AppHost.csproj`.
+   - Keep the generated `Properties/launchSettings.json` profile order (`https` first). §13's `dotnet run --project src/AppHost` uses that first profile.
 3. `dotnet add src/AppHost package Aspire.Hosting.SqlServer --version 13.6.4`, then `dotnet add src/AppHost reference src/Api/Api.csproj`. The SDK marks it as an Aspire project resource and generates `Projects.Api`.
 4. `src/AppHost/AppHost.cs`:
    ```csharp
@@ -77,7 +80,8 @@ dotnet build -warnaserror
 dotnet format --verify-no-changes
 dotnet test                                   # T12 green: AppHost references Api, not a module
 which aspire || echo "no aspire CLI (expected)"
-dotnet run --project src/AppHost --launch-profile http > "${TMPDIR:-/tmp}/apphost.log" 2>&1 &
+dotnet run --project src/AppHost > "${TMPDIR:-/tmp}/apphost.log" 2>&1 &   # §13's exact command (default https profile)
+# If it fails on the HTTPS dev certificate, stop and report: don't reorder the profiles or switch to http.
 # wait until the log shows the dashboard URL and sql is up (the first run pulls ~1.5 GB)
 docker ps --format '{{.Image}} {{.Mounts}}' | grep 'mssql/server:2025-latest'   # image + a named *-sql-data volume
 curl -fsS http://localhost:<api http port from src/Api/Properties/launchSettings.json>/health   # Healthy

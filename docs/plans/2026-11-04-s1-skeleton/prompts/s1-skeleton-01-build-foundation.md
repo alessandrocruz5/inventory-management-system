@@ -101,7 +101,7 @@ cd /home/apa/Code/portfolio/inventory-management-system
 dotnet build -warnaserror            # 0 warnings, 0 errors, 5 projects
 dotnet format --verify-no-changes
 grep -c 'Project ' InventorySystem.slnx   # 5 projects listed
-git status --porcelain                # only the files above, plus bookkeeping (TASKS.md, docs/plans/, CLAUDE.md, the spec)
+git status --porcelain                # only the files above, plus bookkeeping (TASKS.md, docs/plans/)
 ```
 - `dotnet test` is not run here: no test project exists until prompt 02.
 - `grep -rn 'public ' src/Modules/*/*/*.cs` shows only the two `*ModuleExtensions` classes and their methods.

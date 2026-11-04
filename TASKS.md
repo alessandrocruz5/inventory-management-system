@@ -6,7 +6,7 @@ Status: [ ] planned · [~] in progress · [x] merged · [-] cancelled (excluded 
 
 ## Sprint 1 — Stock ledger core   (planned 2026-11-04)
 Epic: IMS-1 · Branch base: `main` · Plan: [[Inventory System — Sprint 1 Spec]]
-- [ ] IMS-2 — S1 Skeleton · Added · spec: §12 S1 · depends: — · model: sonnet
+- [ ] IMS-2 — S1 Skeleton · Added · plan: [[2026-11-04-s1-skeleton]] prompts: 01, 02, 03, 04, 05, 06 · depends: — · model: sonnet
 - [ ] IMS-3 — S2 Platform · Added · spec: §12 S2 · depends: IMS-2 · model: opus
 - [ ] IMS-4 — S3 Tenancy enforcement · Added · spec: §12 S3 · depends: IMS-3 · model: opus
 - [ ] IMS-5 — S4 Master data · Added · spec: §12 S4 · depends: IMS-4 · model: sonnet
@@ -23,3 +23,13 @@ Epic: IMS-1 · Branch base: `main` · Plan: [[Inventory System — Sprint 1 Spec
 - [ ] IMS-16 — S12 End to end · Added · spec: §12 S12 · depends: IMS-13 · model: sonnet
 - [ ] IMS-17 — S13 Compose output (stretch) · Added · spec: §12 S13 · depends: IMS-16 · model: haiku
 - [ ] IMS-18 — S14 Azure (stretch) · Added · spec: §12 S14 · depends: IMS-17 · model: sonnet
+
+**Downstream (locked by IMS-2; plan [[2026-11-04-s1-skeleton]]):**
+- Every test project references `xunit.v3` only (no `Microsoft.NET.Test.Sdk` or `xunit.runner.visualstudio`), has `<OutputType>Exe</OutputType>`, and runs under MTP through `global.json`. Create each test project together with its first test.
+- `Inventory.Domain` depends only on `System.*` (not `System.Data`), itself and `Kernel`. `Kernel` never depends on EF Core, ASP.NET Core, SqlClient or `System.Data`, so its "ProblemDetails types" are slug constants or exceptions that Api maps.
+- A module implementation exposes exactly one public type, `<M>ModuleExtensions`; the exception is namespaces ending in `.Migrations`, because EF generates migrations as public. Everything else is `internal`, and test projects get `InternalsVisibleTo`. Widening the surface means editing T12 in the same PR, with the reason.
+- In Platform, only the `Platform.Identity` namespace touches `System.Security.Claims`.
+- Only `src/Api` and `tests/**` reference a module implementation. A module may reference another module's `.Contracts`.
+- Aspire resources are `sql`, `api` and `web`, and the database is `inventory` (`ConnectionStrings:inventory`). S2 wires the dev proxy `/api` → `services__api__http__0`, adds the `inventory_app` password parameter, and adds a T12 rule against `Database.Migrate*` outside the migrate step.
+- npm's allowed list includes `eslint` and `typescript-eslint`, as angular-eslint's peers.
+- The CI job ids `build` and `test` are the ruleset's required check contexts. S12 adds `e2e`.

@@ -84,7 +84,8 @@ Create `tests/Architecture.Tests`, the spec's test T12 ("Module boundaries"; rul
 
    Tests:
    - `Module_implementations_expose_only_their_registration_class`: for each of Inventory and Platform:
-     - `Types.InAssembly(a).That().ArePublic().GetTypes()` is exactly `[<M>ModuleExtensions]`.
+     - The public types, excluding those whose namespace ends in `.Migrations`, are exactly `[<M>ModuleExtensions]`. Get them with `Types.InAssembly(a).That().ArePublic().GetTypes()`, then filter `t => !(t.Namespace ?? "").EndsWith(".Migrations", StringComparison.Ordinal)`.
+     - Why the exclusion is a locked decision: EF Core scaffolds every migration as `public partial class`, and §4 puts migrations in `<M>/Persistence/Migrations`. Without it, S2's first migration fails T12.
      - That type's public static methods, by name, are exactly `{ Add<M>Module, Map<M>Endpoints }`.
      - Use a `[Theory]` with `[InlineData("Inventory")]` and `[InlineData("Platform")]`, or two facts; your choice.
    - `Inventory_domain_depends_only_on_the_BCL_and_Kernel`: types in `InventoryAssembly` that `ResideInNamespace("Inventory.Domain")` must satisfy both:
@@ -120,10 +121,11 @@ dotnet format --verify-no-changes
 dotnet test 2>&1 | grep -Ei 'total|passed|failed'   # >= 7 tests, 0 failed, run under MTP
 ```
 Then prove that each rule bites. Apply each probe, run `dotnet test`, record the result, and **revert it before the next one**:
-1. **Passes:** add `src/Modules/Inventory/Inventory/Domain/ArchProbe.cs` with `namespace Inventory.Domain; internal static class ArchProbe { internal static decimal Round4(decimal v) => Math.Round(v, 4, MidpointRounding.AwayFromZero); }`. This shows the allow-list doesn't trip on compiler-emitted attributes.
+1. **Passes:** add `src/Modules/Inventory/Inventory/Domain/ArchProbe.cs` with `namespace Inventory.Domain; internal static class ArchProbe { internal static decimal Round4(decimal v) => Math.Round(v, 4, MidpointRounding.AwayFromZero); } internal sealed record ArchProbeRecord(string? Note, decimal Qty);`. The record brings in nullable annotations and the members the compiler generates for records, so this shows the allow-list doesn't trip on them.
 2. **Fails** `Inventory_domain_…`: change the probe to also expose `internal static Type Db => typeof(System.Data.Common.DbConnection);`.
 3. **Fails** `Module_implementations_expose_…`: add `public sealed class Leak;` anywhere in the Inventory project.
-4. **Fails** `Module_implementations_are_referenced_…`: add a ProjectReference from `Platform.csproj` to `../../Inventory/Inventory/Inventory.csproj`.
-5. Revert everything, then run `dotnet test` (green) and `git status --porcelain`, which should show only the files above plus bookkeeping.
+4. **Passes** `Module_implementations_expose_…`: move that class to `src/Modules/Inventory/Inventory/Persistence/Migrations/Leak.cs` with `namespace Inventory.Persistence.Migrations; public partial class Leak;`. This proves the `.Migrations` exclusion.
+5. **Fails** `Module_implementations_are_referenced_…`: add a ProjectReference from `Platform.csproj` to `../../Inventory/Inventory/Inventory.csproj`.
+6. Revert everything, including any empty `Domain/` or `Persistence/` folders the probes left behind. Then run `dotnet test` (green) and `git status --porcelain`, which should show only the files above plus bookkeeping.
 
-Report the four probe outcomes in your summary. The Kernel and claims rules have no types to check until S2. Say so; don't fake a probe for them.
+Report the five probe outcomes in your summary. The Kernel and claims rules have no types to check until S2. Say so; don't fake a probe for them.

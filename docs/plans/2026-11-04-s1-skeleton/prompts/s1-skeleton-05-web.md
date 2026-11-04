@@ -30,7 +30,7 @@ Generate the Angular app in `web/` with angular-eslint, make its `start` script 
 - **Already built:** `src/AppHost/AppHost.cs` with `sql` (2025-latest, data volume) → `inventory` database → `api` (`/health` check), and `src/Api`, `src/ServiceDefaults`, the modules, `tests/Architecture.Tests`, `InventorySystem.slnx` and `global.json`.
 - **Spec:**
   - CLAUDE.md Stack: Angular latest stable, standalone components, signals, zoneless, `@if`/`@for`, typed reactive forms.
-  - Allowed npm packages: what `ng new` adds, plus `angular-eslint`.
+  - Allowed npm packages: what `ng new` adds, plus `angular-eslint` and its peers `eslint` and `typescript-eslint`. The user approved the peers during the audit, and `ng add angular-eslint` writes all three into `devDependencies`.
   - §11 CI: "the runner has no global `ng`", so CI uses npm scripts.
   - CLAUDE.md `## Commands` runs `cd web && npm run lint && npm run build && npm test -- --watch=false`. All three scripts must exist and pass.
 - **AddJavaScriptApp API** (`Aspire.Hosting.JavaScript.xml`): `AddJavaScriptApp(string name, string appDirectory, string runScriptName = "dev")`. It "configures the resource with Node.js defaults and sets up npm integration". `WithNpm(bool install, …)` optionally installs packages before start. CLAUDE.md says to check the current API, so read the package's XML docs or IntelliSense before you write the AppHost lines.
@@ -47,7 +47,9 @@ Generate the Angular app in `web/` with angular-eslint, make its `start` script 
    - `web/src/app/app.config.ts` uses zoneless change detection, and `zone.js` is neither in `package.json` nor in polyfills.
    - Components are standalone.
    - The `angular.json` test target uses `@angular/build:unit-test` with Vitest.
-3. `cd web && npx ng add angular-eslint@22.6.0 --skip-confirmation`. Make sure `package.json` has `"lint": "ng lint"`, and add it if the schematic didn't.
+3. Copy `web/package.json`'s `dependencies` and `devDependencies` keys, then run `cd web && npx ng add angular-eslint@22.6.0 --skip-confirmation`.
+   - The new keys must be exactly `angular-eslint`, `eslint` and `typescript-eslint`. If the schematic added anything else, stop and report; that needs the user's approval (CLAUDE.md "Ask before you").
+   - Make sure `package.json` has `"lint": "ng lint"`, and add it if the schematic didn't.
 4. In `web/package.json`, set `"start": "ng serve --port ${PORT:-4200}"`. npm runs scripts with `sh` on Linux, and CI is Ubuntu. Aspire supplies `PORT`; standalone `npm start` falls back to 4200.
 5. Keep `package-lock.json`; CI runs `npm ci`. Keep the generated welcome page and `app.spec.ts`; S2 replaces the shell.
 6. AppHost:
@@ -56,7 +58,6 @@ Generate the Angular app in `web/` with angular-eslint, make its `start` script 
      ```csharp
      builder.AddJavaScriptApp("web", "../../web", "start")
          .WithHttpEndpoint(port: 4200, env: "PORT")
-         .WithExternalHttpEndpoints()
          .WithReference(api)
          .WaitFor(api);
      ```
@@ -64,6 +65,7 @@ Generate the Angular app in `web/` with angular-eslint, make its `start` script 
      - **One HTTP endpoint.** The proxy is on host port 4200 and `ng serve` listens on the port in `PORT`. If `AddJavaScriptApp` already declares an `http` endpoint, configure that one instead of adding a duplicate.
      - **Fresh clones install themselves.** A clone without `node_modules` must install before start: use `WithNpm(install: true)` if installing isn't already the default.
      - **Web gets the api reference.** `WithReference(api)` is there for S2's dev proxy. Don't build that proxy here.
+     - **No `WithExternalHttpEndpoints()`.** It matters only for publishing, so S13 adds it.
    - The app directory is relative to `src/AppHost`.
 
 ## Do not
@@ -81,7 +83,7 @@ dotnet build -warnaserror
 dotnet format --verify-no-changes
 dotnet test
 rm -rf web/node_modules                       # simulate a fresh clone for the web resource
-dotnet run --project src/AppHost --launch-profile http > "${TMPDIR:-/tmp}/apphost.log" 2>&1 &
+dotnet run --project src/AppHost > "${TMPDIR:-/tmp}/apphost.log" 2>&1 &   # §13's exact command (default https profile)
 # wait for sql, api and web to start
 curl -fsS http://localhost:4200/ | grep -q '<app-root' && echo web-ok
 curl -fsS http://localhost:<api http port>/health      # Healthy
