@@ -1,0 +1,12 @@
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/bin/Debug/net10.0/Kernel.deps.json
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/bin/Debug/net10.0/Kernel.dll
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/bin/Debug/net10.0/Kernel.pdb
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/Kernel.GeneratedMSBuildEditorConfig.editorconfig
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/Kernel.AssemblyInfoInputs.cache
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/Kernel.AssemblyInfo.cs
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/Kernel.csproj.CoreCompileInputs.cache
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/Kernel.sourcelink.json
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/Kernel.dll
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/refint/Kernel.dll
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/Kernel.pdb
+/home/apa/Code/portfolio/inventory-management-system/src/Shared/Kernel/obj/Debug/net10.0/ref/Kernel.dll

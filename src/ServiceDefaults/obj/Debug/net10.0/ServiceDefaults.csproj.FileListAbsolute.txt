@@ -1,0 +1,13 @@
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/bin/Debug/net10.0/ServiceDefaults.deps.json
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/bin/Debug/net10.0/ServiceDefaults.dll
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/bin/Debug/net10.0/ServiceDefaults.pdb
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.csproj.AssemblyReference.cache
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.GeneratedMSBuildEditorConfig.editorconfig
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.AssemblyInfoInputs.cache
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.AssemblyInfo.cs
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.csproj.CoreCompileInputs.cache
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.sourcelink.json
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.dll
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/refint/ServiceDefaults.dll
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ServiceDefaults.pdb
+/home/apa/Code/portfolio/inventory-management-system/src/ServiceDefaults/obj/Debug/net10.0/ref/ServiceDefaults.dll

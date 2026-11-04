@@ -1,0 +1,12 @@
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/bin/Debug/net10.0/Inventory.Contracts.deps.json
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/bin/Debug/net10.0/Inventory.Contracts.dll
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/bin/Debug/net10.0/Inventory.Contracts.pdb
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/Inventory.Contracts.GeneratedMSBuildEditorConfig.editorconfig
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/Inventory.Contracts.AssemblyInfoInputs.cache
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/Inventory.Contracts.AssemblyInfo.cs
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/Inventory.Contracts.csproj.CoreCompileInputs.cache
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/Inventory.Contracts.sourcelink.json
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/Inventory.Contracts.dll
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/refint/Inventory.Contracts.dll
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/Inventory.Contracts.pdb
+/home/apa/Code/portfolio/inventory-management-system/src/Modules/Inventory/Inventory.Contracts/obj/Debug/net10.0/ref/Inventory.Contracts.dll

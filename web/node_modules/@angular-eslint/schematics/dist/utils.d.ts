@@ -1,0 +1,78 @@
+import type { Path } from '@angular-devkit/core';
+import type { Rule, SchematicContext, Tree } from '@angular-devkit/schematics';
+/**
+ * The conventional flat config file names that ESLint resolves automatically
+ * and that these schematics scaffold by default.
+ *
+ * NOTE: this is NOT a restriction on what an ESLint flat config file may be
+ * named - a flat config can have any name. We only use these conventional names
+ * when detecting an existing root config or resolving its path during code
+ * generation.
+ */
+export declare const defaultFlatConfigNames: string[];
+/**
+ * This method is specifically for reading JSON files in a Tree
+ * @param host The host tree
+ * @param path The path to the JSON file
+ * @returns The JSON data in the file.
+ */
+export declare function readJsonInTree<T = any>(host: Tree, path: string): T;
+/**
+ * This method is specifically for updating JSON in a Tree
+ * @param path Path of JSON file in the Tree
+ * @param callback Manipulation of the JSON data
+ * @returns A rule which updates a JSON file in a Tree
+ */
+export declare function updateJsonInTree<T = any, O = T>(path: string, callback: (json: T, context: SchematicContext) => O): Rule;
+type TargetsConfig = Record<string, {
+    builder: string;
+    options: unknown;
+}>;
+export declare function getTargetsConfigFromProject(projectConfig: {
+    architect?: TargetsConfig;
+} & {
+    targets?: TargetsConfig;
+}): TargetsConfig | null;
+export declare function addESLintTargetToProject(projectName: string, targetName: 'eslint' | 'lint'): Rule;
+/**
+ * Utility to act on all files in a tree that are not ignored by git.
+ */
+export declare function visitNotIgnoredFiles(visitor: (file: Path, host: Tree, context: SchematicContext) => void | Rule, dir?: Path): Rule;
+/**
+ * typescript-eslint shared config presets that the schematics can scaffold.
+ *
+ * Type-checked variants also enable `parserOptions.projectService` in the
+ * generated root config, which is required for those rules to run.
+ */
+export declare const TS_ESLINT_PRESETS: readonly ["recommended", "strict", "recommendedTypeChecked", "strictTypeChecked"];
+export type TseslintPreset = (typeof TS_ESLINT_PRESETS)[number];
+export declare const DEFAULT_TS_ESLINT_PRESET: TseslintPreset;
+export interface CreateRootESLintConfigOptions {
+    tseslintPreset?: TseslintPreset;
+    setParserOptionsProject?: boolean;
+}
+export declare function isTypeCheckedTseslintPreset(preset: TseslintPreset): boolean;
+export declare function resolveTseslintPreset(value: string | undefined): TseslintPreset;
+export declare function shouldEnableProjectService(setParserOptionsProject: boolean, tseslintPreset?: TseslintPreset): boolean;
+export declare function warnIfTypeCheckedPreset(context: SchematicContext, tseslintPreset: TseslintPreset): void;
+export declare function createStringifiedRootESLintConfig(prefix: string | null, isESM: boolean, options?: CreateRootESLintConfigOptions): string;
+export declare function createESLintConfigForProject(projectName: string, setParserOptionsProject: boolean, tseslintPreset?: TseslintPreset): Rule;
+export declare function sortObjectByKeys(obj: Record<string, unknown>): Record<string, unknown>;
+/**
+ * To make certain schematic usage conversion more ergonomic, if the user does not specify a project
+ * and only has a single project in their angular.json we will just go ahead and use that one.
+ */
+export declare function determineTargetProjectName(tree: Tree, maybeProject?: string): string | null;
+/**
+ * See `schematicCollections` docs here:
+ * https://github.com/angular/angular-cli/blob/8431b3f0769b5f95b9e13807a09293d820c4b017/docs/specifications/schematic-collections-config.md
+ */
+export declare function updateSchematicCollections(angularJson: Record<string, any>, collectionName: '@angular-eslint/schematics' | 'angular-eslint'): Record<string, any>;
+export declare function updateSchematicDefaults(angularJson: Record<string, any>, schematicFullName: string, defaultValues: Record<string, unknown>): Record<string, any>;
+export declare function resolveRootESLintConfigPath(tree: Tree): string | null;
+export declare function determineNewProjectESLintConfigContentAndExtension(tree: Tree, rootConfigPath: string, projectRoot: string): {
+    isESM: boolean;
+    ext: string;
+};
+export {};
+//# sourceMappingURL=utils.d.ts.map
