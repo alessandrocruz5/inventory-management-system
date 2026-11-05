@@ -14,7 +14,6 @@ internal static class DatabasePrincipals
     private const int MaxPasswordLength = 128;
 
     // The password travels only as @p. QUOTENAME quotes it inside T-SQL, so it's never concatenated in C#.
-    // S5a adds the sequence grant and DENY UPDATE on the ledger tables.
     private const string EnsureSql = """
         DECLARE @q nvarchar(300) = QUOTENAME(@p, '''');
         IF @q IS NULL THROW 50000, 'password too long', 1;
@@ -28,6 +27,11 @@ internal static class DatabasePrincipals
         GRANT SELECT, INSERT, UPDATE ON SCHEMA::[identity]  TO [inventory_app];
         GRANT DELETE                 ON SCHEMA::[identity]  TO [inventory_app];
         GRANT SELECT, INSERT, UPDATE ON SCHEMA::[inventory] TO [inventory_app];
+        -- The ledger is append-only (spec §6). An object DENY overrides the schema grant above; DELETE too, so a later schema grant can't reach it.
+        DENY UPDATE, DELETE ON OBJECT::[inventory].[StockDocuments] TO [inventory_app];
+        DENY UPDATE, DELETE ON OBJECT::[inventory].[StockMovements] TO [inventory_app];
+        -- NEXT VALUE FOR needs UPDATE on the sequence (spec §8).
+        GRANT UPDATE ON OBJECT::[inventory].[MovementIds] TO [inventory_app];
         """;
 
     public static async Task EnsureAsync(string adminConnectionString, string password, CancellationToken cancellationToken)

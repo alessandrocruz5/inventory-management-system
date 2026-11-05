@@ -269,6 +269,72 @@ public sealed class LocationsTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Deactivate_is_422_while_a_balance_is_not_zero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var stocked = await LedgerRows.AddItemAsync(c, "AB-1", ct);
+        var empty = await LedgerRows.AddItemAsync(c, "AB-2", ct);
+        await LedgerRows.AddBalanceAsync(c, stocked, id, isVirtual: false, allowNegative: false, 3m, 30m, ct);
+        await LedgerRows.AddBalanceAsync(c, empty, id, isVirtual: false, allowNegative: false, 0m, 0m, ct);
+
+        var response = await client.PostAsync($"/api/locations/{id}/deactivate", null, ct);
+
+        var balance = (await ItemsTests.AssertStockNotZeroAsync(response, ct)).ShouldHaveSingleItem()!;
+        balance["itemId"]!.GetValue<Guid>().ShouldBe(stocked);
+        balance["locationId"]!.GetValue<Guid>().ShouldBe(id);
+        balance["onHand"]!.GetValue<decimal>().ShouldBe(3m);
+        balance["stockValue"]!.GetValue<decimal>().ShouldBe(30m);
+        var listed = (await GetJsonAsync(client, "/api/locations", ct))["items"]!.AsArray().Single(i => i!["id"]!.GetValue<Guid>() == id)!;
+        listed["isActive"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Deactivate_succeeds_when_every_balance_is_zero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var item = await LedgerRows.AddItemAsync(c, "AB-1", ct);
+        await LedgerRows.AddBalanceAsync(c, item, id, isVirtual: false, allowNegative: false, 0m, 0m, ct);
+
+        var response = await client.PostAsync($"/api/locations/{id}/deactivate", null, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["isActive"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Deactivate_waits_for_an_uncommitted_balance()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        var item = await LedgerRows.AddItemAsync(holder, "AB-1", ct);
+        await using var tx = holder.BeginTransaction();
+        await LedgerRows.AddBalanceAsync(holder, item, id, isVirtual: false, allowNegative: false, 5m, 500m, ct, tx);
+
+        // Under RCSI a plain read skips the uncommitted balance; only the locking read makes the deactivate wait for it.
+        var deactivate = client.PostAsync($"/api/locations/{id}/deactivate", null, ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        tx.Commit();
+
+        var balance = (await ItemsTests.AssertStockNotZeroAsync(await deactivate, ct)).ShouldHaveSingleItem()!;
+        balance["itemId"]!.GetValue<Guid>().ShouldBe(item);
+        balance["onHand"]!.GetValue<decimal>().ShouldBe(5m);
+    }
+
+    [Fact]
     public async Task Staff_gets_403_on_every_admin_route()
     {
         var ct = TestContext.Current.CancellationToken;
