@@ -528,6 +528,39 @@ public sealed class ItemsTests(DatabaseFixture db)
         balance["stockValue"]!.GetValue<decimal>().ShouldBe(500m);
     }
 
+    [Fact]
+    public async Task Deactivate_on_zero_stock_holds_off_postings_until_commit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "AB-1", "Rice", "kg", ct))["id"]!.GetValue<Guid>();
+        var store = (await LocationsTests.CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await using var probe = await LedgerRows.OpenAsync(db, tenant, ct);
+        var other = await LedgerRows.AddLocationAsync(probe, "BR-2", ct);
+        await LedgerRows.AddBalanceAsync(probe, id, store, isVirtual: false, allowNegative: false, 0m, 0m, ct);
+
+        // The holder X-locks the item row, so the deactivate pauses in SaveChanges after taking its balance locks.
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await ExecuteAsync(holder, tx, "UPDATE inventory.Items SET Name = Name WHERE Id = @id", ("@id", id));
+        var deactivate = client.PostAsync($"/api/items/{id}/deactivate", null, ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+
+        // Posting step 6 locks the zero balance, and a first posting at another location inserts into the locked range.
+        await ExecuteAsync(probe, null, "SET LOCK_TIMEOUT 500;");
+        await AssertLockTimeoutAsync(probe, """
+            SELECT OnHand FROM inventory.StockBalances WITH (UPDLOCK, ROWLOCK) WHERE ItemId = @i AND LocationId = @l
+            """, ("@i", id), ("@l", store));
+        await AssertRangeLockedAsync(db, probe, id, other);
+        tx.Rollback();
+
+        var response = await deactivate;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["isActive"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
     /// <summary>Asserts a <c>422 stock-not-zero</c> problem and returns its <c>balances</c>.</summary>
     internal static async Task<JsonArray> AssertStockNotZeroAsync(HttpResponseMessage response, CancellationToken ct)
     {
@@ -542,6 +575,58 @@ public sealed class ItemsTests(DatabaseFixture db)
         }
 
         return balances;
+    }
+
+    /// <summary>Asserts that <paramref name="sql"/> fails with 1222: it waited past the session's <c>LOCK_TIMEOUT</c>.</summary>
+    internal static async Task AssertLockTimeoutAsync(SqlConnection c, string sql, params (string Name, Guid Value)[] parameters)
+    {
+        var ex = await Should.ThrowAsync<SqlException>(() => ExecuteAsync(c, null, sql, parameters));
+        ex.Number.ShouldBe(1222, ex.Message);
+    }
+
+    /// <summary>
+    /// Asserts that inserting a balance for (<paramref name="item"/>, <paramref name="location"/>) hits 1222 while it waits for a
+    /// range-insert lock, which only the deactivate's key-range lock can cause. A 1222 alone proves nothing: the insert's FK
+    /// check also times out, on the holder's X lock on the parent row (LCK_M_S).
+    /// </summary>
+    internal static async Task AssertRangeLockedAsync(DatabaseFixture db, SqlConnection probe, Guid item, Guid location)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var admin = new SqlConnection(db.AdminConnectionString);
+        await admin.OpenAsync(ct);
+        await using var poll = new SqlCommand(
+            "SELECT wait_type FROM sys.dm_exec_requests WHERE session_id = @probe AND wait_type LIKE 'LCK[_]M[_]%'", admin);
+        poll.Parameters.AddWithValue("@probe", await SpidAsync(probe));
+
+        var insert = AssertLockTimeoutAsync(probe, """
+            INSERT INTO inventory.StockBalances (ItemId, LocationId, IsVirtual, AllowNegative, OnHand, StockValue)
+            VALUES (@i, @l, 0, 0, 0, 0)
+            """, ("@i", item), ("@l", location));
+        string? wait = null;
+        while (wait is null && !insert.IsCompleted)
+        {
+            wait = (string?)await poll.ExecuteScalarAsync(ct);
+        }
+
+        await insert;
+        wait.ShouldBe("LCK_M_RIn_NL", "The insert should wait on the deactivate's key-range lock");
+    }
+
+    internal static async Task ExecuteAsync(SqlConnection c, SqlTransaction? tx, string sql, params (string Name, Guid Value)[] parameters)
+    {
+        await using var command = new SqlCommand(sql, c, tx);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<int> SpidAsync(SqlConnection c)
+    {
+        await using var command = new SqlCommand("SELECT @@SPID", c);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }
 
     /// <summary>A receipt of 10 units at 1000.0000 from the Supplier to <paramref name="location"/>.</summary>

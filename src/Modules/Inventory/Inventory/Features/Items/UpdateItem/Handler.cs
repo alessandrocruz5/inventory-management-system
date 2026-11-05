@@ -33,8 +33,9 @@ internal sealed class UpdateItemHandler(InventoryDbContext db, ICurrentUser user
         var version = request.Version!;
 
         // The SKU check below locks until commit, so this runs in a transaction inside the retrying strategy (TASKS.md, IMS-3).
+        var attempt = 0;
         return await db.Database.CreateExecutionStrategy().ExecuteAsync(
-            ct => UpdateAsync(id, sku, name, baseUnit, version, ct), cancellationToken);
+            ct => UpdateAsync(id, sku, name, baseUnit, version, ++attempt > 1, ct), cancellationToken);
     }
 
     private async Task<Results<Ok<ItemResponse>, ValidationProblem, ProblemHttpResult>> UpdateAsync(
@@ -43,6 +44,7 @@ internal sealed class UpdateItemHandler(InventoryDbContext db, ICurrentUser user
         string name,
         string baseUnit,
         byte[] version,
+        bool isRetry,
         CancellationToken cancellationToken)
     {
         // A retry starts clean: a row tracked by the failed attempt would hide the fresh read.
@@ -64,8 +66,8 @@ internal sealed class UpdateItemHandler(InventoryDbContext db, ICurrentUser user
 
         // Spec §5: the SKU is immutable once the item has a movement. HOLDLOCK range-locks the item's slice of
         // IX_Movements_Item until commit, so a first posting can't land between this check and the update.
-        // FORCESEEK keeps that range to this item. No UPDLOCK: inventory_app is denied UPDATE on StockMovements,
-        // and a shared range lock already blocks inserts.
+        // FORCESEEK keeps that range to this item. No UPDLOCK: a shared range lock already blocks inserts, and
+        // U locks would needlessly serialize concurrent SKU checks.
         if (!string.Equals(item.Sku, sku, StringComparison.Ordinal)
             && await db.StockMovements
                 .FromSql($"SELECT * FROM [inventory].[StockMovements] WITH (HOLDLOCK, FORCESEEK, INDEX([IX_Movements_Item])) WHERE [ItemId] = {id}")
@@ -84,6 +86,27 @@ internal sealed class UpdateItemHandler(InventoryDbContext db, ICurrentUser user
         try
         {
             await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException) when (isRetry)
+        {
+            // A commit can fail in transit after the server applied it; the strategy then reruns with the client's old
+            // version, which no longer matches. If the row already holds this edit, that earlier attempt saved it.
+            db.ChangeTracker.Clear();
+            var saved = await db.Items.SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
+            if (saved is null)
+            {
+                return Problems.NotFound();
+            }
+
+            if (!string.Equals(saved.Sku, sku, StringComparison.Ordinal)
+                || !string.Equals(saved.Name, name, StringComparison.Ordinal)
+                || !string.Equals(saved.BaseUnit, baseUnit, StringComparison.Ordinal))
+            {
+                return Problems.ConcurrencyConflict();
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return TypedResults.Ok(ItemResponse.From(saved));
         }
         catch (DbUpdateConcurrencyException)
         {

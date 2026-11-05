@@ -83,6 +83,7 @@ public sealed class LedgerImmutabilityTests(DatabaseFixture db)
         [
             ("DISABLE TRIGGER [inventory].[TR_StockDocuments_AppendOnly] ON [inventory].[StockDocuments]", NotFoundOrNoPermission),
             ("DISABLE TRIGGER [inventory].[TR_StockMovements_AppendOnly] ON [inventory].[StockMovements]", NotFoundOrNoPermission),
+            ("TRUNCATE TABLE [inventory].[StockDocuments]", NotFoundOrNoPermission),
             ("TRUNCATE TABLE [inventory].[StockMovements]", NotFoundOrNoPermission),
             ("TRUNCATE TABLE [inventory].[StockBalances]", NotFoundOrNoPermission),
             ("ALTER SECURITY POLICY [security].[TenantPolicy] WITH (STATE = OFF)", PolicyNotFoundOrNoPermission),
