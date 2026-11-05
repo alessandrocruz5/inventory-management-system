@@ -36,7 +36,12 @@ internal sealed class DeactivateLocationHandler(InventoryDbContext db, ICurrentU
             }
             catch (DbUpdateConcurrencyException)
             {
-                return Problems.ConcurrencyConflict();
+                // No version is sent, so a racing deactivate that won first still counts as success.
+                await db.Entry(location).ReloadAsync(cancellationToken);
+                if (location.IsActive)
+                {
+                    return Problems.ConcurrencyConflict();
+                }
             }
         }
 

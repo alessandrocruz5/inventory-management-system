@@ -355,6 +355,25 @@ public sealed class ItemsTests(DatabaseFixture db)
         Skus(await GetJsonAsync(client, "/api/items?active=false", ct)).ShouldBe(["AB-1"]);
     }
 
+    [Fact]
+    public async Task Concurrent_deactivations_all_succeed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "AB-1", "Rice", "kg", ct))["id"]!.GetValue<Guid>();
+
+        // A double submit races on the rowversion; the loser must still see 200, not 409.
+        var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => client.PostAsync($"/api/items/{id}/deactivate", null, ct)));
+
+        foreach (var response in responses)
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["isActive"]!.GetValue<bool>().ShouldBeFalse();
+        }
+    }
+
     /// <summary>Inserts items for a tenant through its scope; the interceptor stamps <c>TenantId</c>. Returns the ids in order.</summary>
     internal static async Task<List<Guid>> AddItemsAsync(ApiFactory app, Guid tenant, params (string Sku, string Name, bool Active)[] items)
     {

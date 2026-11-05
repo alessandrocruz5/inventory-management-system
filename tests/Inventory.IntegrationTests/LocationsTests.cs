@@ -250,6 +250,25 @@ public sealed class LocationsTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Concurrent_deactivations_all_succeed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+
+        // A double submit races on the rowversion; the loser must still see 200, not 409.
+        var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => client.PostAsync($"/api/locations/{id}/deactivate", null, ct)));
+
+        foreach (var response in responses)
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["isActive"]!.GetValue<bool>().ShouldBeFalse();
+        }
+    }
+
+    [Fact]
     public async Task Staff_gets_403_on_every_admin_route()
     {
         var ct = TestContext.Current.CancellationToken;
