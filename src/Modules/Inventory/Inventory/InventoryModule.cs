@@ -1,13 +1,11 @@
 using Inventory.Contracts;
 using Inventory.Persistence;
 
-using Kernel.Tenancy;
-
 using Microsoft.EntityFrameworkCore;
 
 namespace Inventory;
 
-internal sealed class InventoryModule(InventoryDbContext db, ITenantContext tenant, TimeProvider clock) : IInventoryModule
+internal sealed class InventoryModule(InventoryDbContext db, TimeProvider clock) : IInventoryModule
 {
     private static readonly (string Code, string Name, LocationKind Kind)[] VirtualLocations =
     [
@@ -18,11 +16,8 @@ internal sealed class InventoryModule(InventoryDbContext db, ITenantContext tena
 
     public async Task ProvisionTenantAsync(CancellationToken cancellationToken)
     {
-        var tenantId = tenant.TenantId;
-
-        // S3: the tenant interceptor and named query filter replace the explicit TenantId below.
         var existing = await db.Locations
-            .Where(l => l.TenantId == tenantId && l.Kind != LocationKind.Physical)
+            .Where(l => l.Kind != LocationKind.Physical)
             .Select(l => l.Code)
             .ToListAsync(cancellationToken);
 
@@ -30,7 +25,6 @@ internal sealed class InventoryModule(InventoryDbContext db, ITenantContext tena
         {
             db.Locations.Add(new Location
             {
-                TenantId = tenantId,
                 Code = code,
                 Name = name,
                 Kind = kind,

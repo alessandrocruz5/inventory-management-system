@@ -200,11 +200,21 @@ public sealed class SetupTests(DatabaseFixture db)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        var inventory = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+
+        // Locations sit under RLS, so each tenant's rows are counted from that tenant's scope.
+        var locations = 0;
+        var scopes = app.Services.GetRequiredService<ITenantScopeFactory>();
+        foreach (var tenantId in tenantIds)
+        {
+            await using var tenantScope = scopes.BeginScope(tenantId);
+            locations += await tenantScope.Services.GetRequiredService<InventoryDbContext>().Locations
+                .CountAsync(l => l.TenantId == tenantId, ct);
+        }
+
         return (
             await platform.Tenants.CountAsync(t => tenantIds.Contains(t.Id), ct),
             await platform.Users.CountAsync(u => tenantIds.Contains(u.TenantId), ct),
-            await inventory.Locations.CountAsync(l => tenantIds.Contains(l.TenantId), ct));
+            locations);
     }
 
     private static async Task<List<string>> ReadStrings(SqlConnection connection, CancellationToken ct, string sql)

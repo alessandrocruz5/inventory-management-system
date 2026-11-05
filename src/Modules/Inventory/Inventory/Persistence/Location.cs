@@ -1,6 +1,6 @@
 namespace Inventory.Persistence;
 
-internal sealed class Location
+internal sealed class Location : ITenantOwned
 {
     public Guid TenantId { get; set; }
 
