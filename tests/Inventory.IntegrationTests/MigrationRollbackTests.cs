@@ -34,10 +34,10 @@ public sealed class MigrationRollbackTests(DatabaseFixture db)
     {
         var ct = TestContext.Current.CancellationToken;
         var database = "inventory_rollback_" + Guid.NewGuid().ToString("N")[..8];
+        var connectionString = new SqlConnectionStringBuilder(db.AdminConnectionString) { InitialCatalog = database }.ConnectionString;
         await ExecuteAsync(Master(), $"CREATE DATABASE [{database}]", ct);
         try
         {
-            var connectionString = new SqlConnectionStringBuilder(db.AdminConnectionString) { InitialCatalog = database }.ConnectionString;
             await using var context = CreateContext(connectionString);
             var migrator = context.GetService<IMigrator>();
 
@@ -55,7 +55,12 @@ public sealed class MigrationRollbackTests(DatabaseFixture db)
         }
         finally
         {
-            SqlConnection.ClearAllPools();
+            // This database's pool only: ClearAllPools would also drop T11's single pooled connection mid-test.
+            using (var pooled = new SqlConnection(connectionString))
+            {
+                SqlConnection.ClearPool(pooled);
+            }
+
             await ExecuteAsync(Master(), $"ALTER DATABASE [{database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{database}]", CancellationToken.None);
         }
     }
