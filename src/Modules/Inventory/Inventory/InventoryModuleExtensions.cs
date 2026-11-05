@@ -18,7 +18,8 @@ public static class InventoryModuleExtensions
         // AddDbContext, never the pooled AddSqlServerDbContext: a pooled context keeps the first request's tenant (spec §8).
         builder.Services.AddDbContext<InventoryDbContext>(o => o.UseSqlServer(
             builder.Configuration.GetConnectionString("inventory"),
-            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "inventory")));
+            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "inventory"))
+            .AddInterceptors(TenantSessionInterceptor.Instance, TenantSaveChangesInterceptor.Instance));
         builder.EnrichSqlServerDbContext<InventoryDbContext>();
         builder.Services.AddScoped<IModuleMigrator, InventoryMigrator>();
         builder.Services.AddScoped<IInventoryModule, InventoryModule>();

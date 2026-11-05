@@ -1,10 +1,19 @@
+using Kernel.Tenancy;
+
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Inventory.Persistence;
 
-internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : DbContext(options)
+internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> options, ITenantContext tenant) : DbContext(options)
 {
+    /// <summary>The scope's tenant. Interceptors read it each time they run, so no interceptor holds a tenant (spec §8).</summary>
+    internal ITenantContext Tenant => tenant;
+
     public DbSet<Location> Locations => Set<Location>();
+
+    /// <summary>Read per query by the "Tenant" filter; throws in a scope with no tenant, so such a query fails loudly.</summary>
+    private Guid CurrentTenantId => tenant.TenantId;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -18,6 +27,7 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
                 t.HasCheckConstraint("CK_Locations_NegativeOnlyPhysical", "[Kind] = 'Physical' OR [AllowNegativeStock] = 0");
             });
             location.HasKey(l => new { l.TenantId, l.Id });
+            ConfigureTenantOwned(location);
             location.Property(l => l.Id).ValueGeneratedOnAdd();
             location.Property(l => l.Code).HasMaxLength(32).IsRequired();
             location.Property(l => l.Name).HasMaxLength(200).IsRequired();
@@ -29,5 +39,11 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             location.HasIndex(l => new { l.TenantId, l.Code }).IsUnique().HasDatabaseName("UX_Locations_Code");
             location.HasIndex(l => new { l.TenantId, l.Kind }).IsUnique().HasFilter("[Kind] <> 'Physical'").HasDatabaseName("UX_Locations_VirtualKind");
         });
+    }
+
+    private void ConfigureTenantOwned<T>(EntityTypeBuilder<T> entity) where T : class, ITenantOwned
+    {
+        entity.HasQueryFilter(TenantSchema.FilterName, e => e.TenantId == CurrentTenantId);
+        entity.Property(e => e.TenantId).HasDefaultValueSql(TenantSchema.ColumnDefaultSql).ValueGeneratedNever();
     }
 }

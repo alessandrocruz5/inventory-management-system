@@ -26,7 +26,8 @@ namespace Inventory.Persistence.Migrations
             modelBuilder.Entity("Inventory.Persistence.Location", b =>
                 {
                     b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)");
 
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()

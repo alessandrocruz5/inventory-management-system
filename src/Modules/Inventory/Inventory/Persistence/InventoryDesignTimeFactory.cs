@@ -1,3 +1,5 @@
+using Kernel.Tenancy;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -10,5 +12,12 @@ internal sealed class InventoryDesignTimeFactory : IDesignTimeDbContextFactory<I
         .UseSqlServer(
             "Server=localhost;Database=inventory;Trusted_Connection=False;TrustServerCertificate=True",
             sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "inventory"))
-        .Options);
+        .Options, new NoTenant());
+
+    private sealed class NoTenant : ITenantContext
+    {
+        public bool HasTenant => false;
+
+        public Guid TenantId => throw new InvalidOperationException("Design time has no tenant.");
+    }
 }
