@@ -12,6 +12,8 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
 
     public DbSet<Location> Locations => Set<Location>();
 
+    public DbSet<Item> Items => Set<Item>();
+
     /// <summary>Read per query by the "Tenant" filter; throws in a scope with no tenant, so such a query fails loudly.</summary>
     private Guid CurrentTenantId => tenant.TenantId;
 
@@ -38,6 +40,21 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             location.Property(l => l.RowVersion).IsRowVersion();
             location.HasIndex(l => new { l.TenantId, l.Code }).IsUnique().HasDatabaseName("UX_Locations_Code");
             location.HasIndex(l => new { l.TenantId, l.Kind }).IsUnique().HasFilter("[Kind] <> 'Physical'").HasDatabaseName("UX_Locations_VirtualKind");
+        });
+
+        modelBuilder.Entity<Item>(item =>
+        {
+            item.ToTable("Items");
+            item.HasKey(i => new { i.TenantId, i.Id });
+            ConfigureTenantOwned(item);
+            item.Property(i => i.Id).ValueGeneratedOnAdd();
+            item.Property(i => i.Sku).HasMaxLength(64).IsRequired();
+            item.Property(i => i.Name).HasMaxLength(200).IsRequired();
+            item.Property(i => i.BaseUnit).HasMaxLength(16).IsRequired();
+            item.Property(i => i.IsActive).HasDefaultValue(true);
+            item.Property(i => i.CreatedAt).IsRequired();
+            item.Property(i => i.RowVersion).IsRowVersion();
+            item.HasIndex(i => new { i.TenantId, i.Sku }).IsUnique().HasDatabaseName("UX_Items_Sku");
         });
     }
 

@@ -3,6 +3,8 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
   validation: 'Please check the highlighted fields.',
   'invalid-credentials':
     'Email or password is incorrect. After 5 failed attempts the account is locked for 15 minutes.',
+  'not-found': "That record doesn't exist, or you can't see it.",
+  'concurrency-conflict': 'Someone else changed this record. Reload it and try again.',
 };
 
 export const DEFAULT_PROBLEM_MESSAGE = 'Something went wrong. Please try again.';
@@ -26,4 +28,22 @@ export function problemMessage(body: unknown): string {
     return PROBLEM_MESSAGES[slug];
   }
   return DEFAULT_PROBLEM_MESSAGE;
+}
+
+/** The per-field messages of a `validation` problem, keyed as the API sends them; empty for any other body. */
+export function problemFieldErrors(body: unknown): Readonly<Record<string, string[]>> {
+  if (typeof body !== 'object' || body === null) {
+    return {};
+  }
+  const { type, errors } = body as { type?: unknown; errors?: unknown };
+  if (problemSlug(type) !== 'validation' || typeof errors !== 'object' || errors === null) {
+    return {};
+  }
+  const result: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(errors)) {
+    if (Array.isArray(value) && value.every((m) => typeof m === 'string')) {
+      result[key] = value;
+    }
+  }
+  return result;
 }

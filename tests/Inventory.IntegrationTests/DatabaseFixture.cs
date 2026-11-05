@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+
 using Api.Setup;
 
 using Microsoft.Data.SqlClient;
@@ -70,6 +72,15 @@ public sealed class DatabaseFixture : IAsyncLifetime
         await provisioner.CreateAsync(id, TenantName(id), CancellationToken.None);
         await provisioner.EnsureUserAsync(id, email, role, UserPassword, CancellationToken.None);
         return (id, email);
+    }
+
+    /// <summary>A client signed in as the user, with the auth cookie in its container.</summary>
+    internal static async Task<HttpClient> SignInAsync(ApiFactory app, string email)
+    {
+        var client = app.NewClient();
+        var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password = UserPassword }, TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        return client;
     }
 
     internal static string TenantName(Guid tenantId) => "T-" + tenantId;

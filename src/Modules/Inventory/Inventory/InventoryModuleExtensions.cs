@@ -1,5 +1,17 @@
 using Inventory.Contracts;
+using Inventory.Features.Items;
+using Inventory.Features.Items.CreateItem;
+using Inventory.Features.Items.DeactivateItem;
+using Inventory.Features.Items.GetItem;
+using Inventory.Features.Items.ListItems;
+using Inventory.Features.Items.UpdateItem;
+using Inventory.Features.Locations;
+using Inventory.Features.Locations.CreateLocation;
+using Inventory.Features.Locations.DeactivateLocation;
+using Inventory.Features.Locations.ListLocations;
+using Inventory.Features.Locations.UpdateLocation;
 using Inventory.Persistence;
+using Inventory.Seeding;
 
 using Kernel.Hosting;
 
@@ -23,8 +35,23 @@ public static class InventoryModuleExtensions
         builder.EnrichSqlServerDbContext<InventoryDbContext>();
         builder.Services.AddScoped<IModuleMigrator, InventoryMigrator>();
         builder.Services.AddScoped<IInventoryModule, InventoryModule>();
+        builder.Services.AddScoped<IDataSeeder, InventorySeeder>();
+        builder.Services.AddScoped<ListItemsHandler>();
+        builder.Services.AddScoped<GetItemHandler>();
+        builder.Services.AddScoped<CreateItemHandler>();
+        builder.Services.AddScoped<UpdateItemHandler>();
+        builder.Services.AddScoped<DeactivateItemHandler>();
+        builder.Services.AddScoped<ListLocationsHandler>();
+        builder.Services.AddScoped<CreateLocationHandler>();
+        builder.Services.AddScoped<UpdateLocationHandler>();
+        builder.Services.AddScoped<DeactivateLocationHandler>();
         return builder;
     }
 
-    public static IEndpointRouteBuilder MapInventoryEndpoints(this IEndpointRouteBuilder endpoints) => endpoints;
+    public static IEndpointRouteBuilder MapInventoryEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapItemEndpoints();
+        endpoints.MapLocationEndpoints();
+        return endpoints;
+    }
 }

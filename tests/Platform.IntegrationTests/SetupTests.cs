@@ -161,7 +161,8 @@ public sealed class SetupTests(DatabaseFixture db)
         after.ShouldBe(before);
         after.Tenants.ShouldBe(2);
         after.Users.ShouldBe(4);
-        after.Locations.ShouldBe(6);
+        after.Locations.ShouldBe(8);
+        after.Items.ShouldBe(20);
 
         await using var scope = app.Services.CreateAsyncScope();
         var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -187,34 +188,50 @@ public sealed class SetupTests(DatabaseFixture db)
         foreach (var tenantId in tenantIds)
         {
             await using var tenantScope = scopes.BeginScope(tenantId);
-            var kinds = await tenantScope.Services.GetRequiredService<InventoryDbContext>().Locations
-                .Where(l => l.TenantId == tenantId)
-                .Select(l => l.Kind)
-                .ToListAsync(ct);
-            kinds.Count.ShouldBe(3);
-            kinds.ShouldNotContain(LocationKind.Physical);
+            var inventory = tenantScope.Services.GetRequiredService<InventoryDbContext>();
+            var locations = await inventory.Locations.Where(l => l.TenantId == tenantId).ToListAsync(ct);
+            var items = await inventory.Items.Where(i => i.TenantId == tenantId).ToListAsync(ct);
+
+            if (tenantId == PlatformSeeder.DemoTenantId)
+            {
+                locations.Count.ShouldBe(5);
+                locations.Where(l => l.Kind == LocationKind.Physical).Select(l => l.Code).Order().ToList()
+                    .ShouldBe(["MKT", "QC"]);
+                items.Count.ShouldBe(20);
+                items.ShouldAllBe(i => i.IsActive);
+                items.Single(i => i.Sku == "RICE-WHT").BaseUnit.ShouldBe("kg");
+            }
+            else
+            {
+                locations.Count.ShouldBe(3);
+                locations.Select(l => l.Kind).ShouldNotContain(LocationKind.Physical);
+                items.ShouldBeEmpty();
+            }
         }
     }
 
-    private static async Task<(int Tenants, int Users, int Locations)> Snapshot(ApiFactory app, Guid[] tenantIds, CancellationToken ct)
+    private static async Task<(int Tenants, int Users, int Locations, int Items)> Snapshot(ApiFactory app, Guid[] tenantIds, CancellationToken ct)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
         // Locations sit under RLS, so each tenant's rows are counted from that tenant's scope.
         var locations = 0;
+        var items = 0;
         var scopes = app.Services.GetRequiredService<ITenantScopeFactory>();
         foreach (var tenantId in tenantIds)
         {
             await using var tenantScope = scopes.BeginScope(tenantId);
-            locations += await tenantScope.Services.GetRequiredService<InventoryDbContext>().Locations
-                .CountAsync(l => l.TenantId == tenantId, ct);
+            var inventory = tenantScope.Services.GetRequiredService<InventoryDbContext>();
+            locations += await inventory.Locations.CountAsync(l => l.TenantId == tenantId, ct);
+            items += await inventory.Items.CountAsync(i => i.TenantId == tenantId, ct);
         }
 
         return (
             await platform.Tenants.CountAsync(t => tenantIds.Contains(t.Id), ct),
             await platform.Users.CountAsync(u => tenantIds.Contains(u.TenantId), ct),
-            locations);
+            locations,
+            items);
     }
 
     private static async Task<List<string>> ReadStrings(SqlConnection connection, CancellationToken ct, string sql)
