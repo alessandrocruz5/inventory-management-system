@@ -5,6 +5,8 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
     'Email or password is incorrect. After 5 failed attempts the account is locked for 15 minutes.',
   'not-found': "That record doesn't exist, or you can't see it.",
   'concurrency-conflict': 'Someone else changed this record. Reload it and try again.',
+  'stock-not-zero':
+    'This still has stock. Move, use or correct the stock to zero before deactivating it.',
 };
 
 export const DEFAULT_PROBLEM_MESSAGE = 'Something went wrong. Please try again.';

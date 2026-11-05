@@ -12,7 +12,7 @@ using Shouldly;
 namespace Inventory.IntegrationTests;
 
 /// <summary>
-/// The plan's rollback (roll the schema back before reverting the code) runs <c>Items.Down</c> and then <c>TenantPolicy.Down</c>.
+/// The plan's rollback (roll the schema back before reverting the code) runs <c>Ledger.Down</c>, <c>Items.Down</c> and then <c>TenantPolicy.Down</c>.
 /// It runs here on a throwaway database, so the shared fixture database keeps the full schema.
 /// </summary>
 public sealed class MigrationRollbackTests(DatabaseFixture db)
@@ -31,6 +31,10 @@ public sealed class MigrationRollbackTests(DatabaseFixture db)
 
     private const string ItemsTable = "SELECT COUNT(*) FROM sys.tables WHERE object_id = OBJECT_ID(N'inventory.Items')";
 
+    private const string LedgerObjects =
+        "SELECT (SELECT COUNT(*) FROM sys.tables WHERE object_id IN (OBJECT_ID(N'inventory.StockDocuments'), OBJECT_ID(N'inventory.StockMovements'), OBJECT_ID(N'inventory.StockBalances'))) " +
+        "+ (SELECT COUNT(*) FROM sys.sequences WHERE object_id = OBJECT_ID(N'inventory.MovementIds'))";
+
     [Fact]
     public async Task TenantPolicy_down_removes_rls_and_the_default_and_up_reapplies()
     {
@@ -47,16 +51,19 @@ public sealed class MigrationRollbackTests(DatabaseFixture db)
             (await ScalarAsync(connectionString, SecurityObjects, ct)).ShouldBe(3);
             (await ScalarAsync(connectionString, TenantIdDefaults, ct)).ShouldBe(1);
             (await ScalarAsync(connectionString, ItemsTable, ct)).ShouldBe(1);
+            (await ScalarAsync(connectionString, LedgerObjects, ct)).ShouldBe(4);
 
             await migrator.MigrateAsync(Initial, ct);
             (await ScalarAsync(connectionString, SecurityObjects, ct)).ShouldBe(0, "Down must drop the policy, fn_tenant and the security schema");
             (await ScalarAsync(connectionString, TenantIdDefaults, ct)).ShouldBe(0, "Down must drop the TenantId default");
             (await ScalarAsync(connectionString, ItemsTable, ct)).ShouldBe(0, "Items.Down must drop the table (after its predicates)");
+            (await ScalarAsync(connectionString, LedgerObjects, ct)).ShouldBe(0, "Ledger.Down must drop the tables (after their predicates) and the sequence");
             (await context.Database.GetAppliedMigrationsAsync(ct)).ShouldBe([Initial]);
 
             await migrator.MigrateAsync(cancellationToken: ct);
             (await ScalarAsync(connectionString, SecurityObjects, ct)).ShouldBe(3, "Up must reapply after a rollback");
             (await ScalarAsync(connectionString, ItemsTable, ct)).ShouldBe(1);
+            (await ScalarAsync(connectionString, LedgerObjects, ct)).ShouldBe(4);
         }
         finally
         {
