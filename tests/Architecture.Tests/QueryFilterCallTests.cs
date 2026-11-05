@@ -28,19 +28,46 @@ public sealed class QueryFilterCallTests
     private static bool IsMigrationsFolder(string path) =>
         path.Split(Path.DirectorySeparatorChar).Contains("Migrations");
 
+    // One argument with no top-level comma: the source alone, no filter names.
+    private const string SourceOnly = @"\(\s*[^,()]+(?:\([^()]*\)[^,()]*)*\)";
+
+    // Named filters only (spec §8): IgnoreQueryFilters(["Tenant"]) would drop just that filter, a bare call drops them all.
+    private static readonly Regex[] Unnamed =
+    [
+        // Extension form: source.IgnoreQueryFilters()
+        new(@"\.\s*IgnoreQueryFilters\s*(<[^>]*>)?\s*\(\s*\)", RegexOptions.CultureInvariant),
+        // Static form: EntityFrameworkQueryableExtensions.IgnoreQueryFilters(source)
+        new(@"\bEntityFrameworkQueryableExtensions\s*\.\s*IgnoreQueryFilters\s*(<[^>]*>)?\s*" + SourceOnly, RegexOptions.CultureInvariant),
+        // using static form: IgnoreQueryFilters(source)
+        new(@"(?<!\.\s*)(?<!\w)IgnoreQueryFilters\s*(<[^>]*>)?\s*" + SourceOnly, RegexOptions.CultureInvariant),
+    ];
+
+    private static bool IsUnnamed(string code) => Unnamed.Any(r => r.IsMatch(code));
+
     [Fact]
     public void No_unnamed_IgnoreQueryFilters_in_src()
     {
-        // Named filters only (spec §8): IgnoreQueryFilters(["Tenant"]) would drop just that filter, a bare call drops them all.
-        var pattern = new Regex(@"\.\s*IgnoreQueryFilters\s*(<[^>]*>)?\s*\(\s*\)", RegexOptions.CultureInvariant);
-
         var offenders = Directory.EnumerateFiles(Path.Combine(Root, "src"), "*.cs", SearchOption.AllDirectories)
             .Where(p => !IsBuildOutput(p))
             .Where(p => !IsMigrationsFolder(p))
-            .Where(p => pattern.IsMatch(File.ReadAllText(p)))
+            .Where(p => IsUnnamed(File.ReadAllText(p)))
             .Select(Rel)
             .ToList();
 
         offenders.ShouldBeEmpty(string.Join(", ", offenders));
     }
+
+    [Theory]
+    [InlineData("db.Locations.IgnoreQueryFilters()", true)]
+    [InlineData("db.Locations\n    .IgnoreQueryFilters<Location>()", true)]
+    [InlineData("EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Locations)", true)]
+    [InlineData("EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Location>())", true)]
+    [InlineData("return IgnoreQueryFilters(db.Locations);", true)]
+    [InlineData("db.Locations.IgnoreQueryFilters([\"Tenant\"])", false)]
+    [InlineData("db.Locations.IgnoreQueryFilters([TenantSchema.FilterName])", false)]
+    [InlineData("db.Locations.IgnoreQueryFilters(names)", false)]
+    [InlineData("EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Locations, [\"Tenant\"])", false)]
+    [InlineData("return IgnoreQueryFilters(db.Locations, names);", false)]
+    public void Unnamed_pattern_matches_only_calls_without_filter_names(string code, bool unnamed) =>
+        IsUnnamed(code).ShouldBe(unnamed, code);
 }

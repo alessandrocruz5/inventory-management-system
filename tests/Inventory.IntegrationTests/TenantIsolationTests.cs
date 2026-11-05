@@ -20,10 +20,8 @@ namespace Inventory.IntegrationTests;
 /// <summary>T5: tenants stay isolated across requests and scopes, with and without the EF tenant filter (spec §11).</summary>
 public sealed class TenantIsolationTests(DatabaseFixture db)
 {
-    // T5 grows with every slice that adds a route (spec §11): each new /api route gets a probe here
+    // T5 grows with every slice that adds a route (spec §11): each new /api route gets a [ProbesRoute] probe here
     // (a tenant B route id → 404, a tenant B body id → 400) or an exemption with its reason.
-    private static readonly string[] Probed = ["GET /api/auth/me"];   // Requests_alternate_tenants_in_one_host
-
     private static readonly Dictionary<string, string> Exempt = new()
     {
         ["POST /api/auth/login"] = "anonymous; reads no tenant data",
@@ -33,6 +31,7 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     private static readonly string[] SeededCodes = ["ADJ", "CUS", "SUP"];
 
     [Fact]
+    [ProbesRoute("GET /api/auth/me")]
     public async Task Requests_alternate_tenants_in_one_host()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -134,7 +133,12 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
                 .Select(method => $"{method} {e.RoutePattern.RawText}"))
             .ToHashSet();
 
-        var expected = Probed.Concat(Exempt.Keys).ToHashSet();
+        // A route counts as probed only through a [ProbesRoute] on a real test in this class, never by a name in a list.
+        var probed = typeof(TenantIsolationTests).GetMethods()
+            .Where(m => m.IsDefined(typeof(FactAttribute), inherit: false))
+            .SelectMany(m => m.GetCustomAttributes(typeof(ProbesRouteAttribute), inherit: false).Cast<ProbesRouteAttribute>())
+            .Select(p => p.Route);
+        var expected = probed.Concat(Exempt.Keys).ToHashSet();
 
         var unlisted = routes.Except(expected).Order().ToList();
         var stale = expected.Except(routes).Order().ToList();
@@ -151,4 +155,11 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
 
     private static Task<HttpResponseMessage> Login(HttpClient client, string email) =>
         client.PostAsJsonAsync("/api/auth/login", new { email, password = DatabaseFixture.UserPassword }, TestContext.Current.CancellationToken);
+}
+
+/// <summary>Marks a T5 test as the probe for one <c>"METHOD /route"</c>; the route guard reads these.</summary>
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+internal sealed class ProbesRouteAttribute(string route) : Attribute
+{
+    public string Route { get; } = route;
 }
