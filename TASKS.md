@@ -9,7 +9,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - [x] IMS-2 — S1 Skeleton · Added · plan: [[2026-11-04-s1-skeleton]] prompts: 01, 02, 03, 04, 05, 06 · depends: — · model: sonnet (merged 2026-11-04) Skeleton: AppHost (sql 2025, api, web), ServiceDefaults, 5 module projects, Angular 22 app, T12 architecture tests (8), CI jobs `build` and `test`.
 - [x] IMS-3 — S2 Platform · Added · plan: [[2026-11-04-s2-platform]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11 · depends: IMS-2 · model: opus (merged 2026-11-04) Platform: Identity cookie auth (login/logout/me), tenants, `Api migrate` + `Api seed` modes, Inventory `Locations` + `ProvisionTenantAsync`, tenant middleware, AppHost `sql`→`migrate`→`seed`→`api`→`web`, Angular login/guard/shell, T12 `Migrate*` rule (10 arch tests), 19 integration tests.
 - [x] IMS-4 — S3 Tenancy enforcement · Added · plan: [[2026-11-04-s3-tenancy-enforcement]] prompts: 01, 02, 03, 04, 05 · depends: IMS-3 · model: opus (merged 2026-11-05) Tenancy: `TenantId` default and save interceptor, named `Tenant` filter, RLS `security.TenantPolicy` with session-context interceptor, `Locations` tenant-owned, T5 route guard, T6 catalog, T11 isolation, T12 `IgnoreQueryFilters` rule, 62 tests.
-- [ ] IMS-5 — S4 Master data · Added · plan: [[2026-11-05-s4-master-data]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09 · depends: IMS-4 · model: opus
+- [x] IMS-5 — S4 Master data · Added · plan: [[2026-11-05-s4-master-data]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09 · depends: IMS-4 · model: opus (merged 2026-11-05) Master data: `inventory.Items` with RLS, Items API (Admin writes, per-tenant SKU, `version` concurrency, deactivate idempotent under races), physical Locations API (system rows read-only), `RoleNames` and `SeedTenants` in Kernel, demo seed of QC, MKT and 20 items, `/items` (AG Grid 36.2.0) and `/locations` screens, 115 .NET and 58 web tests.
 - [ ] IMS-6 — S5a Ledger schema · Added · spec: §12 S5a · depends: IMS-5 · model: opus
 - [ ] IMS-7 — S5b Costing rules · Added · spec: §12 S5b · depends: IMS-2 · model: opus
 - [ ] IMS-8 — S5c Posting engine · Added · spec: §12 S5c · depends: IMS-6, IMS-7 · model: opus
@@ -60,3 +60,16 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - `security.TenantPolicy` is schema-bound: altering a `TenantId` column means dropping its predicates in the same migration.
 - Rolling back a migration that adds RLS: roll the schema back on that build before reverting the code.
 - `tests/Inventory.IntegrationTests` exists with the copied fixture. S5a+ integration tests go there.
+
+**Downstream (locked by IMS-5; plan [[2026-11-05-s4-master-data]]):**
+- **S5a** (the ledger tables exist; tests insert movements and balances directly as `inventory_app`):
+  - `PUT /items/{id}` rejects a SKU change once the item has a `StockMovements` row: `400 validation` with `errors.sku`.
+  - `POST /items/{id}/deactivate` and `POST /locations/{id}/deactivate` require `OnHand = 0 AND StockValue = 0` on every physical balance of that item or location. Otherwise they return `422 stock-not-zero` with the blocking balances. Location deactivation locks its balance rows `WITH (UPDLOCK, HOLDLOCK)` through `IX_Balances_Location` (spec audit `:18,:23`).
+  - S5a adds `stock-not-zero` to `ProblemTypes` and `PROBLEM_MESSAGES`. The Items and Locations screens already show `problemMessage()` for any error.
+  - Deactivate sends no version, so a racing deactivate that lost on the rowversion reloads and returns `200` when the row is already inactive. Keep that when the stock check is added.
+- **S5d** (opening stock): goes in `Inventory.Seeding.InventorySeeder`, keyed `seed:<tenant>:<sku>:<location>`. Both `Sku` and `Code` are editable, so S5d either keys on the seeded `Sku`/`Code` and skips a pair whose item or location no longer matches by natural key, or switches the seeder to a stored marker. Decide this in S5d's plan.
+- **S7**: AG Grid 36.2.0 is installed and exact-pinned. Reuse `web/src/app/core/api/paged.ts`, `problemFieldErrors` and `shared/confirm-dialog.ts`.
+- **S8**: `GET /items/{id}` gains the balance per physical location.
+- **S10**: `PUT /locations/{id}` gains `allowNegativeStock`, with the §6 lock order and the `StockBalances.AllowNegative` update. The Locations screen gains the switch. S4 deliberately ignores that field in the body.
+- **S5c and later**: endpoints follow `Features/<Area>/<Endpoint>/{Endpoint,Handler,Request,Response}.cs` with plain scoped handlers, sharing `Features/Problems.cs`, `Features/Paging.cs` and `Features/InventoryPolicies.cs`.
+- **T5 probes**: a route mapped as `""` on a group has a trailing slash in `RoutePattern.RawText` (`GET /api/items/`). Probe with the exact raw text.

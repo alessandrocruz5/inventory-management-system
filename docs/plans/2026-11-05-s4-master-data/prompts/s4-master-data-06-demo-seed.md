@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-05-s4-master-data]]"
 id: 06
 unit: IMS-5
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: [01, 02, 05]

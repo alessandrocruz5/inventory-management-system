@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -274,6 +274,32 @@ Order matters, as in IMS-4: `Items.Down` exists only in the IMS-5 build.
 ## Open questions
 - None blocking. The Assumptions above are for the audit.
 
+## Outcome
+- **Shipped:** `inventory.Items` with its RLS predicates (one migration, `Down` drops the predicates first). Items API (`GET` list and item, Admin `POST`, `PUT` with `version`, `POST …/deactivate`). Physical Locations API (`GET` list, Admin `POST`, `PUT`, `POST …/deactivate`; system rows → `400 errors.location`). `Kernel.Tenancy.RoleNames` and `Kernel.Hosting.SeedTenants`, with Platform aliasing them. `not-found` and `concurrency-conflict` slugs in Kernel and Angular. `InventorySeeder` (QC, MKT, 20 items). Angular `/items` (AG Grid 36.2.0) and `/locations`. PR #4, merged 2026-11-05 as `bf500a93`.
+- **Deviations from the plan:**
+  - The list and create probes are `GET /api/items/` and `POST /api/items/`. The trailing slash comes from the group's `""` route.
+  - `ItemsTests`/`LocationsTests` gained extra tests beyond the plan: an update to another item's SKU or location code → `400`, and the parallel deactivate test.
+  - The Codex review found concurrent deactivation returned `409`. Fixed before merge in `e86c440a`: on a conflict the handler reloads, and returns `200` if the row is already inactive.
+  - The seeder matches natural keys case-insensitively, to match the unique indexes.
+  - Locations use text Edit/Deactivate buttons, not icons, because the app has no icon font.
+- **Gotchas:**
+  - Two of about 12 full `dotnet test` runs failed transiently (Testcontainers start-up). Both test projects start SQL Server 2025 at the same time. Nine reruns passed and CI passed. This is pre-existing fixture behaviour and is not fixed here.
+  - The 375 px check (R9) is still open: nobody has yet opened `/items` and `/locations` at that width as admin and as staff.
+
 ## Log
 - 2026-11-05: planned (re-plan of IMS-5 from spec §12 S4; base `develop` @ `51923a16`, clean). User picks: defer the R7 blocking half to S5a; folder per endpoint with only the needed files; AG Grid now.
 - 2026-11-05: audited, 2 fixes applied (prompt 08 forbids an animations provider; seed rename risk in Known risks and S5d Downstream). The 5 NOTEs weren't applied.
+- 2026-11-05: build started on `IMS-5`; rollback point `c7bfb6af8bb0751a1ea03d1d97e35a33cf7da497`.
+- 2026-11-05: 01 done (opus, 0 retries): `inventory.Items` + 3 predicates in `20261105132515_Items`; catalog and rollback tests name it; 62/62 green.
+- 2026-11-05: 02 done (opus, 0 retries): `Kernel.Tenancy.RoleNames`, `Kernel.Hosting.SeedTenants` (Platform aliases them), `not-found` + `concurrency-conflict` in Kernel and Angular.
+- 2026-11-05: 03 done (sonnet, 0 retries): `GET /api/items`, `GET /api/items/{id}`, Paging/Problems, 8 ItemsTests + 2 probes; 73/73. Group `""` routes have RawText with a trailing slash (`GET /api/items/`), so probes use it.
+- 2026-11-05: 04 done (sonnet, 0 retries): Admin-only create/update/deactivate items, `InventoryPolicies.Admin`, `ItemRules`, 409 on stale version, 3 probes; 92/92.
+- 2026-11-05: 05 done (sonnet, 0 retries): Locations list/create/update/deactivate (physical only, system → 400 `errors.location`, `allowNegativeStock` ignored), 4 probes, +1 extra test (update to another code → 400); 113/113.
+- 2026-11-05: 06 done (sonnet, 0 retries + 1 fix here): `InventorySeeder` (QC, MKT, 20 items); seed-twice test updated. Fixed here: natural-key match made case-insensitive (`OrdinalIgnoreCase`) to match the CI unique indexes. 113/113, but 2 of ~12 full runs failed transiently (73 and 19 errors, Testcontainers start-up; not reproduced in 9 reruns) — watch CI.
+- 2026-11-05: 07 done (sonnet, 0 retries): `Paged<T>`, `problemFieldErrors`, `ItemsService`, `ItemDialog` (inline styles, `maxlength` attrs); web 41/41.
+- 2026-11-05: 08 done (sonnet, 0 retries): AG Grid 36.2.0 (exact; lockfile adds ag-charts-types, ag-stack), Items page, ConfirmDialog, `/items` route and nav; initial 386.55 kB, AG Grid only in lazy `items` (1.39 MB); web 45/45.
+- 2026-11-05: 09 done (sonnet, 0 retries): Locations page (mat-list, System/Inactive chips, Admin-only text Edit/Deactivate buttons; no icon font), dialog, service, `/locations` route and nav; web 58/58.
+- 2026-11-05: all 9 prompts done. Commands + E2E green (113 .NET, 58 web; migration script 3 predicates; smoke: 20 items, MKT/QC first, staff 403, admin 201). Committed `4ff40655`, PR #4, CI build + test green.
+- 2026-11-05: code-guardian-codex: REQUEST CHANGES, 2 Blockers (concurrent deactivate → 409 on items and locations). Fixed here (reload on conflict, 200 if already inactive) + 2 parallel tests (items test proven red on the old code); commit `e86c440a`; 115/115; CI re-run.
+- 2026-11-05: gate after fix: CI only (user). Ready to merge.
+- 2026-11-05: merged (PR #4, `bf500a93`). Plan done; Outcome added. R9 at 375 px still open.
