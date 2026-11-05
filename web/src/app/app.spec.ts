@@ -44,6 +44,19 @@ describe('App', () => {
     expect(logout).toHaveBeenCalledOnce();
   });
 
+  it('links to Items and Locations in the toolbar when signed in', async () => {
+    user.set(staff);
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const items = el.querySelector('a[href="/items"]');
+    expect(items).not.toBeNull();
+    expect(items?.textContent).toContain('Items');
+    const locations = el.querySelector('a[href="/locations"]');
+    expect(locations).not.toBeNull();
+    expect(locations?.textContent).toContain('Locations');
+  });
+
   it('shows no toolbar when signed out', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

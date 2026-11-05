@@ -121,6 +121,208 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     }
 
     [Fact]
+    [ProbesRoute("GET /api/items/")]
+    public async Task Each_tenant_lists_only_its_own_items()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (a, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Staff);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Staff);
+        // The same SKU in both tenants proves the unique index is per tenant at the database.
+        var idA = (await ItemsTests.AddItemsAsync(app, a, ("SAME-1", "Tenant A item", true)))[0];
+        var idB = (await ItemsTests.AddItemsAsync(app, b, ("SAME-1", "Tenant B item", true)))[0];
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+
+        foreach (var (client, expected) in new[] { (clientA, idA), (clientB, idB) })
+        {
+            var response = await client.GetAsync("/api/items", ct);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var list = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            list["items"]!.AsArray().Select(i => i!["id"]!.GetValue<Guid>()).ShouldBe([expected]);
+            list["total"]!.GetValue<int>().ShouldBe(1);
+        }
+    }
+
+    [Fact]
+    [ProbesRoute("GET /api/items/{id:guid}")]
+    public async Task Another_tenants_item_id_is_404()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (a, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Staff);
+        var (b, _) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Staff);
+        var idB = (await ItemsTests.AddItemsAsync(app, b, ("B-ONLY", "Tenant B item", true)))[0];
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+
+        var response = await clientA.GetAsync($"/api/items/{idB}", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/items/")]
+    public async Task Skus_are_unique_per_tenant()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+
+        var idA = (await ItemsTests.CreateAsync(clientA, "SAME-1", "Tenant A item", "pc", ct))["id"]!.GetValue<Guid>();
+        var idB = (await ItemsTests.CreateAsync(clientB, "SAME-1", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+
+        var list = (await (await clientA.GetAsync("/api/items", ct)).Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        var ids = list["items"]!.AsArray().Select(i => i!["id"]!.GetValue<Guid>()).ToList();
+        ids.ShouldBe([idA]);
+        ids.ShouldNotContain(idB);
+    }
+
+    [Fact]
+    [ProbesRoute("PUT /api/items/{id:guid}")]
+    public async Task Another_tenants_item_cannot_be_updated()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var itemB = await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct);
+        var idB = itemB["id"]!.GetValue<Guid>();
+        var versionB = itemB["version"]!.GetValue<string>();
+
+        var response = await clientA.PutAsJsonAsync($"/api/items/{idB}", new { sku = "HIJACK", name = "Hijacked", baseUnit = "pc", version = versionB }, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        var after = (await (await clientB.GetAsync($"/api/items/{idB}", ct)).Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        after["sku"]!.GetValue<string>().ShouldBe("B-ONLY");
+        after["name"]!.GetValue<string>().ShouldBe("Tenant B item");
+        after["version"]!.GetValue<string>().ShouldBe(versionB);
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/items/{id:guid}/deactivate")]
+    public async Task Another_tenants_item_cannot_be_deactivated()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var idB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+
+        var response = await clientA.PostAsync($"/api/items/{idB}/deactivate", null, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        var after = (await (await clientB.GetAsync($"/api/items/{idB}", ct)).Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        after["isActive"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    [ProbesRoute("GET /api/locations/")]
+    public async Task Each_tenant_lists_only_its_own_locations()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        // The same code in both tenants proves the unique index is per tenant at the database.
+        var idA = (await LocationsTests.CreateAsync(clientA, "SAME-1", "Tenant A location", ct))["id"]!.GetValue<Guid>();
+        var idB = (await LocationsTests.CreateAsync(clientB, "SAME-1", "Tenant B location", ct))["id"]!.GetValue<Guid>();
+
+        var listA = await ListLocationIdsAsync(clientA, ct);
+        var listB = await ListLocationIdsAsync(clientB, ct);
+
+        // Its own physical location plus its 3 system locations, and nothing from the other tenant.
+        listA.Count.ShouldBe(4);
+        listA.ShouldContain(idA);
+        listA.ShouldNotContain(idB);
+        listB.Count.ShouldBe(4);
+        listB.ShouldContain(idB);
+        listB.ShouldNotContain(idA);
+        listA.Intersect(listB).ShouldBeEmpty();
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/locations/")]
+    public async Task Location_codes_are_unique_per_tenant()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+
+        var responseA = await clientA.PostAsJsonAsync("/api/locations", new { code = "SAME-1", name = "Tenant A location" }, ct);
+        var responseB = await clientB.PostAsJsonAsync("/api/locations", new { code = "SAME-1", name = "Tenant B location" }, ct);
+
+        responseA.StatusCode.ShouldBe(HttpStatusCode.Created);
+        responseB.StatusCode.ShouldBe(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    [ProbesRoute("PUT /api/locations/{id:guid}")]
+    public async Task Another_tenants_location_cannot_be_updated()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct);
+        var idB = locationB["id"]!.GetValue<Guid>();
+        var versionB = locationB["version"]!.GetValue<string>();
+
+        var response = await clientA.PutAsJsonAsync($"/api/locations/{idB}", new { code = "HIJACK", name = "Hijacked", version = versionB }, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        var after = await GetLocationAsync(clientB, idB, ct);
+        after["code"]!.GetValue<string>().ShouldBe("B-ONLY");
+        after["name"]!.GetValue<string>().ShouldBe("Tenant B location");
+        after["version"]!.GetValue<string>().ShouldBe(versionB);
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/locations/{id:guid}/deactivate")]
+    public async Task Another_tenants_location_cannot_be_deactivated()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct);
+        var idB = locationB["id"]!.GetValue<Guid>();
+
+        var response = await clientA.PostAsync($"/api/locations/{idB}/deactivate", null, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        var after = await GetLocationAsync(clientB, idB, ct);
+        after["isActive"]!.GetValue<bool>().ShouldBeTrue();
+        after["version"]!.GetValue<string>().ShouldBe(locationB["version"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void Every_api_route_is_probed_or_exempt()
     {
         using var app = db.CreateApp();
@@ -144,6 +346,22 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
         var stale = expected.Except(routes).Order().ToList();
         (unlisted.Count + stale.Count).ShouldBe(0,
             $"Routes without a T5 probe or exemption: [{string.Join(", ", unlisted)}]. Listed but not mapped: [{string.Join(", ", stale)}]");
+    }
+
+    private static async Task<List<Guid>> ListLocationIdsAsync(HttpClient client, CancellationToken ct)
+    {
+        var response = await client.GetAsync("/api/locations", ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var list = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        return list["items"]!.AsArray().Select(i => i!["id"]!.GetValue<Guid>()).ToList();
+    }
+
+    private static async Task<JsonNode> GetLocationAsync(HttpClient client, Guid id, CancellationToken ct)
+    {
+        var response = await client.GetAsync("/api/locations", ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var list = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        return list["items"]!.AsArray().Single(i => i!["id"]!.GetValue<Guid>() == id)!;
     }
 
     private ApiFactory CreateSingleConnectionApp() => new(

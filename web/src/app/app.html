@@ -2,6 +2,10 @@
   <mat-toolbar class="shell-toolbar">
     <span class="app-name">Inventory</span>
     <span class="tenant">{{ user.tenantName }}</span>
+    <nav class="nav">
+      <a mat-button routerLink="/items" routerLinkActive="active">Items</a>
+      <a mat-button routerLink="/locations" routerLinkActive="active">Locations</a>
+    </nav>
     <span class="spacer"></span>
     <span class="user">{{ user.email }} ({{ user.role }})</span>
     <button mat-button type="button" (click)="signOut()">Sign out</button>

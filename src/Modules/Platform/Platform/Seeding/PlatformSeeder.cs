@@ -7,12 +7,12 @@ using Platform.Tenants;
 
 namespace Platform.Seeding;
 
-/// <summary>Two tenants with one Admin and one Staff each. Later slices add items and opening stock.</summary>
+/// <summary>Two tenants with one Admin and one Staff each. Inventory's own seeder adds branches and items.</summary>
 internal sealed class PlatformSeeder(TenantProvisioner provisioner, IConfiguration config) : IDataSeeder
 {
-    public static readonly Guid DemoTenantId = new("00000000-0000-0000-0000-00000000d001");
+    public static readonly Guid DemoTenantId = SeedTenants.Demo;
 
-    public static readonly Guid IsolationTenantId = new("00000000-0000-0000-0000-00000000d002");
+    public static readonly Guid IsolationTenantId = SeedTenants.Isolation;
 
     public async Task SeedAsync(CancellationToken cancellationToken)
     {

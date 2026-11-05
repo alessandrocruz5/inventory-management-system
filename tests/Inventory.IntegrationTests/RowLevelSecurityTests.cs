@@ -139,6 +139,7 @@ public sealed class RowLevelSecurityTests(DatabaseFixture db)
 
         var tables = await ReadStrings(connection, ct, TenantTables);
         tables.ShouldContain("inventory.Locations");
+        tables.ShouldContain("inventory.Items");
 
         var failing = new List<string>();
         foreach (var table in tables)
@@ -171,6 +172,7 @@ public sealed class RowLevelSecurityTests(DatabaseFixture db)
 
         var tables = await ReadStrings(connection, ct, TenantTables);
         tables.ShouldContain("inventory.Locations");
+        tables.ShouldContain("inventory.Items");
 
         var defaults = await ReadStrings(connection, ct,
             "SELECT SCHEMA_NAME(t.schema_id) + N'.' + t.name + N'|' + dc.definition " +
@@ -196,6 +198,7 @@ public sealed class RowLevelSecurityTests(DatabaseFixture db)
 
         var tables = await ReadStrings(connection, ct, TenantTables);
         tables.ShouldContain("inventory.Locations");
+        tables.ShouldContain("inventory.Items");
 
         var failing = await ReadStrings(connection, ct,
             "SELECT SCHEMA_NAME(t.schema_id) + N'.' + t.name + N'.' + i.name " +

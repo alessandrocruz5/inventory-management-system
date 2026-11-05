@@ -12,7 +12,7 @@ using Shouldly;
 namespace Inventory.IntegrationTests;
 
 /// <summary>
-/// The plan's rollback (roll the schema back before reverting the code) runs <c>TenantPolicy.Down</c>.
+/// The plan's rollback (roll the schema back before reverting the code) runs <c>Items.Down</c> and then <c>TenantPolicy.Down</c>.
 /// It runs here on a throwaway database, so the shared fixture database keeps the full schema.
 /// </summary>
 public sealed class MigrationRollbackTests(DatabaseFixture db)
@@ -29,6 +29,8 @@ public sealed class MigrationRollbackTests(DatabaseFixture db)
         "JOIN sys.columns c ON c.object_id = d.parent_object_id AND c.column_id = d.parent_column_id " +
         "WHERE d.parent_object_id = OBJECT_ID(N'inventory.Locations') AND c.name = N'TenantId'";
 
+    private const string ItemsTable = "SELECT COUNT(*) FROM sys.tables WHERE object_id = OBJECT_ID(N'inventory.Items')";
+
     [Fact]
     public async Task TenantPolicy_down_removes_rls_and_the_default_and_up_reapplies()
     {
@@ -44,14 +46,17 @@ public sealed class MigrationRollbackTests(DatabaseFixture db)
             await migrator.MigrateAsync(cancellationToken: ct);
             (await ScalarAsync(connectionString, SecurityObjects, ct)).ShouldBe(3);
             (await ScalarAsync(connectionString, TenantIdDefaults, ct)).ShouldBe(1);
+            (await ScalarAsync(connectionString, ItemsTable, ct)).ShouldBe(1);
 
             await migrator.MigrateAsync(Initial, ct);
             (await ScalarAsync(connectionString, SecurityObjects, ct)).ShouldBe(0, "Down must drop the policy, fn_tenant and the security schema");
             (await ScalarAsync(connectionString, TenantIdDefaults, ct)).ShouldBe(0, "Down must drop the TenantId default");
+            (await ScalarAsync(connectionString, ItemsTable, ct)).ShouldBe(0, "Items.Down must drop the table (after its predicates)");
             (await context.Database.GetAppliedMigrationsAsync(ct)).ShouldBe([Initial]);
 
             await migrator.MigrateAsync(cancellationToken: ct);
             (await ScalarAsync(connectionString, SecurityObjects, ct)).ShouldBe(3, "Up must reapply after a rollback");
+            (await ScalarAsync(connectionString, ItemsTable, ct)).ShouldBe(1);
         }
         finally
         {

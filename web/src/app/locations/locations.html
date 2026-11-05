@@ -1,0 +1,63 @@
+<div class="header">
+  <h1>Locations</h1>
+  @if (auth.isAdmin()) {
+    <button mat-flat-button type="button" (click)="openDialog(null)">New location</button>
+  }
+</div>
+
+<mat-list>
+  @for (location of rows(); track location.id) {
+    <mat-list-item class="row">
+      <div class="row-content">
+        <div class="identity">
+          <span class="code">{{ location.code }}</span>
+          <span class="name">{{ location.name }}</span>
+          @if (location.isSystem || !location.isActive) {
+            <mat-chip-set aria-label="Status">
+              @if (location.isSystem) {
+                <mat-chip>System</mat-chip>
+              }
+              @if (!location.isActive) {
+                <mat-chip>Inactive</mat-chip>
+              }
+            </mat-chip-set>
+          }
+        </div>
+        @if (auth.isAdmin() && !location.isSystem) {
+          <div class="actions">
+            <button
+              mat-stroked-button
+              type="button"
+              [attr.aria-label]="'Edit ' + location.code"
+              (click)="openDialog(location)"
+            >
+              Edit
+            </button>
+            @if (location.isActive) {
+              <button
+                mat-stroked-button
+                type="button"
+                [attr.aria-label]="'Deactivate ' + location.code"
+                (click)="deactivate(location)"
+              >
+                Deactivate
+              </button>
+            }
+          </div>
+        }
+      </div>
+    </mat-list-item>
+  } @empty {
+    @if (!loading()) {
+      <p class="empty">No locations.</p>
+    }
+  }
+</mat-list>
+
+<mat-paginator
+  [length]="total()"
+  [pageIndex]="pageIndex()"
+  [pageSize]="pageSize()"
+  [pageSizeOptions]="pageSizeOptions"
+  (page)="onPage($event)"
+/>
