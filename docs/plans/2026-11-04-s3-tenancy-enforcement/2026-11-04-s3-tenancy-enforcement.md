@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -329,3 +329,11 @@ Order matters. RLS without the session interceptor blocks every inventory insert
 ## Log
 - 2026-11-04: planned (re-plan of IMS-4 from spec §12 S3; base `develop` @ `8c626cf9`, clean). User picks: new `tests/Inventory.IntegrationTests`; T5 route guard.
 - 2026-11-04: audited, 5 fixes applied (PASS-WITH-CHANGES: 3 FIX, 2 NOTE). Ticket step: existing key IMS-4, TASKS.md line rewritten in place.
+- 2026-11-04: build started on `IMS-4`; rollback point `b2e04414ed0eeed29c53ecd7e97a696b44f74d40`.
+- 2026-11-04: 01 done (opus, in-session, 0 retries): migration `20261104152736_TenantPolicy`; kept EF's `AlterColumn` (the script emits `ADD DEFAULT … FOR [TenantId]`, no `ALTER COLUMN`); RLS policy + `fn_tenant` appended; `TenantSessionInterceptor` has a private ctor. 29/29 tests. One Testcontainers readiness flake (docker exec during the sqlcmd probe) on the first `dotnet test`, green on rerun.
+- 2026-11-04: 02 done (opus, in-session, 0 retries): named filter `"Tenant"` via generic `ConfigureTenantOwned<T>` (interface-member access translated, no `EF.Property` fallback needed); `TenantSaveChangesInterceptor` (private ctor, stamps via change tracker); `ProvisionTenantAsync` has no tenant code. No pending model changes. 29/29 tests.
+- 2026-11-04: 03 done (sonnet, in-session, 0 retries): `tests/Inventory.IntegrationTests` with the copied fixture, T6 9/9; full suite 38/38 (Architecture 10, Platform 19, Inventory 9). Deviation in test 3: moving A's `SUP` row to B raised 2601 (B's own `SUP` trips `UX_Locations_Code` before the BLOCK AFTER UPDATE predicate), so the test inserts a fresh Physical row as A and moves that; it raises 33504 as expected. Mutation check (test 1 expecting 1) failed as it should, then reverted.
+- 2026-11-05: 04 done (sonnet, in-session, 0 retries): T11 (2), T5 (5 incl. route guard), interceptor/model tests (4); Inventory.IntegrationTests 21/21, full suite 50/50 (Architecture 10, Platform 19, Inventory 21). Guard mutation (logout removed from Exempt) failed naming `POST /api/auth/logout`; interceptor mutation (SaveChanges interceptor unregistered) failed on the RLS BLOCK predicate; both restored, `cmp` clean.
+- 2026-11-05: 05 done (haiku, in-session, 0 retries): `QueryFilterCallTests` (regex for bare `IgnoreQueryFilters()`, scans `src/`); Architecture 11/11. Probe: appended `// db.Locations.IgnoreQueryFilters();` to `InventoryModule.cs`, the test failed naming that file; restored, `cmp` clean, 11/11. Format needed the final newline removed (the rest of the folder has none, but `dotnet format` enforces it here).
+- 2026-11-05: shipped as PR #3 (`76a1ab29`), CI green. Gate: code-guardian-codex (`-m gpt-5.6-terra`; config's gpt-5.4 refused) raised 1 Blocker (`AlterColumn` emits `ALTER COLUMN`), refuted by the generated script. code-guardian (Claude) raised 1 Blocker, 5 Major, 7 Minor.
+- 2026-11-05: review fixes (opus, in-session): R9 test closes and reopens in one scope (`366e4d7b`). T5 guard reads `[ProbesRoute]` from real tests, new `MigrationRollbackTests` runs `TenantPolicy.Down` on a throwaway DB, and the T12 rule catches static and `using static` unnamed calls with 10 sample cases (`120b0da3`). Each was mutation-probed: it failed as it should, then was restored with `cmp` clean. CI then failed in T11: the rollback test's `ClearAllPools` dropped T11's pooled connection in parallel; it now clears only its own pool (`393ccd03`). 62/62, CI green. Deploy-order note added to the PR body. Open Minors 7–13 are not fixed.

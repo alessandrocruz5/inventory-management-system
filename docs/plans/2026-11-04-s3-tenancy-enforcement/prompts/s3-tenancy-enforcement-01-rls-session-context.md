@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-04-s3-tenancy-enforcement]]"
 id: 01
 unit: IMS-4
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: []
