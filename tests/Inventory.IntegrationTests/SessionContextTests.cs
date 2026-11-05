@@ -30,7 +30,12 @@ public sealed class SessionContextTests(DatabaseFixture db)
         {
             var inventory = scope.Services.GetRequiredService<InventoryDbContext>();
             spidA = await Spid(inventory, ct);
-            // A second open in the same scope: the read-only key must have been reset, then set again.
+            (await SessionTenant(inventory, ct)).ShouldBe(a);
+
+            // A second open in the same scope: sp_reset_connection clears the read-only key on return to the pool,
+            // and the interceptor must set it again on the same physical connection.
+            await inventory.Database.CloseConnectionAsync();
+            (await Spid(inventory, ct)).ShouldBe(spidA, "the reopen must reuse the same physical connection");
             (await SessionTenant(inventory, ct)).ShouldBe(a);
         }
 
