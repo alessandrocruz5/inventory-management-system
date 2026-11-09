@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: in-progress
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -206,3 +206,9 @@ Revert the PR. The unit is additive: no schema, no data, no endpoint, and nothin
 - 2026-11-09: planned (option A; step-1 validation stays in S5c).
 - 2026-11-09: audited, 2 fixes applied (Codex PASS-WITH-CHANGES: harness atomicity, harness CHECK matches schema).
 - 2026-11-09: applied Codex audit (2 applied, 0 disputed).
+- 2026-11-09: build started on IMS-7; rollback point 21b6889a6269b12222ac83fc6c592037fc76f1d1.
+- 2026-11-09: 01 done (opus, 0 retries): Domain types, CostingPolicy, Inventory.UnitTests (26 tests); T12 domain rule now real. Restore needs DOTNET_SYSTEM_NET_DISABLEIPV6=1 on this machine.
+- 2026-11-09: 02 done (opus, 0 retries): PostingRules Post/Reverse, 59 unit tests. Note for S10: Reverse skips the short check when AllowNegative (as specified) while Post still rejects.
+- 2026-11-09: 03 done (sonnet, 0 retries): LedgerHarness and vector sets V, R, A, first run green; 63 unit tests; INV-1..5 and CHECK backstop after every step.
+- 2026-11-09: shipped e5b97ad4, PR #6 (includes 21b6889a audit commit, user's choice); CI green; gate: Codex review handoff.
+- 2026-11-09: Codex code review APPROVE (nothing to apply), marked approved; gate: CI only.

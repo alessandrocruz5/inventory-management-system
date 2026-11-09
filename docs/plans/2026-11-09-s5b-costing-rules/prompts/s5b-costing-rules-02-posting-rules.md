@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-09-s5b-costing-rules]]"
 id: 02
 unit: IMS-7
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: [01]
