@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-05-s5a-ledger-schema]]"
 id: 02
 unit: IMS-6
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: [01]
@@ -131,7 +131,7 @@ files:
   - Document cases:
     - type `Bogus` → `CK_StockDocuments_Type`
     - `Reversal` with no `reverses` → `CK_StockDocuments_Reversal`
-    - `Receipt` with `reverses` set → `CK_StockDocuments_Reversal`
+    - `Receipt` with `reverses` pointing at a receipt inserted in the test → `CK_StockDocuments_Reversal`
     - `Adjustment` with NULL reason → `CK_StockDocuments_ReasonCode`
     - `Adjustment` with reason `Bogus` → `CK_StockDocuments_ReasonCode`
     - `Receipt` with reason `Damaged` → `CK_StockDocuments_ReasonCode`
@@ -146,6 +146,7 @@ files:
     - physical 1 / −1 → `CK_StockBalances_Physical`
     - virtual −5 / 1 → `CK_StockBalances_VirtualValue`
   - Use a short case key plus a `switch` in the test body, so the `InlineData` stays primitive.
+  - **Every case satisfies every FK**, so the CHECK is the only constraint the row breaks. Use an item, locations and a document inserted in the test, never a random Guid. FK and CHECK violations are both 547, and which one SQL Server names depends on the plan, so a broken FK makes the `Message` assertion nondeterministic.
 - **`Checks_accept_the_edge_rows`:** each of these inserts succeeds:
   - a revaluation movement (quantity 0, cost 18.0000)
   - a physical balance −2 / −100 with `allowNegative` true

@@ -10,7 +10,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - [x] IMS-3 — S2 Platform · Added · plan: [[2026-11-04-s2-platform]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11 · depends: IMS-2 · model: opus (merged 2026-11-04) Platform: Identity cookie auth (login/logout/me), tenants, `Api migrate` + `Api seed` modes, Inventory `Locations` + `ProvisionTenantAsync`, tenant middleware, AppHost `sql`→`migrate`→`seed`→`api`→`web`, Angular login/guard/shell, T12 `Migrate*` rule (10 arch tests), 19 integration tests.
 - [x] IMS-4 — S3 Tenancy enforcement · Added · plan: [[2026-11-04-s3-tenancy-enforcement]] prompts: 01, 02, 03, 04, 05 · depends: IMS-3 · model: opus (merged 2026-11-05) Tenancy: `TenantId` default and save interceptor, named `Tenant` filter, RLS `security.TenantPolicy` with session-context interceptor, `Locations` tenant-owned, T5 route guard, T6 catalog, T11 isolation, T12 `IgnoreQueryFilters` rule, 62 tests.
 - [x] IMS-5 — S4 Master data · Added · plan: [[2026-11-05-s4-master-data]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09 · depends: IMS-4 · model: opus (merged 2026-11-05) Master data: `inventory.Items` with RLS, Items API (Admin writes, per-tenant SKU, `version` concurrency, deactivate idempotent under races), physical Locations API (system rows read-only), `RoleNames` and `SeedTenants` in Kernel, demo seed of QC, MKT and 20 items, `/items` (AG Grid 36.2.0) and `/locations` screens, 115 .NET and 58 web tests.
-- [ ] IMS-6 — S5a Ledger schema · Added · spec: §12 S5a · depends: IMS-5 · model: opus
+- [x] IMS-6 — S5a Ledger schema · Added · plan: [[2026-11-05-s5a-ledger-schema]] prompts: 01, 02, 03, 04 · depends: IMS-5 · model: opus (merged 2026-11-09) Ledger schema: `StockDocuments`, `StockMovements`, `StockBalances` and the `MovementIds` sequence with RLS predicates, append-only triggers (51000) and `DENY UPDATE, DELETE` for `inventory_app`; SKU immutability and `stock-not-zero` deactivation guards (item and location) under `HOLDLOCK, FORCESEEK` locks; T7 and schema tests; 152 .NET and 59 web tests.
 - [ ] IMS-7 — S5b Costing rules · Added · spec: §12 S5b · depends: IMS-2 · model: opus
 - [ ] IMS-8 — S5c Posting engine · Added · spec: §12 S5c · depends: IMS-6, IMS-7 · model: opus
 - [ ] IMS-9 — S5d Opening stock · Added · spec: §12 S5d · depends: IMS-8 · model: opus
@@ -73,3 +73,23 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - **S10**: `PUT /locations/{id}` gains `allowNegativeStock`, with the §6 lock order and the `StockBalances.AllowNegative` update. The Locations screen gains the switch. S4 deliberately ignores that field in the body.
 - **S5c and later**: endpoints follow `Features/<Area>/<Endpoint>/{Endpoint,Handler,Request,Response}.cs` with plain scoped handlers, sharing `Features/Problems.cs`, `Features/Paging.cs` and `Features/InventoryPolicies.cs`.
 - **T5 probes**: a route mapped as `""` on a group has a trailing slash in `RoutePattern.RawText` (`GET /api/items/`). Probe with the exact raw text.
+
+**Downstream (locked by IMS-6; plan [[2026-11-05-s5a-ledger-schema]]):**
+- **S5c (posting engine):**
+  - The tables, the sequence and `HasTrigger` exist. Every document and movement column is final at insert: `inventory_app` is denied `UPDATE`/`DELETE` on both tables, and the triggers throw for the owner.
+  - Take movement ids with `NEXT VALUE FOR [inventory].[MovementIds]`; `StockMovement.Id` is `ValueGeneratedNever`.
+  - A raw-SQL document insert must supply `Id`, or insert the document through EF inside the strategy's transaction. EF inserts work because the triggers are declared.
+  - Lock hints need no `UPDATE` permission: `UPDLOCK`/`XLOCK` on `StockDocuments`/`StockMovements` work for `inventory_app` despite the deny (code-guardian, verified). Read the ledger with shared locks anyway: U locks would serialize readers for no gain.
+  - `NEXT VALUE FOR` through `SqlQuery<long>(…).SingleAsync()` fails with 11719 (EF wraps it in a derived table); use `ToListAsync()` then `.Single()`. `LineNo` is reserved: write `[LineNo]` in raw SQL.
+- **S5c (lock order):**
+  - Deactivation takes the balance locks, then the item or location row.
+  - A SKU edit takes a `HOLDLOCK` range on `IX_Movements_Item`, then the item row.
+  - The three master-data reads carry `FORCESEEK`. Add no index or statistic that would make them unseekable (8622).
+  - A posting's FK check on `Items` takes a shared lock during the movement insert. A SKU edit racing a first posting can therefore deadlock (1205), and the execution strategy retries it. Both sides are already under the strategy. Cover this in S5c's audit.
+  - Deactivation vs a posting that inserts a new balance can deadlock (1205): the posting inserts `(I, L2)` at step 5; the deactivation U-locks `(I, L1)` and waits on `(I, L2)`; the posting's step 6 needs `(I, L1)`. The same holds for a location through `IX_Balances_Location`. Both sides retry under the strategy, so it isn't a correctness bug; cover it in S5c's audit and parallel tests (spec audit NOTE 1).
+  - `HOLDLOCK` also locks the next key past the range, which can be another item's balance, or another tenant's when the item has none. A deactivation can briefly block an unrelated posting at step 6.
+- **S6 (IMS-10, adjustments):** validate `reasonCode` at the request: required and in the `AdjustmentReason` enum on adjustments, absent on every other type, returning `400 validation` with `errors.reasonCode`. Reversals of adjustments store NULL. Otherwise the stricter `CK_StockDocuments_ReasonCode` surfaces as an unmapped 547 → `500`.
+- **S7:** decide on `IX StockDocuments (TenantId, PostedAt)` for the `GET /documents` date filter (spec audit NOTE `:35`).
+- **Tests:** `tests/Inventory.IntegrationTests/LedgerRows.cs` inserts documents, movements and balances as `inventory_app` on a raw connection. It also has `WaitUntilBlockedAsync` for lock tests. S5c+ tests post through the API instead, but can reuse the lock helper.
+- **Rollback:** the object `DENY`s live in `DatabasePrincipals`, not the migration. After a `dotnet ef database update` re-up, run `migrate` to restore them; the triggers still block `UPDATE`/`DELETE` meanwhile.
+- **Tests:** a plain `dotnet test` occasionally hits a Testcontainers SQL Server start-up crash (`handle-crash.sh`) when the two assemblies start containers at once; `--max-parallel-test-modules 1` avoids it.

@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-05-s5a-ledger-schema]]"
 id: 04
 unit: IMS-6
-status: todo
+status: done
 model: haiku
 effort: low
 depends_on: []

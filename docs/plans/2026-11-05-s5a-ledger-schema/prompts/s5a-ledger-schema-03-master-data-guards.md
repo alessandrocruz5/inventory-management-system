@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-05-s5a-ledger-schema]]"
 id: 03
 unit: IMS-6
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: [01, 02]
@@ -96,9 +96,10 @@ private async Task<Results<Ok<ItemResponse>, ProblemHttpResult>> DeactivateAsync
     }
 
     // Spec §6: lock the item's balances, then check them, then update the item. HOLDLOCK also locks the empty
-    // key range, so a posting can't add a balance row for this item before we commit.
+    // key range, so a posting can't add a balance row for this item before we commit. FORCESEEK keeps that
+    // range to this item: a scan would range-lock the tenant's whole slice.
     var blocking = await db.StockBalances
-        .FromSql($"SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, HOLDLOCK) WHERE [ItemId] = {id}")
+        .FromSql($"SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, HOLDLOCK, FORCESEEK) WHERE [ItemId] = {id}")
         .AsNoTracking()
         .Where(b => !b.IsVirtual && (b.OnHand != 0 || b.StockValue != 0))
         .OrderBy(b => b.LocationId)
@@ -130,6 +131,7 @@ private async Task<Results<Ok<ItemResponse>, ProblemHttpResult>> DeactivateAsync
 }
 ```
 - The item's balances seek the clustered PK prefix `(TenantId, ItemId)`. The EF `Tenant` filter and RLS supply `TenantId`; never write `TenantId` in Features (a review grep enforces this).
+- `FORCESEEK` turns a plan that can't seek into error 8622 in the tests, instead of a silent over-lock in production. All three hinted reads in this prompt carry it. If any test fails with `SqlException.Number == 8622`, **stop and report**: don't drop the hint, and don't add `TenantId` to the SQL.
 - Virtual balances never block. The Supplier balance ends at minus everything received.
 - If the `Results<…>` union doesn't infer across the `return`s, add explicit casts. Don't change the endpoint or the result type.
 
@@ -137,10 +139,10 @@ private async Task<Results<Ok<ItemResponse>, ProblemHttpResult>> DeactivateAsync
 - Apply the same shape. Keep the system-location `400` (lines 21-24) *before* the lock, after the 404.
 - The locked read goes through the index the spec names:
   ```csharp
-  .FromSql($"SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, HOLDLOCK, INDEX([IX_Balances_Location])) WHERE [LocationId] = {id}")
+  .FromSql($"SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, HOLDLOCK, FORCESEEK, INDEX([IX_Balances_Location])) WHERE [LocationId] = {id}")
   ```
   Filter with `b.OnHand != 0 || b.StockValue != 0` and `OrderBy(b => b.ItemId)`.
-- The `INDEX` hint keeps the range lock to this location's slice. Without it, the optimizer can scan the tenant's clustered range and block every posting in the tenant.
+- The `INDEX` and `FORCESEEK` hints keep the range lock to this location's slice. Without them, the optimizer can scan the tenant's clustered range, or the whole index, and block every posting in the tenant. The 8622 rule in step 3 applies.
 - Keep the reload-on-conflict path and the existing result type `Results<Ok<LocationResponse>, ValidationProblem, ProblemHttpResult>`.
 
 **5. `Features/Items/UpdateItem/Handler.cs`.**
@@ -152,10 +154,11 @@ private async Task<Results<Ok<ItemResponse>, ProblemHttpResult>> DeactivateAsync
      ```csharp
      // Spec §5: the SKU is immutable once the item has a movement. HOLDLOCK range-locks the item's slice of
      // IX_Movements_Item until commit, so a first posting can't land between this check and the update.
-     // No UPDLOCK: inventory_app is denied UPDATE on StockMovements, and a shared range lock already blocks inserts.
+     // FORCESEEK keeps that range to this item. No UPDLOCK: inventory_app is denied UPDATE on StockMovements,
+     // and a shared range lock already blocks inserts.
      if (!string.Equals(item.Sku, sku, StringComparison.Ordinal)
          && await db.StockMovements
-             .FromSql($"SELECT * FROM [inventory].[StockMovements] WITH (HOLDLOCK, INDEX([IX_Movements_Item])) WHERE [ItemId] = {id}")
+             .FromSql($"SELECT * FROM [inventory].[StockMovements] WITH (HOLDLOCK, FORCESEEK, INDEX([IX_Movements_Item])) WHERE [ItemId] = {id}")
              .AnyAsync(cancellationToken))
      {
          errors["sku"] = SkuInUse;
@@ -226,4 +229,7 @@ dotnet test
 ! grep -rn --include='*.cs' 'S5a' src/Modules/Inventory/Inventory/Features
 ```
 - The 7 new `ItemsTests` and 3 new `LocationsTests` pass. Both `Concurrent_deactivations_all_succeed` tests and the T5 probes in `TenantIsolationTests` still pass.
-- Each lock test fails if its lock hint is removed. Check this once by deleting `HOLDLOCK` locally, running the test and restoring it; don't commit that.
+- Each lock test fails if its lock hint is removed. Check this once locally, then restore the hint; don't commit the change:
+  - `Sku_change_waits_for_an_uncommitted_first_movement`: remove `HOLDLOCK`.
+  - Each `Deactivate_waits_for_an_uncommitted_balance` (item and location): remove the whole `WITH (…)` hint. `UPDLOCK` alone still waits on the holder's uncommitted row, so removing only `HOLDLOCK` leaves these green, and that is expected.
+- The empty-range half of `HOLDLOCK` on the deactivate reads (blocking a balance *insert* that starts after the lock) is argued from spec §6, not tested. A deterministic test would need the handler to pause mid-transaction. Don't add a hook for it.

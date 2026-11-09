@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: draft
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -95,13 +95,16 @@ The scope also includes the S5a items that IMS-3, IMS-4 and IMS-5 locked in TASK
 - **`ConfigureConventions`:** `Properties<decimal>().HavePrecision(19, 4)` sets the review constraint once. `Conventions.Remove<ForeignKeyIndexConvention>()` keeps EF from adding three unread NC indexes (From, To, `ReversesMovementId`) to the hottest insert table. The §5 sketch is the full index list. `Items` and `Locations` have no FKs, so their model doesn't change.
 - **Grants go in `DatabasePrincipals`**, not the migration. The user doesn't exist yet on a fresh database's first migration, and `MigrateCommand` ensures principals after migrating. It uses `DENY UPDATE, DELETE` on both ledger tables. `DELETE` is belt and braces: a later schema-level `DELETE` grant must not reach the ledger. It adds an explicit `GRANT UPDATE` on the sequence, as §8 says, even though the schema grant already covers it.
 - **The trigger error is `THROW 51000`**, one trigger per table, named `TR_StockDocuments_AppendOnly` and `TR_StockMovements_AppendOnly`. A test compares EF's declared triggers with `sys.triggers`, which turns the Hidden-coupling line into a check.
-- **SKU check (R8) takes `WITH (HOLDLOCK, INDEX([IX_Movements_Item]))` inside a transaction**, only when the SKU actually changes (ordinal). The serializable range lock blocks a first movement insert for that item until the edit commits. It deliberately omits `UPDLOCK`, because `inventory_app` is denied `UPDATE` on `StockMovements`, and a shared range lock is enough to block inserts.
-- **Deactivation (R9)** runs in `CreateExecutionStrategy().ExecuteAsync` with `ChangeTracker.Clear()` and a transaction. The order is: read the row (404 and already-inactive checks), lock the balances, check, update, commit. Items lock through the clustered PK prefix `(TenantId, ItemId)`. Locations lock `WITH (UPDLOCK, HOLDLOCK, INDEX([IX_Balances_Location]))`. The S4 reload-on-conflict path stays as it is.
+- **SKU check (R8) takes `WITH (HOLDLOCK, FORCESEEK, INDEX([IX_Movements_Item]))` inside a transaction**, only when the SKU actually changes (ordinal). The serializable range lock blocks a first movement insert for that item until the edit commits. It deliberately omits `UPDLOCK`, because `inventory_app` is denied `UPDATE` on `StockMovements`, and a shared range lock is enough to block inserts.
+- **Deactivation (R9)** runs in `CreateExecutionStrategy().ExecuteAsync` with `ChangeTracker.Clear()` and a transaction. The order is: read the row (404 and already-inactive checks), lock the balances, check, update, commit. Items lock `WITH (UPDLOCK, HOLDLOCK, FORCESEEK)` through the clustered PK prefix `(TenantId, ItemId)`. Locations lock `WITH (UPDLOCK, HOLDLOCK, FORCESEEK, INDEX([IX_Balances_Location]))`. The S4 reload-on-conflict path stays as it is.
+- **`FORCESEEK` on all three hinted reads** (audit 2026-11-05). The inner SQL can't name `TenantId`, so the seek depends on the optimizer pushing the EF filter and RLS predicate into the derived table. If it ever scans, `HOLDLOCK` would range-lock the tenant's slice or the whole index and silently serialize postings. With `FORCESEEK`, a plan that can't seek fails with 8622 in the tests instead; prompt 03 stops and reports on 8622.
+- **`ReasonCode` CHECK accepted as stricter than the sketch** (audit 2026-11-05): required and in the enum on `Adjustment`, NULL on every other type, including the reversal of an adjustment. S6 must validate it at the request so it never reaches the CHECK as an unmapped 547 → `500` (see Downstream).
+- **Lock tests prove the wait, not the empty range** (audit 2026-11-05). The SKU test fails without `HOLDLOCK`; the deactivate tests fail only without the whole hint, because `UPDLOCK` alone waits on the holder's uncommitted row. The empty-range half of `HOLDLOCK` on deactivation is argued from spec §6, not tested: a deterministic test would need a mid-transaction hook in the handler.
 - **The `stock-not-zero` body** has a `balances` extension: a list of `{ itemId, locationId, onHand, stockValue }`, ordered by the clustered key.
 - **Lock tests are deterministic.** A raw `inventory_app` transaction holds an uncommitted row. The test polls `sys.dm_exec_requests` (as `sa`) until the API request is blocked by that session, then commits. Without the lock hint, RCSI would let the request finish early with the wrong answer, so the test fails.
 
 **Assumptions** (for `/audit-plan` to challenge):
-- `ReasonCode` is **required** on an `Adjustment` and `NULL` on every other type, including the reversal of an adjustment. The CHECK is `([Type] = 'Adjustment' AND [ReasonCode] IS NOT NULL AND [ReasonCode] IN (…)) OR ([Type] <> 'Adjustment' AND [ReasonCode] IS NULL)`. `IS NOT NULL` is needed because a CHECK passes on UNKNOWN. §5 says "adjustments only", and §9/§10 always send a reason. This is stricter than the bare sketch, but it adds no column.
+- *(Accepted by the audit; see Decisions and the S6 Downstream line.)* `ReasonCode` is **required** on an `Adjustment` and `NULL` on every other type, including the reversal of an adjustment. The CHECK is `([Type] = 'Adjustment' AND [ReasonCode] IS NOT NULL AND [ReasonCode] IN (…)) OR ([Type] <> 'Adjustment' AND [ReasonCode] IS NULL)`. `IS NOT NULL` is needed because a CHECK passes on UNKNOWN. §5 says "adjustments only", and §9/§10 always send a reason. This is stricter than the bare sketch, but it adds no column.
 - `stock-not-zero` lists every blocking balance with no cap. Sprint-1 tenants are small shops, so a location's list is at most a few hundred rows.
 - A case-only SKU edit (`ab-1` → `AB-1`) counts as a change and is refused after the first movement. The stored label changes.
 - `INSTEAD OF` triggers and RLS BLOCK predicates can coexist on one table. Prompt 01 stops and reports if the migration refuses it.
@@ -124,11 +127,16 @@ The scope also includes the S5a items that IMS-3, IMS-4 and IMS-5 locked in TASK
   - The tables, the sequence and `HasTrigger` exist. Every document and movement column is final at insert: `inventory_app` is denied `UPDATE`/`DELETE` on both tables, and the triggers throw for the owner.
   - Take movement ids with `NEXT VALUE FOR [inventory].[MovementIds]`; `StockMovement.Id` is `ValueGeneratedNever`.
   - A raw-SQL document insert must supply `Id`, or insert the document through EF inside the strategy's transaction. EF inserts work because the triggers are declared.
-  - Don't put `UPDLOCK` on `StockDocuments`/`StockMovements` (the `UPDATE` deny).
+  - Lock hints need no `UPDATE` permission: `UPDLOCK`/`XLOCK` on `StockDocuments`/`StockMovements` work for `inventory_app` despite the deny (code-guardian, verified). Read the ledger with shared locks anyway: U locks would serialize readers for no gain.
+  - `NEXT VALUE FOR` through `SqlQuery<long>(…).SingleAsync()` fails with 11719 (EF wraps it in a derived table); use `ToListAsync()` then `.Single()`. `LineNo` is reserved: write `[LineNo]` in raw SQL.
 - **S5c (lock order):**
   - Deactivation takes the balance locks, then the item or location row.
   - A SKU edit takes a `HOLDLOCK` range on `IX_Movements_Item`, then the item row.
+  - The three master-data reads carry `FORCESEEK`. Add no index or statistic that would make them unseekable (8622).
   - A posting's FK check on `Items` takes a shared lock during the movement insert. A SKU edit racing a first posting can therefore deadlock (1205), and the execution strategy retries it. Both sides are already under the strategy. Cover this in S5c's audit.
+  - Deactivation vs a posting that inserts a new balance can deadlock (1205): the posting inserts `(I, L2)` at step 5; the deactivation U-locks `(I, L1)` and waits on `(I, L2)`; the posting's step 6 needs `(I, L1)`. The same holds for a location through `IX_Balances_Location`. Both sides retry under the strategy, so it isn't a correctness bug; cover it in S5c's audit and parallel tests (spec audit NOTE 1).
+  - `HOLDLOCK` also locks the next key past the range, which can be another item's balance, or another tenant's when the item has none. A deactivation can briefly block an unrelated posting at step 6.
+- **S6 (IMS-10, adjustments):** validate `reasonCode` at the request: required and in the `AdjustmentReason` enum on adjustments, absent on every other type, returning `400 validation` with `errors.reasonCode`. Reversals of adjustments store NULL. Otherwise the stricter `CK_StockDocuments_ReasonCode` surfaces as an unmapped 547 → `500`.
 - **S7:** decide on `IX StockDocuments (TenantId, PostedAt)` for the `GET /documents` date filter (spec audit NOTE `:35`).
 - **Tests:** `tests/Inventory.IntegrationTests/LedgerRows.cs` inserts documents, movements and balances as `inventory_app` on a raw connection. It also has `WaitUntilBlockedAsync` for lock tests. S5c+ tests post through the API instead, but can reuse the lock helper.
 
@@ -201,7 +209,7 @@ All paths are relative to the repo root. `Inv` = `src/Modules/Inventory/Inventor
 - The policy is schema-bound, so altering a `TenantId` column later means dropping its predicates in the same migration (IMS-4).
 - Roll the schema back on this build before reverting the code (IMS-4).
 - `HasDefaultValue(0m)` on `OnHand`/`StockValue` makes `0` EF's sentinel. An insert of 0 gets the database default, which is also 0, so this is harmless.
-- `FromSql` composed with `Where` puts the hinted `SELECT` in a derived table, and the lock hint applies to the inner table access. `HOLDLOCK` range-locks the whole seek range whatever the outer filter.
+- `FromSql` composed with `Where` puts the hinted `SELECT` in a derived table, and the lock hint applies to the inner table access. `HOLDLOCK` range-locks whatever range the access path reads, whatever the outer filter. `FORCESEEK` guarantees that path is a seek on `(TenantId, ItemId)` or `(TenantId, LocationId)`; a plan that can't seek fails with 8622 rather than range-locking the tenant or the index.
 - Testcontainers start-up flakes (S4 Log: 2 of about 12 full runs). Prompt 02/03's lock tests have a 10 s ceiling, so they don't add timing flakes.
 - Machine prerequisites: `DOTNET_SYSTEM_NET_DISABLEIPV6=1`, the trusted dev cert and `SSL_CERT_DIR`.
 
@@ -296,6 +304,7 @@ gh pr checks IMS-6                       # build ✓  test ✓
 The order matters, as in IMS-4 and IMS-5. `Ledger.Down` exists only in the IMS-6 build.
 1. On the IMS-6 build, roll the dev database back first. As `sa`, run `dotnet ef database update Items --project src/Modules/Inventory/Inventory --startup-project src/Api --context InventoryDbContext --connection "<sa connection string>"`. `Down` drops the nine predicates, then the three tables (with their triggers and object permissions), then the sequence. Alternatively, drop the AppHost's SQL volume.
 2. Then revert the IMS-6 merge commit on `develop`. The old `DatabasePrincipals` has no `DENY` lines, so `migrate` still succeeds.
+- The object `DENY`s live in `DatabasePrincipals`, not the migration. A re-up with `dotnet ef database update` restores the tables without them, so run `migrate` (which re-runs `EnsureSql`) afterwards. The triggers still block `UPDATE`/`DELETE` in the gap.
 - This path is valid only while the ledger holds no real postings. S5a ships no posting path, so the tables hold test rows at most. After S5c merges, a rollback is a forward fix, never a `Down` (no hard deletes).
 
 ## Open questions
@@ -303,3 +312,27 @@ The order matters, as in IMS-4 and IMS-5. `Ledger.Down` exists only in the IMS-6
 
 ## Log
 - 2026-11-05: planned (re-plan of IMS-6 from spec §12 S5a and the IMS-3/4/5 Downstream notes; base `develop` @ `f1ef4512`, clean). No clarification round: no gap changed the design. Gaps are under Assumptions.
+- 2026-11-05: audited (PASS-WITH-CHANGES), 4 fixes applied: `FORCESEEK` on the three hinted reads (prompt 03), the lock-test hint-removal check reworded (prompt 03), CHECK cases satisfy every FK (prompt 02), `ReasonCode` CHECK accepted with an S6 Downstream line. The two NOTEs are not applied.
+- 2026-11-05: build started on `IMS-6`; rollback point `908f543eb110f7c3efc93a1b3ebab2013e07d7f3`.
+- 2026-11-05: 04 done (haiku, 0 retries): `stock-not-zero` in `PROBLEM_MESSAGES` plus a spec case; web lint, build and 59 tests green.
+- 2026-11-05: 01 done (opus, 0 retries): `Ledger` migration (`20261105155422`), 3 entities, 2 enums, 9 predicates, 2 triggers; 115 tests green. Deviation: EF emits `CREATE SEQUENCE … START WITH 1 INCREMENT BY 1` without `AS bigint` (bigint is SQL Server's default), so the E2E `AS bigint` grep is replaced by the `sys.sequences` type check.
+- 2026-11-06: 02 done (opus, 0 retries): `DENY UPDATE, DELETE` on both ledger tables plus the sequence grant, T7 (4 tests), `LedgerSchemaTests` (21), `LedgerRows`; 140 tests green. Findings for S5c: `ALTER SECURITY POLICY` as `inventory_app` fails with 33268 (not 15151/15247); `NEXT VALUE FOR` through `SqlQuery<long>().SingleAsync()` fails with 11719 (EF wraps it in a derived table), so use `ToListAsync().Single()`; `LineNo` is reserved and needs `[LineNo]` in raw SQL. The agent saw 3 Testcontainers start-up crashes (`handle-crash.sh`) before a clean run; my verify run was clean first time.
+- 2026-11-06: 03 done (opus, 0 retries): `stock-not-zero` (Kernel + `Problems.StockNotZero` with `balances`), SKU immutability under `HOLDLOCK, FORCESEEK, INDEX([IX_Movements_Item])`, both deactivations lock-check-update in the strategy and a transaction; 10 new tests, 150 green. Hint-removal checks: all 3 lock tests fail without their hint. No 8622.
+- 2026-11-06: E2E verification green on `IMS-6`: all `## Commands`, migration-script greps (3 tables, 9 predicates, 2 triggers, 5 indexes, 5 decimals, no cascade/float), model in sync, review-constraint greps clean, AppHost on the dev volume applied `Ledger` and the 5 object permissions, login 200, items 200. One plain `dotnet test` hit the Testcontainers start-up crash (19 fixture failures); serial rerun and the next plain run were 150/150.
+- 2026-11-06: code-guardian: APPROVE WITH NITS, no Blockers. All 4 findings fixed (opus, 0 retries): zero-stock lock tests for item and location deactivation (they assert `LCK_M_RIn_NL` on the insert probe, because a bare 1222 also comes from the FK check on the holder's row; both fail without the hint), the `UPDLOCK` comment's reason corrected, a retry after a succeeded commit returns 200, and T7 truncates `StockDocuments` (1088). 152 green; lock tests 3/3 reruns. Downstream and Rollback notes added.
+- 2026-11-09: IMS-6 merged (PR #5, `12615a5b`). Plan done.
+
+## Outcome
+**Shipped (PR #5, merged 2026-11-09):** the `Ledger` migration (three tables, `MovementIds`, nine RLS predicates, two `INSTEAD OF` triggers); `DENY UPDATE, DELETE` and the sequence grant in `DatabasePrincipals`; T7 and `LedgerSchemaTests`; SKU immutability and the `stock-not-zero` guards for items and locations; the Kernel and Angular slug. 152 .NET and 59 web tests.
+
+**Deviations from the plan:**
+- EF emits the sequence without `AS bigint` (SQL Server's default); the type is asserted through `sys.sequences`.
+- `ALTER SECURITY POLICY` as `inventory_app` fails with 33268, not 15151/15247.
+- code-guardian (APPROVE WITH NITS) added three things beyond the prompts: zero-stock lock tests that assert the insert waits on `LCK_M_RIn_NL` (a bare 1222 also comes from the FK check), a retry-after-commit path in `UpdateItem`, and `TRUNCATE StockDocuments` in T7.
+
+**Gotchas:**
+- `NEXT VALUE FOR` through `SqlQuery<long>().SingleAsync()` fails with 11719; `[LineNo]` needs brackets in raw SQL.
+- A lock hint needs no `UPDATE` permission, so the deny doesn't stop `UPDLOCK` on the ledger. The original comment and Downstream line said otherwise and were corrected.
+- Testcontainers start-up crashes (`handle-crash.sh`) hit several plain `dotnet test` runs; serial runs avoid it.
+
+**Memory:** the S5c/S6/S7 notes are in TASKS.md under "locked by IMS-6". No new `## Review constraints` rule or High-stakes glob is proposed.
