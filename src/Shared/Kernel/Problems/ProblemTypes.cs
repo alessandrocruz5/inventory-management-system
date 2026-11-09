@@ -18,6 +18,9 @@ public static class ProblemTypes
     /// <summary>The row changed since the client read it (a stale <c>version</c>), or retries ran out.</summary>
     public const string ConcurrencyConflict = "concurrency-conflict";
 
+    /// <summary>Deactivation is blocked: a physical balance still has quantity or value (spec §6).</summary>
+    public const string StockNotZero = "stock-not-zero";
+
     /// <summary>The problem <c>type</c> for a slug.</summary>
     public static string Uri(string slug) => Prefix + slug;
 }

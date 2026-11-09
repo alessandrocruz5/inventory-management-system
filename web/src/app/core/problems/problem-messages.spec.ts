@@ -39,4 +39,10 @@ describe('problemMessage', () => {
       PROBLEM_MESSAGES['concurrency-conflict'],
     );
   });
+
+  it('maps stock-not-zero', () => {
+    expect(problemMessage({ type: '/problems/stock-not-zero', status: 422, balances: [] })).toBe(
+      PROBLEM_MESSAGES['stock-not-zero'],
+    );
+  });
 });

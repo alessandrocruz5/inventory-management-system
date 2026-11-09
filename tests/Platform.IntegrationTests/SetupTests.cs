@@ -61,7 +61,7 @@ public sealed class SetupTests(DatabaseFixture db)
     }
 
     [Fact]
-    public async Task Inventory_app_has_exactly_the_s2_grants()
+    public async Task Inventory_app_has_exactly_its_grants()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var connection = new SqlConnection(db.AdminConnectionString);
@@ -85,6 +85,21 @@ public sealed class SetupTests(DatabaseFixture db)
             "GRANT:platform:INSERT",
             "GRANT:platform:SELECT",
             "GRANT:platform:UPDATE",
+        ]);
+
+        var objectGrants = await ReadStrings(connection, ct, """
+            SELECT p.state_desc COLLATE DATABASE_DEFAULT + N':' + SCHEMA_NAME(o.schema_id) COLLATE DATABASE_DEFAULT + N'.' + o.name COLLATE DATABASE_DEFAULT + N':' + p.permission_name COLLATE DATABASE_DEFAULT
+            FROM sys.database_permissions p
+            JOIN sys.objects o ON o.object_id = p.major_id
+            WHERE p.class = 1 AND p.grantee_principal_id = USER_ID(N'inventory_app')
+            """);
+        objectGrants.Order().ToList().ShouldBe(
+        [
+            "DENY:inventory.StockDocuments:DELETE",
+            "DENY:inventory.StockDocuments:UPDATE",
+            "DENY:inventory.StockMovements:DELETE",
+            "DENY:inventory.StockMovements:UPDATE",
+            "GRANT:inventory.MovementIds:UPDATE",
         ]);
 
         var roles = await ReadStrings(connection, ct, """

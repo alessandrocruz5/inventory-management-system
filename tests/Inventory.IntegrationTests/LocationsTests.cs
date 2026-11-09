@@ -8,6 +8,7 @@ using Inventory.Persistence;
 
 using Kernel.Tenancy;
 
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -266,6 +267,107 @@ public sealed class LocationsTests(DatabaseFixture db)
             response.StatusCode.ShouldBe(HttpStatusCode.OK);
             (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["isActive"]!.GetValue<bool>().ShouldBeFalse();
         }
+    }
+
+    [Fact]
+    public async Task Deactivate_is_422_while_a_balance_is_not_zero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var stocked = await LedgerRows.AddItemAsync(c, "AB-1", ct);
+        var empty = await LedgerRows.AddItemAsync(c, "AB-2", ct);
+        await LedgerRows.AddBalanceAsync(c, stocked, id, isVirtual: false, allowNegative: false, 3m, 30m, ct);
+        await LedgerRows.AddBalanceAsync(c, empty, id, isVirtual: false, allowNegative: false, 0m, 0m, ct);
+
+        var response = await client.PostAsync($"/api/locations/{id}/deactivate", null, ct);
+
+        var balance = (await ItemsTests.AssertStockNotZeroAsync(response, ct)).ShouldHaveSingleItem()!;
+        balance["itemId"]!.GetValue<Guid>().ShouldBe(stocked);
+        balance["locationId"]!.GetValue<Guid>().ShouldBe(id);
+        balance["onHand"]!.GetValue<decimal>().ShouldBe(3m);
+        balance["stockValue"]!.GetValue<decimal>().ShouldBe(30m);
+        var listed = (await GetJsonAsync(client, "/api/locations", ct))["items"]!.AsArray().Single(i => i!["id"]!.GetValue<Guid>() == id)!;
+        listed["isActive"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Deactivate_succeeds_when_every_balance_is_zero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var item = await LedgerRows.AddItemAsync(c, "AB-1", ct);
+        await LedgerRows.AddBalanceAsync(c, item, id, isVirtual: false, allowNegative: false, 0m, 0m, ct);
+
+        var response = await client.PostAsync($"/api/locations/{id}/deactivate", null, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["isActive"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Deactivate_waits_for_an_uncommitted_balance()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        var item = await LedgerRows.AddItemAsync(holder, "AB-1", ct);
+        await using var tx = holder.BeginTransaction();
+        await LedgerRows.AddBalanceAsync(holder, item, id, isVirtual: false, allowNegative: false, 5m, 500m, ct, tx);
+
+        // Under RCSI a plain read skips the uncommitted balance; only the locking read makes the deactivate wait for it.
+        var deactivate = client.PostAsync($"/api/locations/{id}/deactivate", null, ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        tx.Commit();
+
+        var balance = (await ItemsTests.AssertStockNotZeroAsync(await deactivate, ct)).ShouldHaveSingleItem()!;
+        balance["itemId"]!.GetValue<Guid>().ShouldBe(item);
+        balance["onHand"]!.GetValue<decimal>().ShouldBe(5m);
+    }
+
+    [Fact]
+    public async Task Deactivate_on_zero_stock_holds_off_postings_until_commit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        var item = (await ItemsTests.CreateAsync(client, "AB-1", "Rice", "kg", ct))["id"]!.GetValue<Guid>();
+        await using var probe = await LedgerRows.OpenAsync(db, tenant, ct);
+        var second = await LedgerRows.AddItemAsync(probe, "AB-2", ct);
+        var other = await LedgerRows.AddItemAsync(probe, "AB-3", ct);
+        await LedgerRows.AddBalanceAsync(probe, item, id, isVirtual: false, allowNegative: false, 0m, 0m, ct);
+        await LedgerRows.AddBalanceAsync(probe, second, id, isVirtual: false, allowNegative: false, 0m, 0m, ct);
+
+        // The holder X-locks the location row, so the deactivate pauses in SaveChanges after taking its balance locks.
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await ItemsTests.ExecuteAsync(holder, tx, "UPDATE inventory.Locations SET Name = Name WHERE Id = @id", ("@id", id));
+        var deactivate = client.PostAsync($"/api/locations/{id}/deactivate", null, ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+
+        // Posting step 6 locks a zero balance, and a first posting of another item here inserts into the locked range.
+        await ItemsTests.ExecuteAsync(probe, null, "SET LOCK_TIMEOUT 500;");
+        await ItemsTests.AssertLockTimeoutAsync(probe, """
+            SELECT OnHand FROM inventory.StockBalances WITH (UPDLOCK, ROWLOCK) WHERE ItemId = @i AND LocationId = @l
+            """, ("@i", item), ("@l", id));
+        await ItemsTests.AssertRangeLockedAsync(db, probe, other, id);
+        tx.Rollback();
+
+        var response = await deactivate;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["isActive"]!.GetValue<bool>().ShouldBeFalse();
     }
 
     [Fact]
