@@ -2,6 +2,8 @@ using Inventory.Features.Posting;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
 
+using Microsoft.Extensions.Primitives;
+
 using Shouldly;
 
 namespace Inventory.UnitTests;
@@ -343,5 +345,32 @@ public sealed class PostingValidationTests
 
         missing.ShouldBeFalse();
         errors.Keys.ShouldBe(["Idempotency-Key"]);
+    }
+
+    [Fact]
+    public void A_single_idempotency_key_value_is_returned_as_sent()
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        PostingValidation.IdempotencyKey(new StringValues("k1"), errors, out var missing).ShouldBe("k1");
+
+        missing.ShouldBeFalse();
+        errors.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("k1", "k2")]
+    [InlineData("k1", "k1")]
+    [InlineData("", "k1")]
+    public void Repeated_idempotency_key_headers_fail_validation(string first, string second)
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        // Joined, the values would be one key ("k1,k2") that the client never sent.
+        PostingValidation.IdempotencyKey(new StringValues([first, second]), errors, out var missing).ShouldBeNull();
+
+        missing.ShouldBeFalse();
+        errors.Keys.ShouldBe(["Idempotency-Key"]);
+        errors["Idempotency-Key"].ShouldBe(["Send exactly one Idempotency-Key header."]);
     }
 }

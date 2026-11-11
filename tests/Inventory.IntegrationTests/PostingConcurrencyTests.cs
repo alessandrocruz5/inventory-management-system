@@ -5,8 +5,12 @@ using System.Text.Json.Nodes;
 
 using Inventory.Features.Posting;
 using Inventory.Features.Posting.PostReceipt;
+using Inventory.Persistence;
 
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 
 using Platform.Identity;
 
@@ -16,8 +20,8 @@ namespace Inventory.IntegrationTests;
 
 /// <summary>
 /// T2 and T4 (spec §11) against the real API: parallel postings of the last unit, idempotency under sequential, parallel
-/// and deterministic step-4 races, and the step-7 re-read of a deactivation committed mid-posting (spec §6).
-/// T4's parallel same-key reversals land with the reversal route in S9.
+/// and deterministic step-4 races, the step-7 re-read of an item or location deactivation committed mid-posting, and
+/// the retry of a deadlocked posting (spec §6). T4's parallel same-key reversals land with the reversal route in S9.
 /// </summary>
 public sealed class PostingConcurrencyTests(DatabaseFixture db)
 {
@@ -28,12 +32,12 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        await ReceiveAsync(client, location, item, 1m, 10m, ct);
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        await PostingTests.ReceiveAsync(client, location, item, 1m, 10m, ct);
 
         var responses = await InParallelAsync(20, () =>
-            PostingTests.PostDocumentAsync(client, PostingTests.Issues, NewKey(), PostingTests.Issue(location, PostingTests.IssueLine(item, 1m)), ct));
+            PostingTests.PostDocumentAsync(client, PostingTests.Issues, PostingTests.NewKey(), PostingTests.Issue(location, PostingTests.IssueLine(item, 1m)), ct));
 
         // 1 + 19 = 20, so no 500 and no 409.
         Count(responses, HttpStatusCode.Created).ShouldBe(1, Statuses(responses));
@@ -58,9 +62,9 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        var key = NewKey();
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var key = PostingTests.NewKey();
         var body = PostingTests.Receipt(location, PostingTests.Line(item, 4m, 12.5m));
 
         var first = await PostingTests.PostDocumentAsync(client, PostingTests.Receipts, key, body, ct);
@@ -84,9 +88,9 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        var key = NewKey();
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var key = PostingTests.NewKey();
         var body = PostingTests.Receipt(location, PostingTests.Line(item, 4m, 12.5m));
 
         var responses = await InParallelAsync(10, () => PostingTests.PostDocumentAsync(client, PostingTests.Receipts, key, body, ct));
@@ -118,10 +122,10 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        await ReceiveAsync(client, location, item, 1m, 10m, ct);
-        var key = NewKey();
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        await PostingTests.ReceiveAsync(client, location, item, 1m, 10m, ct);
+        var key = PostingTests.NewKey();
         var body = PostingTests.Issue(location, PostingTests.IssueLine(item, 1m));
 
         var responses = await InParallelAsync(2, () => PostingTests.PostDocumentAsync(client, PostingTests.Issues, key, body, ct));
@@ -144,10 +148,10 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        await ReceiveAsync(client, location, item, 2m, 10m, ct);
-        var key = NewKey();
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        await PostingTests.ReceiveAsync(client, location, item, 2m, 10m, ct);
+        var key = PostingTests.NewKey();
 
         var first = await PostingTests.PostDocumentAsync(client, PostingTests.Issues, key, PostingTests.Issue(location, PostingTests.IssueLine(item, 1m)), ct);
         var second = await PostingTests.PostDocumentAsync(client, PostingTests.Issues, key, PostingTests.Issue(location, PostingTests.IssueLine(item, 2m)), ct);
@@ -167,9 +171,9 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        var key = NewKey();
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var key = PostingTests.NewKey();
         var (body, hash) = ReceiptWithHash(location, item, 3m, 7.5m);
 
         await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
@@ -200,9 +204,9 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        var key = NewKey();
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var key = PostingTests.NewKey();
         var (body, hash) = ReceiptWithHash(location, item, 3m, 7.5m);
 
         await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
@@ -233,12 +237,12 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
 
         // Both balance rows now exist, so the next posting's step 5 inserts nothing and takes no FK lock on Items.
-        await ReceiveAsync(client, location, item, 1m, 10m, ct);
-        var key = NewKey();
+        await PostingTests.ReceiveAsync(client, location, item, 1m, 10m, ct);
+        var key = PostingTests.NewKey();
 
         await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
         await using var tx = holder.BeginTransaction();
@@ -266,10 +270,10 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
-        var location = await NewLocationAsync(client, ct);
-        var item = await NewItemAsync(client, ct);
-        await ReceiveAsync(client, location, item, 1m, 10m, ct);
-        var key = NewKey();
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        await PostingTests.ReceiveAsync(client, location, item, 1m, 10m, ct);
+        var key = PostingTests.NewKey();
 
         await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
         await using var tx = holder.BeginTransaction();
@@ -284,6 +288,123 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         (await DocumentsWithKeyAsync(holder, key, ct)).ShouldBe(1);
         (await PostingTests.BalanceAsync(holder, item, location, ct)).ShouldBe((2m, 20m));
+    }
+
+    [Fact]
+    public async Task Location_deactivation_committed_mid_posting_is_seen_at_step_7()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+
+        // Both balance rows now exist, so the next posting's step 5 inserts nothing and takes no FK lock on Locations.
+        await PostingTests.ReceiveAsync(client, location, item, 1m, 10m, ct);
+        var key = PostingTests.NewKey();
+
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await DeactivateLocationAsync(holder, tx, location, ct);
+
+        // RCSI shows the location as active at step 1; step 7's READCOMMITTEDLOCK re-read waits for the holder.
+        var request = Task.Run(() => PostingTests.PostDocumentAsync(
+            client, PostingTests.Receipts, key, PostingTests.Receipt(location, PostingTests.Line(item, 1m, 10m)), ct), ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await tx.CommitAsync(ct);
+        var response = await request;
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/inactive-location");
+        problem["locationId"]!.GetValue<Guid>().ShouldBe(location);
+        (await DocumentsWithKeyAsync(holder, key, ct)).ShouldBe(0);
+        (await PostingTests.BalanceAsync(holder, item, location, ct)).ShouldBe((1m, 10m));
+    }
+
+    [Fact]
+    public async Task Location_deactivation_rolled_back_mid_posting_lets_it_post()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        await PostingTests.ReceiveAsync(client, location, item, 1m, 10m, ct);
+        var key = PostingTests.NewKey();
+
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await DeactivateLocationAsync(holder, tx, location, ct);
+
+        var request = Task.Run(() => PostingTests.PostDocumentAsync(
+            client, PostingTests.Receipts, key, PostingTests.Receipt(location, PostingTests.Line(item, 1m, 10m)), ct), ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await tx.RollbackAsync(ct);
+        var response = await request;
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await DocumentsWithKeyAsync(holder, key, ct)).ShouldBe(1);
+        (await PostingTests.BalanceAsync(holder, item, location, ct)).ShouldBe((2m, 20m));
+    }
+
+    [Fact]
+    public async Task Retry_budget_is_three()
+    {
+        await using var app = db.CreateApp();
+        await using var scope = app.Services.CreateAsyncScope();
+        var inventory = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+
+        var strategy = inventory.Database.CreateExecutionStrategy();
+
+        // Spec §6: a deadlock (1205) retries up to 3 times. Aspire's own strategy, with 6, must be the one switched off.
+        strategy.ShouldBeOfType<SqlServerRetryingExecutionStrategy>();
+        ((ExecutionStrategy)strategy).MaxRetryCount.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task Deadlocked_posting_is_retried_and_posts_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var first = await PostingTests.NewLocationAsync(client, ct);
+        var second = await PostingTests.NewLocationAsync(client, ct, "WH-2");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+
+        // (X, SUP) now exists. (X, L2) doesn't, so the receipt below inserts it at step 5 and holds its X lock.
+        await PostingTests.ReceiveAsync(client, first, item, 1m, 10m, ct);
+        var key = PostingTests.NewKey();
+
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        var supplier = await LedgerRows.LocationIdAsync(holder, "SUP", ct);
+        await using (var priority = new SqlCommand("SET DEADLOCK_PRIORITY HIGH;", holder) { CommandTimeout = 60 })
+        {
+            await priority.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var tx = holder.BeginTransaction();
+        (await LockBalanceAsync(holder, tx, item, supplier, ct)).ShouldBe(-1m);
+
+        // Step 6 waits for the holder's U lock on (X, SUP) while holding (X, L2).
+        var request = Task.Run(() => PostingTests.PostDocumentAsync(
+            client, PostingTests.Receipts, key, PostingTests.Receipt(second, PostingTests.Line(item, 1m, 10m)), ct), ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+
+        // Asking for (X, L2) closes the cycle. The deadlock monitor picks the posting, whose priority is lower, and its
+        // rollback removes (X, L2): so this returns no row, and only once the deadlock is resolved. The execution strategy
+        // then retries the posting, which waits on the holder again.
+        (await LockBalanceAsync(holder, tx, item, second, ct)).ShouldBeNull();
+        await tx.RollbackAsync(ct);
+        var response = await request;
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await DocumentsWithKeyAsync(holder, key, ct)).ShouldBe(1);
+        (await PostingTests.BalanceAsync(holder, item, second, ct)).ShouldBe((1m, 10m));
+        (await PostingTests.BalanceAsync(holder, item, first, ct)).ShouldBe((1m, 10m));
     }
 
     /// <summary>Starts every send parked behind one gate, then opens it, so the requests reach the API together.</summary>
@@ -335,25 +456,41 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         (await command.ExecuteNonQueryAsync(ct)).ShouldBe(1);
     }
 
+    private static async Task DeactivateLocationAsync(SqlConnection holder, SqlTransaction tx, Guid location, CancellationToken ct)
+    {
+        await using var command = new SqlCommand("UPDATE inventory.Locations SET IsActive = 0 WHERE Id = @l", holder, tx);
+        command.Parameters.Add(new SqlParameter("@l", SqlDbType.UniqueIdentifier) { Value = location });
+        (await command.ExecuteNonQueryAsync(ct)).ShouldBe(1);
+    }
+
+    /// <summary>
+    /// U-locks the balance row in the holder's transaction and returns its <c>OnHand</c>, or null when there is no row.
+    /// The 60 s timeout covers the deadlock monitor, which can take about 5 s to break a cycle.
+    /// </summary>
+    private static async Task<decimal?> LockBalanceAsync(SqlConnection holder, SqlTransaction tx, Guid item, Guid location, CancellationToken ct)
+    {
+        await using var command = new SqlCommand(
+            "SELECT OnHand FROM inventory.StockBalances WITH (UPDLOCK, ROWLOCK) WHERE ItemId = @x AND LocationId = @l", holder, tx)
+        {
+            CommandTimeout = 60,
+        };
+        command.Parameters.Add(new SqlParameter("@x", SqlDbType.UniqueIdentifier) { Value = item });
+        command.Parameters.Add(new SqlParameter("@l", SqlDbType.UniqueIdentifier) { Value = location });
+        return (decimal?)await command.ExecuteScalarAsync(ct);
+    }
+
     private static Task<int> DocumentsWithKeyAsync(SqlConnection connection, string key, CancellationToken ct) =>
-        CountAsync(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE IdempotencyKey = @p",
+        PostingTests.ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE IdempotencyKey = @p",
             new SqlParameter("@p", SqlDbType.VarChar, 64) { Value = key }, ct);
 
     /// <summary>The tenant's documents of this type: RLS limits the connection to the tenant in its session context.</summary>
     private static Task<int> DocumentsOfTypeAsync(SqlConnection connection, string type, CancellationToken ct) =>
-        CountAsync(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE Type = @p",
+        PostingTests.ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE Type = @p",
             new SqlParameter("@p", SqlDbType.VarChar, 16) { Value = type }, ct);
 
     private static Task<int> MovementsOfDocumentAsync(SqlConnection connection, Guid document, CancellationToken ct) =>
-        CountAsync(connection, "SELECT COUNT(*) FROM inventory.StockMovements WHERE DocumentId = @p",
+        PostingTests.ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockMovements WHERE DocumentId = @p",
             new SqlParameter("@p", SqlDbType.UniqueIdentifier) { Value = document }, ct);
-
-    private static async Task<int> CountAsync(SqlConnection connection, string sql, SqlParameter parameter, CancellationToken ct)
-    {
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(parameter);
-        return (int)(await command.ExecuteScalarAsync(ct))!;
-    }
 
     private static async Task<Guid> IdAsync(HttpResponseMessage response, CancellationToken ct) =>
         (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["id"]!.GetValue<Guid>();
@@ -362,17 +499,4 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
 
     private static string Statuses(HttpResponseMessage[] responses) =>
         string.Join(", ", responses.GroupBy(r => (int)r.StatusCode).OrderBy(g => g.Key).Select(g => $"{g.Key} × {g.Count()}"));
-
-    // PostingTests keeps these private; the same few lines here.
-    private static string NewKey() => Guid.NewGuid().ToString("N");
-
-    private static async Task ReceiveAsync(HttpClient client, Guid location, Guid item, decimal quantity, decimal unitCost, CancellationToken ct) =>
-        (await PostingTests.PostDocumentAsync(client, PostingTests.Receipts, NewKey(), PostingTests.Receipt(location, PostingTests.Line(item, quantity, unitCost)), ct))
-            .StatusCode.ShouldBe(HttpStatusCode.Created);
-
-    private static async Task<Guid> NewLocationAsync(HttpClient client, CancellationToken ct) =>
-        (await LocationsTests.CreateAsync(client, "WH-1", "Warehouse", ct))["id"]!.GetValue<Guid>();
-
-    private static async Task<Guid> NewItemAsync(HttpClient client, CancellationToken ct) =>
-        (await ItemsTests.CreateAsync(client, "RICE-1", "Rice", "pc", ct))["id"]!.GetValue<Guid>();
 }

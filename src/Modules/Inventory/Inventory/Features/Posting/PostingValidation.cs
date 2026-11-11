@@ -4,6 +4,8 @@ using Inventory.Domain;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
 
+using Microsoft.Extensions.Primitives;
+
 namespace Inventory.Features.Posting;
 
 /// <summary>A line that passed step 1. <c>LineNo</c> is its 1-based position in the request.</summary>
@@ -55,26 +57,35 @@ internal static class PostingValidation
             errors);
 
     /// <summary>
-    /// Checks the header as sent: no trimming or case folding. Null, empty or whitespace returns null with
-    /// <paramref name="missing"/> set (<c>idempotency-key-missing</c>). Anything else that doesn't fit
-    /// <c>varchar(64)</c> as printable ASCII returns null with <c>errors["Idempotency-Key"]</c> (<c>validation</c>).
+    /// Checks the header as sent: no trimming or case folding. No value, or one empty or whitespace value, returns null
+    /// with <paramref name="missing"/> set (<c>idempotency-key-missing</c>). More than one value, or a value that doesn't
+    /// fit <c>varchar(64)</c> as printable ASCII, returns null with <c>errors["Idempotency-Key"]</c> (<c>validation</c>):
+    /// joining repeated headers would post under a key the client never sent.
     /// </summary>
-    public static string? IdempotencyKey(string? header, Dictionary<string, string[]> errors, out bool missing)
+    public static string? IdempotencyKey(StringValues header, Dictionary<string, string[]> errors, out bool missing)
     {
-        if (string.IsNullOrWhiteSpace(header))
+        if (header.Count > 1)
+        {
+            missing = false;
+            errors["Idempotency-Key"] = ["Send exactly one Idempotency-Key header."];
+            return null;
+        }
+
+        var value = header.Count == 1 ? header[0] : null;
+        if (string.IsNullOrWhiteSpace(value))
         {
             missing = true;
             return null;
         }
 
         missing = false;
-        if (header.Length > MaxKeyLength || !header.All(c => c is >= '\x21' and <= '\x7E'))
+        if (value.Length > MaxKeyLength || !value.All(c => c is >= '\x21' and <= '\x7E'))
         {
             errors["Idempotency-Key"] = ["Use 1–64 printable ASCII characters without spaces."];
             return null;
         }
 
-        return header;
+        return value;
     }
 
     private static ValidatedPosting? Validate<TLine>(

@@ -62,7 +62,7 @@ public sealed class PostingTests(DatabaseFixture db)
         balance["lastUnitCost"]!.GetValue<decimal>().ShouldBe(100.0000m);
         document["balancesAsOf"]!.GetValue<DateTimeOffset>().ShouldBe(document["postedAt"]!.GetValue<DateTimeOffset>());
 
-        (await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE Id = @id", ("@id", id), ct)).ShouldBe(1);
+        (await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE Id = @id", new SqlParameter("@id", id), ct)).ShouldBe(1);
         var (physicalOnHand, physicalLast) = await BalanceRowAsync(connection, item, location, ct);
         var (supplierOnHand, supplierLast) = await BalanceRowAsync(connection, item, supplier, ct);
         physicalOnHand.ShouldBe(10m);
@@ -129,6 +129,10 @@ public sealed class PostingTests(DatabaseFixture db)
     [InlineData("duplicate-item", "lines[1].itemId")]
     [InlineData("line-total-too-large", "lines[0].unitCost")]
     [InlineData("long-reference", "reference")]
+    [InlineData("too-many-lines", "lines")]
+    [InlineData("quantity-too-large", "lines[0].quantity")]
+    [InlineData("cost-too-large", "lines[0].unitCost")]
+    [InlineData("long-notes", "notes")]
     public async Task Receipt_validates_fields(string invalid, string key)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -148,10 +152,63 @@ public sealed class PostingTests(DatabaseFixture db)
             "duplicate-item" => Receipt(location, Line(item, 1m, 1m), Line(item, 2m, 1m)),
             "line-total-too-large" => Receipt(location, Line(item, 999_999_999.9999m, 999_999_999.9999m)),
             "long-reference" => new { locationId = location, reference = new string('R', 101), lines = new[] { Line(item, 1m, 1m) } },
+
+            // Over 100 lines, step 1 skips the per-line checks, so only "lines" is reported.
+            "too-many-lines" => Receipt(location, [.. Enumerable.Range(0, 101).Select(_ => Line(Guid.NewGuid(), 1m, 1m))]),
+            "quantity-too-large" => Receipt(location, Line(item, 1_000_000_000m, 1m)),
+            "cost-too-large" => Receipt(location, Line(item, 1m, 1_000_000_000m)),
+            "long-notes" => new { locationId = location, notes = new string('N', 501), lines = new[] { Line(item, 1m, 1m) } },
             _ => throw new ArgumentOutOfRangeException(nameof(invalid), invalid, null),
         };
 
         await AssertValidationAsync(await PostDocumentAsync(client, Receipts, NewKey(), body, ct), key, ct);
+    }
+
+    [Fact]
+    public async Task Repeated_idempotency_key_header_is_400_validation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await NewLocationAsync(client, ct);
+        var item = await NewItemAsync(client, "RICE-1", ct);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Receipts) { Content = JsonContent.Create(Receipt(location, Line(item, 1m, 1m))) };
+        request.Headers.TryAddWithoutValidation("Idempotency-Key", new[] { "k1", "k2" }).ShouldBeTrue();
+
+        // The TestServer keeps the two values apart, as Kestrel does; joined, they would post under the key "k1,k2".
+        var response = await client.SendAsync(request, ct);
+
+        await AssertValidationAsync(response, "Idempotency-Key", ct);
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await DocumentCountAsync(connection, ct)).ShouldBe(0);
+        (await BalanceAsync(connection, item, location, ct)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Balance_beyond_the_column_range_is_400_and_writes_nothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await NewLocationAsync(client, ct);
+        var x = await NewItemAsync(client, "X-1", ct);
+        var y = await NewItemAsync(client, "Y-1", ct);
+
+        // The line total, 999,999,999,999,900.0000, fits decimal(19,4), so step 1 lets it through.
+        await ReceiveAsync(client, location, x, 999_999_999.9999m, 1_000_000m, ct);
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        var documentsBefore = await DocumentCountAsync(connection, ct);
+
+        // Every line passes step 1, but X's stock value would be 1,000,000,000,000,000.0000, past the column's maximum
+        // (plan D1): step 8 rejects it, and the key names X's line, not the first.
+        var response = await PostDocumentAsync(client, Receipts, NewKey(), Receipt(location, Line(y, 1m, 1m), Line(x, 1m, 100m)), ct);
+
+        await AssertValidationAsync(response, "lines[1].quantity", ct);
+        (await DocumentCountAsync(connection, ct)).ShouldBe(documentsBefore);
+        (await BalanceAsync(connection, x, location, ct)).ShouldBe((999_999_999.9999m, 999_999_999_999_900m));
+        (await BalanceAsync(connection, y, location, ct)).ShouldBeNull();
     }
 
     [Fact]
@@ -233,7 +290,7 @@ public sealed class PostingTests(DatabaseFixture db)
         replay["balancesAsOf"]!.GetValue<DateTimeOffset>().ShouldBeGreaterThanOrEqualTo(original["balancesAsOf"]!.GetValue<DateTimeOffset>());
 
         await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
-        (await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE IdempotencyKey = @key", ("@key", key), ct))
+        (await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE IdempotencyKey = @key", new SqlParameter("@key", key), ct))
             .ShouldBe(1);
     }
 
@@ -529,16 +586,16 @@ public sealed class PostingTests(DatabaseFixture db)
         return await reader.ReadAsync(ct) ? (reader.GetDecimal(0), reader.GetDecimal(1)) : null;
     }
 
-    private static string NewKey() => Guid.NewGuid().ToString("N");
+    internal static string NewKey() => Guid.NewGuid().ToString("N");
 
-    private static async Task ReceiveAsync(HttpClient client, Guid location, Guid item, decimal quantity, decimal unitCost, CancellationToken ct) =>
+    internal static async Task ReceiveAsync(HttpClient client, Guid location, Guid item, decimal quantity, decimal unitCost, CancellationToken ct) =>
         (await PostDocumentAsync(client, Receipts, NewKey(), Receipt(location, Line(item, quantity, unitCost)), ct))
             .StatusCode.ShouldBe(HttpStatusCode.Created);
 
-    private static async Task<Guid> NewLocationAsync(HttpClient client, CancellationToken ct) =>
-        (await LocationsTests.CreateAsync(client, "WH-1", "Warehouse", ct))["id"]!.GetValue<Guid>();
+    internal static async Task<Guid> NewLocationAsync(HttpClient client, CancellationToken ct, string code = "WH-1") =>
+        (await LocationsTests.CreateAsync(client, code, "Warehouse", ct))["id"]!.GetValue<Guid>();
 
-    private static async Task<Guid> NewItemAsync(HttpClient client, string sku, CancellationToken ct) =>
+    internal static async Task<Guid> NewItemAsync(HttpClient client, string sku, CancellationToken ct) =>
         (await ItemsTests.CreateAsync(client, sku, sku, "pc", ct))["id"]!.GetValue<Guid>();
 
     /// <summary>Adds another user to the tenant and returns their id and email.</summary>
@@ -574,10 +631,10 @@ public sealed class PostingTests(DatabaseFixture db)
         return (reader.GetDecimal(0), reader.IsDBNull(1) ? null : reader.GetInt64(1));
     }
 
-    private static async Task<T> ScalarAsync<T>(SqlConnection connection, string sql, (string Name, object Value) parameter, CancellationToken ct)
+    internal static async Task<T> ScalarAsync<T>(SqlConnection connection, string sql, SqlParameter parameter, CancellationToken ct)
     {
         await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue(parameter.Name, parameter.Value);
+        command.Parameters.Add(parameter);
         return (T)(await command.ExecuteScalarAsync(ct))!;
     }
 
