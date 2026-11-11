@@ -204,7 +204,8 @@ internal sealed class InventorySeeder(ITenantScopeFactory scopes, TimeProvider c
             var line = validated.Lines.Single();
             var postingLine = new PostingLine(line.LineNo, line.ItemId, supplierId, validated.LocationId, line.Quantity, line.UnitCost);
             var command = new PostingCommand(
-                PostingKind.Receipt, StockDocumentType.Receipt, [postingLine], key, hash, validated.Reference, validated.Notes, SystemPrincipal);
+                PostingKind.Receipt, StockDocumentType.Receipt, [postingLine], key, hash, validated.Reference, validated.Notes, SystemPrincipal,
+                ReasonCode: null);
 
             switch (await engine.PostAsync(command, ct))
             {

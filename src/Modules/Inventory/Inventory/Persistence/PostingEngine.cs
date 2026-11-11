@@ -112,7 +112,7 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
         var document = new StockDocument
         {
             Type = command.DocumentType,
-            ReasonCode = null,
+            ReasonCode = command.ReasonCode,
             ReversesDocumentId = null,
             Reference = command.Reference,
             Notes = command.Notes,
@@ -175,7 +175,9 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
             .AsTracking()
             .ToListAsync(ct);
 
-        // Receipts and issues move every line between the same two locations, so the cross product is the touched set.
+        // Every kind moves all its lines between exactly two locations: a receipt, issue or adjustment between the
+        // location and its counterpart (an adjustment's lines may point either way), a transfer from A to B. So items ×
+        // locations is the touched set.
         if (rows.Count != itemIds.Count * locationIds.Count)
         {
             throw new InvalidOperationException(

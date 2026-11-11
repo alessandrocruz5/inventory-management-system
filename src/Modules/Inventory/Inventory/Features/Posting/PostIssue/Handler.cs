@@ -1,5 +1,4 @@
 using Inventory.Domain;
-using Inventory.Persistence;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -16,9 +15,6 @@ internal sealed class PostIssueHandler(DocumentPoster poster)
         poster.PostAsync(
             http,
             PostingKind.Issue,
-            StockDocumentType.Issue,
-            LocationKind.Customer,
-            counterpartIsSource: false,
             errors => PostingValidation.Issue(request, errors),
             RequestHash.Issue,
             cancellationToken);

@@ -31,6 +31,9 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
 
     private static readonly string[] SeededCodes = ["ADJ", "CUS", "SUP"];
 
+    private const string Transfers = "/api/documents/transfers";
+    private const string Adjustments = "/api/documents/adjustments";
+
     [Fact]
     [ProbesRoute("GET /api/auth/me")]
     public async Task Requests_alternate_tenants_in_one_host()
@@ -386,6 +389,123 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
             PostingTests.Issue(locationA, PostingTests.IssueLine(itemB, 1m)), ct);
 
         foreach (var (response, key) in new[] { (fromB, "locationId"), (ofB, "lines[0].itemId") })
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            problem["type"]!.GetValue<string>().ShouldBe("/problems/validation");
+            problem["errors"]!.AsObject().Select(e => e.Key).ShouldBe([key]);
+        }
+
+        balanceBefore.ShouldBe((5m, 50m));
+        (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe(balanceBefore);
+        ((int)(await count.ExecuteScalarAsync(ct))!).ShouldBe(movementsBefore);
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/documents/transfers")]
+    public async Task Another_tenants_ids_in_a_transfer_body_are_400()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = (await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct))["id"]!.GetValue<Guid>();
+        var itemB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+        var locationA = (await LocationsTests.CreateAsync(clientA, "A-ONLY", "Tenant A location", ct))["id"]!.GetValue<Guid>();
+        var locationA2 = (await LocationsTests.CreateAsync(clientA, "A-TWO", "Tenant A second location", ct))["id"]!.GetValue<Guid>();
+        var itemA = (await ItemsTests.CreateAsync(clientA, "A-ONLY", "Tenant A item", "pc", ct))["id"]!.GetValue<Guid>();
+
+        // Both tenants hold stock, so a transfer that wasn't stopped at step 1 could succeed and change B's ledger.
+        (await PostingTests.PostDocumentAsync(clientB, PostingTests.Receipts, Guid.NewGuid().ToString("N"),
+            PostingTests.Receipt(locationB, PostingTests.Line(itemB, 5m, 10m)), ct)).StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await PostingTests.PostDocumentAsync(clientA, PostingTests.Receipts, Guid.NewGuid().ToString("N"),
+            PostingTests.Receipt(locationA, PostingTests.Line(itemA, 5m, 10m)), ct)).StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        await using var count = new SqlCommand("SELECT COUNT(*) FROM inventory.StockMovements", connection);
+        var balanceBefore = await PostingTests.BalanceAsync(connection, itemB, locationB, ct);
+        var movementsBefore = (int)(await count.ExecuteScalarAsync(ct))!;
+
+        var fromB = await PostingTests.PostDocumentAsync(clientA, Transfers, Guid.NewGuid().ToString("N"), new
+        {
+            fromLocationId = locationB,
+            toLocationId = locationA,
+            reference = (string?)null,
+            notes = (string?)null,
+            lines = new[] { new { itemId = itemA, quantity = 1m } },
+        }, ct);
+        var toB = await PostingTests.PostDocumentAsync(clientA, Transfers, Guid.NewGuid().ToString("N"), new
+        {
+            fromLocationId = locationA,
+            toLocationId = locationB,
+            reference = (string?)null,
+            notes = (string?)null,
+            lines = new[] { new { itemId = itemA, quantity = 1m } },
+        }, ct);
+        var ofB = await PostingTests.PostDocumentAsync(clientA, Transfers, Guid.NewGuid().ToString("N"), new
+        {
+            fromLocationId = locationA,
+            toLocationId = locationA2,
+            reference = (string?)null,
+            notes = (string?)null,
+            lines = new[] { new { itemId = itemB, quantity = 1m } },
+        }, ct);
+
+        foreach (var (response, key) in new[] { (fromB, "fromLocationId"), (toB, "toLocationId"), (ofB, "lines[0].itemId") })
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            problem["type"]!.GetValue<string>().ShouldBe("/problems/validation");
+            problem["errors"]!.AsObject().Select(e => e.Key).ShouldBe([key]);
+        }
+
+        balanceBefore.ShouldBe((5m, 50m));
+        (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe(balanceBefore);
+        ((int)(await count.ExecuteScalarAsync(ct))!).ShouldBe(movementsBefore);
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/documents/adjustments")]
+    public async Task Another_tenants_ids_in_an_adjustment_body_are_400()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = (await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct))["id"]!.GetValue<Guid>();
+        var itemB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+        var locationA = (await LocationsTests.CreateAsync(clientA, "A-ONLY", "Tenant A location", ct))["id"]!.GetValue<Guid>();
+        var itemA = (await ItemsTests.CreateAsync(clientA, "A-ONLY", "Tenant A item", "pc", ct))["id"]!.GetValue<Guid>();
+
+        // B's balance exists, so an adjustment that reached the engine would change it.
+        (await PostingTests.PostDocumentAsync(clientB, PostingTests.Receipts, Guid.NewGuid().ToString("N"),
+            PostingTests.Receipt(locationB, PostingTests.Line(itemB, 5m, 10m)), ct)).StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        await using var count = new SqlCommand("SELECT COUNT(*) FROM inventory.StockMovements", connection);
+        var balanceBefore = await PostingTests.BalanceAsync(connection, itemB, locationB, ct);
+        var movementsBefore = (int)(await count.ExecuteScalarAsync(ct))!;
+
+        var atB = await PostingTests.PostDocumentAsync(clientA, Adjustments, Guid.NewGuid().ToString("N"), new
+        {
+            locationId = locationB,
+            reasonCode = "Damaged",
+            reference = (string?)null,
+            notes = (string?)null,
+            lines = new[] { new { itemId = itemA, quantityDelta = -1m, unitCost = (decimal?)null } },
+        }, ct);
+        var ofB = await PostingTests.PostDocumentAsync(clientA, Adjustments, Guid.NewGuid().ToString("N"), new
+        {
+            locationId = locationA,
+            reasonCode = "Damaged",
+            reference = (string?)null,
+            notes = (string?)null,
+            lines = new[] { new { itemId = itemB, quantityDelta = 1m, unitCost = (decimal?)1m } },
+        }, ct);
+
+        foreach (var (response, key) in new[] { (atB, "locationId"), (ofB, "lines[0].itemId") })
         {
             response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
             var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;

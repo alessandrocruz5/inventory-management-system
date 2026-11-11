@@ -599,7 +599,7 @@ public sealed class PostingTests(DatabaseFixture db)
         (await ItemsTests.CreateAsync(client, sku, sku, "pc", ct))["id"]!.GetValue<Guid>();
 
     /// <summary>Adds another user to the tenant and returns their id and email.</summary>
-    private static async Task<(Guid Id, string Email)> AddUserAsync(ApiFactory app, Guid tenant, string role)
+    internal static async Task<(Guid Id, string Email)> AddUserAsync(ApiFactory app, Guid tenant, string role)
     {
         var email = $"{role.ToLowerInvariant()}-{Guid.NewGuid():N}@test.local";
         await using var scope = app.Services.CreateAsyncScope();
@@ -645,7 +645,7 @@ public sealed class PostingTests(DatabaseFixture db)
         return (int)(await command.ExecuteScalarAsync(ct))!;
     }
 
-    private static async Task AssertInsufficientStockAsync(
+    internal static async Task AssertInsufficientStockAsync(
         HttpResponseMessage response, Guid item, Guid location, decimal available, decimal requested, CancellationToken ct)
     {
         response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
@@ -657,7 +657,7 @@ public sealed class PostingTests(DatabaseFixture db)
         problem["requested"]!.GetValue<decimal>().ShouldBe(requested);
     }
 
-    private static async Task AssertValidationAsync(HttpResponseMessage response, string key, CancellationToken ct)
+    internal static async Task AssertValidationAsync(HttpResponseMessage response, string key, CancellationToken ct)
     {
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
