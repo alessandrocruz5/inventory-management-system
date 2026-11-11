@@ -1,7 +1,10 @@
+using System.Globalization;
+
 using Api.Setup;
 
 using Inventory.Contracts;
 using Inventory.Persistence;
+using Inventory.Seeding;
 
 using Kernel.Tenancy;
 
@@ -178,6 +181,9 @@ public sealed class SetupTests(DatabaseFixture db)
         after.Users.ShouldBe(4);
         after.Locations.ShouldBe(8);
         after.Items.ShouldBe(20);
+        after.Documents.ShouldBe(31);
+        after.Movements.ShouldBe(31);
+        after.BalanceRows.ShouldBe(50); // 31 branch balances and 19 Supplier balances
 
         await using var scope = app.Services.CreateAsyncScope();
         var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -215,17 +221,30 @@ public sealed class SetupTests(DatabaseFixture db)
                 items.Count.ShouldBe(20);
                 items.ShouldAllBe(i => i.IsActive);
                 items.Single(i => i.Sku == "RICE-WHT").BaseUnit.ShouldBe("kg");
+
+                var documents = await inventory.StockDocuments.Where(d => d.TenantId == tenantId).ToListAsync(ct);
+                documents.ShouldAllBe(d => d.Type == StockDocumentType.Receipt
+                    && d.Reference == InventorySeeder.OpeningStockReference
+                    && d.PostedBy == InventorySeeder.SystemPrincipal);
+
+                // Sorted in C# only: IdempotencyKey is varchar under the server's collation, which orders differently.
+                documents.Select(d => d.IdempotencyKey).Order(StringComparer.Ordinal).ToList().ShouldBe(
+                    InventorySeeder.OpeningStock
+                        .Select(r => InventorySeeder.OpeningStockKey(r.Sku, r.Code))
+                        .Order(StringComparer.Ordinal)
+                        .ToList());
             }
             else
             {
                 locations.Count.ShouldBe(3);
                 locations.Select(l => l.Kind).ShouldNotContain(LocationKind.Physical);
                 items.ShouldBeEmpty();
+                (await inventory.StockDocuments.Where(d => d.TenantId == tenantId).ToListAsync(ct)).ShouldBeEmpty();
             }
         }
     }
 
-    private static async Task<(int Tenants, int Users, int Locations, int Items)> Snapshot(ApiFactory app, Guid[] tenantIds, CancellationToken ct)
+    private static async Task<(int Tenants, int Users, int Locations, int Items, int Documents, int Movements, int BalanceRows, string Balances)> Snapshot(ApiFactory app, Guid[] tenantIds, CancellationToken ct)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -233,6 +252,9 @@ public sealed class SetupTests(DatabaseFixture db)
         // Locations sit under RLS, so each tenant's rows are counted from that tenant's scope.
         var locations = 0;
         var items = 0;
+        var documents = 0;
+        var movements = 0;
+        var balanceRows = new List<string>();
         var scopes = app.Services.GetRequiredService<ITenantScopeFactory>();
         foreach (var tenantId in tenantIds)
         {
@@ -240,13 +262,28 @@ public sealed class SetupTests(DatabaseFixture db)
             var inventory = tenantScope.Services.GetRequiredService<InventoryDbContext>();
             locations += await inventory.Locations.CountAsync(l => l.TenantId == tenantId, ct);
             items += await inventory.Items.CountAsync(i => i.TenantId == tenantId, ct);
+            documents += await inventory.StockDocuments.CountAsync(d => d.TenantId == tenantId, ct);
+            movements += await inventory.StockMovements.CountAsync(m => m.TenantId == tenantId, ct);
+
+            var balances = await inventory.StockBalances
+                .Where(b => b.TenantId == tenantId)
+                .OrderBy(b => b.ItemId)
+                .ThenBy(b => b.LocationId)
+                .ToListAsync(ct);
+            balanceRows.AddRange(balances.Select(b => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{b.ItemId}|{b.LocationId}|{b.OnHand:F4}|{b.StockValue:F4}|{b.LastUnitCost:F4}|{b.LastMovementId}")));
         }
 
         return (
             await platform.Tenants.CountAsync(t => tenantIds.Contains(t.Id), ct),
             await platform.Users.CountAsync(u => tenantIds.Contains(u.TenantId), ct),
             locations,
-            items);
+            items,
+            documents,
+            movements,
+            balanceRows.Count,
+            string.Join("\n", balanceRows));
     }
 
     private static async Task<List<string>> ReadStrings(SqlConnection connection, CancellationToken ct, string sql)
