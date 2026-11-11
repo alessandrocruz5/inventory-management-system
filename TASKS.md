@@ -16,7 +16,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
   - Result: `POST /api/documents/receipts` and `/issues` on a shared `DocumentPoster` and `PostingEngine` (steps 2–10), with Idempotency-Key replay (D2 order), D1 overflow guards, retries set to 3, and T1/T2/T4/T5/T10 tests. 346 .NET tests.
   - Downstream for S6/S9/S10: `DocumentPoster.PostAsync` is the base for every posting route. Add its `counterpartIsSource` flag, and map `UnitCostRequired` and `ReversalNotLatest` in your own route. `PostingTests` exposes the shared helpers (`PostDocumentAsync`, `Receipt`, `Issue`, `ScalarAsync`).
   - Deferred nits from code-guardian: (S9) a 2601 on `UX_StockDocuments_Reverses` would look like a lost key, and needs a 409 `already-reversed`; (S11) the applock's deadlock return of -3 isn't retried; (S4 handlers) `UpdateItem`/`DeactivateItem`/`DeactivateLocation` return 500 instead of `409 concurrency-conflict` when retries run out, now that the budget is 3; (S7/T13) a 201 and a replay format the same decimal differently (`1` vs `1.0000`), so compare numbers, not text.
-- [ ] IMS-9 — S5d Opening stock · Added · spec: §12 S5d · depends: IMS-8 · model: opus
+- [ ] IMS-9 — S5d Opening stock · Added · plan: [[2026-11-11-s5d-opening-stock]] prompts: 01, 02 · depends: IMS-8 · model: sonnet
 - [ ] IMS-10 — S6 Transfers and adjustments · Added · spec: §12 S6 · depends: IMS-8 · model: opus
 - [ ] IMS-11 — S7 Stock screens · Added · spec: §12 S7 · depends: IMS-10 · model: sonnet
 - [ ] IMS-12 — S8 Item history · Added · spec: §12 S8 · depends: IMS-10 · model: sonnet

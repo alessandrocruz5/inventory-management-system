@@ -4,6 +4,7 @@ Managed by `/plan-feature`, `/audit-plan` and `/build-unit`. Newest first. Statu
 
 | Created | Plan | Status | Risk | Prompts | Repo |
 |---|---|---|---|---|---|
+| 2026-11-11 | [[2026-11-11-s5d-opening-stock]] | audited | medium | 2 | inventory-management-system |
 | 2026-11-09 | [[2026-11-09-s5c-posting-engine]] | done | high | 6 | inventory-management-system |
 | 2026-11-09 | [[2026-11-09-s5b-costing-rules]] | done | medium | 3 | inventory-management-system |
 | 2026-11-05 | [[2026-11-05-s5a-ledger-schema]] | done | high | 4 | inventory-management-system |
