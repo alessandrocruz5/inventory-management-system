@@ -7,6 +7,12 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
   'concurrency-conflict': 'Someone else changed this record. Reload it and try again.',
   'stock-not-zero':
     'This still has stock. Move, use or correct the stock to zero before deactivating it.',
+  'idempotency-key-missing': 'Something went wrong sending this. Please try again.',
+  'idempotency-key-reused':
+    'This form was already used for a different posting. Open the original or start a new form.',
+  'insufficient-stock': 'There is not enough stock for one of the lines.',
+  'inactive-item': 'One of the items is no longer active.',
+  'inactive-location': 'This location is no longer active.',
 };
 
 export const DEFAULT_PROBLEM_MESSAGE = 'Something went wrong. Please try again.';

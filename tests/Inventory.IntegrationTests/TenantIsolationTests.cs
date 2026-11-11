@@ -1,3 +1,4 @@
+using System.Data;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -320,6 +321,81 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
         var after = await GetLocationAsync(clientB, idB, ct);
         after["isActive"]!.GetValue<bool>().ShouldBeTrue();
         after["version"]!.GetValue<string>().ShouldBe(locationB["version"]!.GetValue<string>());
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/documents/receipts")]
+    public async Task Another_tenants_ids_in_a_receipt_body_are_400()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = (await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct))["id"]!.GetValue<Guid>();
+        var itemB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+        var locationA = (await LocationsTests.CreateAsync(clientA, "A-ONLY", "Tenant A location", ct))["id"]!.GetValue<Guid>();
+        var itemA = (await ItemsTests.CreateAsync(clientA, "A-ONLY", "Tenant A item", "pc", ct))["id"]!.GetValue<Guid>();
+
+        var intoB = await PostingTests.PostDocumentAsync(clientA, PostingTests.Receipts, Guid.NewGuid().ToString("N"),
+            PostingTests.Receipt(locationB, PostingTests.Line(itemA, 1m, 1m)), ct);
+        var ofB = await PostingTests.PostDocumentAsync(clientA, PostingTests.Receipts, Guid.NewGuid().ToString("N"),
+            PostingTests.Receipt(locationA, PostingTests.Line(itemB, 1m, 1m)), ct);
+
+        foreach (var (response, key) in new[] { (intoB, "locationId"), (ofB, "lines[0].itemId") })
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            problem["type"]!.GetValue<string>().ShouldBe("/problems/validation");
+            problem["errors"]!.AsObject().Select(e => e.Key).ShouldBe([key]);
+        }
+
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        await using var count = new SqlCommand("SELECT COUNT(*) FROM inventory.StockMovements WHERE ItemId = @item", connection);
+        count.Parameters.Add(new SqlParameter("@item", SqlDbType.UniqueIdentifier) { Value = itemB });
+        ((int)(await count.ExecuteScalarAsync(ct))!).ShouldBe(0);
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/documents/issues")]
+    public async Task Another_tenants_ids_in_an_issue_body_are_400()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = (await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct))["id"]!.GetValue<Guid>();
+        var itemB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+        var locationA = (await LocationsTests.CreateAsync(clientA, "A-ONLY", "Tenant A location", ct))["id"]!.GetValue<Guid>();
+        var itemA = (await ItemsTests.CreateAsync(clientA, "A-ONLY", "Tenant A item", "pc", ct))["id"]!.GetValue<Guid>();
+
+        // B's balance exists, so an issue that reached the engine would change it.
+        (await PostingTests.PostDocumentAsync(clientB, PostingTests.Receipts, Guid.NewGuid().ToString("N"),
+            PostingTests.Receipt(locationB, PostingTests.Line(itemB, 5m, 10m)), ct)).StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        await using var count = new SqlCommand("SELECT COUNT(*) FROM inventory.StockMovements", connection);
+        var balanceBefore = await PostingTests.BalanceAsync(connection, itemB, locationB, ct);
+        var movementsBefore = (int)(await count.ExecuteScalarAsync(ct))!;
+
+        var fromB = await PostingTests.PostDocumentAsync(clientA, PostingTests.Issues, Guid.NewGuid().ToString("N"),
+            PostingTests.Issue(locationB, PostingTests.IssueLine(itemA, 1m)), ct);
+        var ofB = await PostingTests.PostDocumentAsync(clientA, PostingTests.Issues, Guid.NewGuid().ToString("N"),
+            PostingTests.Issue(locationA, PostingTests.IssueLine(itemB, 1m)), ct);
+
+        foreach (var (response, key) in new[] { (fromB, "locationId"), (ofB, "lines[0].itemId") })
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            problem["type"]!.GetValue<string>().ShouldBe("/problems/validation");
+            problem["errors"]!.AsObject().Select(e => e.Key).ShouldBe([key]);
+        }
+
+        balanceBefore.ShouldBe((5m, 50m));
+        (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe(balanceBefore);
+        ((int)(await count.ExecuteScalarAsync(ct))!).ShouldBe(movementsBefore);
     }
 
     [Fact]
