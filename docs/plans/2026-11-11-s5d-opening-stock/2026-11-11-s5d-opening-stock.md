@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -219,3 +219,7 @@ Revert the PR. There's no schema change. The opening-stock receipts already post
 ## Log
 - 2026-11-11: planned (clarify pass: D1–D3 answered with the recommended defaults)
 - 2026-11-11: audited (PASS-WITH-CHANGES), 3 fixes applied: ordinal or posting-order key comparison (01, 02); `Snapshot.BalanceRows` from one flat list (01); `SeedTests` owns the demo tenant, plus the §11 exception (D8, Blast radius, Downstream). NOTEs not applied.
+- 2026-11-11: build-unit IMS-9 started on branch IMS-9; rollback point 315712293ddfe2372b121f345dde849a7a095140
+- 2026-11-11: 01 done (sonnet, 0 retries): InventorySeeder posts 31 opening-stock receipts via PostingEngine; Seed_twice snapshot covers the ledger; build, format, Platform 19, Inventory 164, Arch 21 green
+- 2026-11-11: 01 done (sonnet, 0 retries): InventorySeeder posts 31 opening-stock receipts via PostingEngine; Seed_twice snapshot covers the ledger; build, format, Platform 19, Inventory 164, Arch 21 green
+- 2026-11-11: 02 done (sonnet, 0 retries): SeedTests single [Fact] covers content, API replay, rename skip, isolation; SeedTests uses a private two-parameter SqlCommand (ScalarAsync takes one); build, format, Inventory 165, Platform 19 green

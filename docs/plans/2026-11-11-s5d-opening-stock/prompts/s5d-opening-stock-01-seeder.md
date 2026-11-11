@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-11-s5d-opening-stock]]"
 id: 01
 unit: IMS-9
-status: todo
+status: done
 model: sonnet
 effort: high
 depends_on: []
