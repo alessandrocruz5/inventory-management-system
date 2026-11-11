@@ -10,6 +10,9 @@ using Inventory.Features.Locations.CreateLocation;
 using Inventory.Features.Locations.DeactivateLocation;
 using Inventory.Features.Locations.ListLocations;
 using Inventory.Features.Locations.UpdateLocation;
+using Inventory.Features.Posting;
+using Inventory.Features.Posting.PostIssue;
+using Inventory.Features.Posting.PostReceipt;
 using Inventory.Persistence;
 using Inventory.Seeding;
 
@@ -30,11 +33,13 @@ public static class InventoryModuleExtensions
         // AddDbContext, never the pooled AddSqlServerDbContext: a pooled context keeps the first request's tenant (spec §8).
         builder.Services.AddDbContext<InventoryDbContext>(o => o.UseSqlServer(
             builder.Configuration.GetConnectionString("inventory"),
-            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "inventory"))
+            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "inventory").EnableRetryOnFailure(maxRetryCount: 3))
             .AddInterceptors(TenantSessionInterceptor.Instance, TenantSaveChangesInterceptor.Instance));
-        builder.EnrichSqlServerDbContext<InventoryDbContext>();
+        // Spec §6: a deadlock (1205) retries up to 3 times. Aspire's own strategy (6 retries) must be off for this one to apply.
+        builder.EnrichSqlServerDbContext<InventoryDbContext>(settings => settings.DisableRetry = true);
         builder.Services.AddScoped<IModuleMigrator, InventoryMigrator>();
         builder.Services.AddScoped<IInventoryModule, InventoryModule>();
+        builder.Services.AddScoped<PostingEngine>();
         builder.Services.AddScoped<IDataSeeder, InventorySeeder>();
         builder.Services.AddScoped<ListItemsHandler>();
         builder.Services.AddScoped<GetItemHandler>();
@@ -45,6 +50,9 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<CreateLocationHandler>();
         builder.Services.AddScoped<UpdateLocationHandler>();
         builder.Services.AddScoped<DeactivateLocationHandler>();
+        builder.Services.AddScoped<DocumentPoster>();
+        builder.Services.AddScoped<PostReceiptHandler>();
+        builder.Services.AddScoped<PostIssueHandler>();
         return builder;
     }
 
@@ -52,6 +60,7 @@ public static class InventoryModuleExtensions
     {
         endpoints.MapItemEndpoints();
         endpoints.MapLocationEndpoints();
+        endpoints.MapDocumentEndpoints();
         return endpoints;
     }
 }

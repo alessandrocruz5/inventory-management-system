@@ -45,4 +45,14 @@ describe('problemMessage', () => {
       PROBLEM_MESSAGES['stock-not-zero'],
     );
   });
+
+  it.each([
+    'idempotency-key-missing',
+    'idempotency-key-reused',
+    'insufficient-stock',
+    'inactive-item',
+    'inactive-location',
+  ])('maps %s', (slug) => {
+    expect(problemMessage({ type: `/problems/${slug}` })).toBe(PROBLEM_MESSAGES[slug]);
+  });
 });

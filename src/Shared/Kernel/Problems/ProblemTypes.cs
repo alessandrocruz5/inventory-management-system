@@ -21,6 +21,21 @@ public static class ProblemTypes
     /// <summary>Deactivation is blocked: a physical balance still has quantity or value (spec §6).</summary>
     public const string StockNotZero = "stock-not-zero";
 
+    /// <summary>A posting was sent without an <c>Idempotency-Key</c> header (spec §6).</summary>
+    public const string IdempotencyKeyMissing = "idempotency-key-missing";
+
+    /// <summary>The <c>Idempotency-Key</c> was already used by a posting with a different request (spec §6, step 2).</summary>
+    public const string IdempotencyKeyReused = "idempotency-key-reused";
+
+    /// <summary>A physical balance would go below zero at a location whose negative-stock toggle is off (spec §6, step 8).</summary>
+    public const string InsufficientStock = "insufficient-stock";
+
+    /// <summary>A posting names an inactive item (spec §6).</summary>
+    public const string InactiveItem = "inactive-item";
+
+    /// <summary>A posting names an inactive location (spec §6).</summary>
+    public const string InactiveLocation = "inactive-location";
+
     /// <summary>The problem <c>type</c> for a slug.</summary>
     public static string Uri(string slug) => Prefix + slug;
 }
