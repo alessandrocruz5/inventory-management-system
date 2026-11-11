@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: in-progress
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -202,6 +202,11 @@ grep -n 'S10' src/Modules/Inventory/Inventory/Domain/*.cs
 ## Rollback
 Revert the PR. The unit is additive: no schema, no data, no endpoint, and nothing calls it until S5c.
 
+## Outcome
+- **Shipped:** PR #6 (`e5b97ad4`, merged 2026-11-09 as `da95a481`). The pure costing and posting model is in `Inventory.Domain`, with 63 unit tests, including vector sets V, R and A in the in-memory harness.
+- **Deviations:** the audit commit `21b6889a` rode in PR #6 (the user's choice). Nothing else.
+- **Gotchas:** restore needs `DOTNET_SYSTEM_NET_DISABLEIPV6=1` on this machine. `Reverse` skips the short check under `AllowNegative` while `Post` still rejects (S10 resolves it). The ledger flip was done at the start of IMS-8's build, not right after the merge.
+
 ## Log
 - 2026-11-09: planned (option A; step-1 validation stays in S5c).
 - 2026-11-09: audited, 2 fixes applied (Codex PASS-WITH-CHANGES: harness atomicity, harness CHECK matches schema).
@@ -212,3 +217,4 @@ Revert the PR. The unit is additive: no schema, no data, no endpoint, and nothin
 - 2026-11-09: 03 done (sonnet, 0 retries): LedgerHarness and vector sets V, R, A, first run green; 63 unit tests; INV-1..5 and CHECK backstop after every step.
 - 2026-11-09: shipped e5b97ad4, PR #6 (includes 21b6889a audit commit, user's choice); CI green; gate: Codex review handoff.
 - 2026-11-09: Codex code review APPROVE (nothing to apply), marked approved; gate: CI only.
+- 2026-11-09: closed out at the start of IMS-8 (PR #6 merged; TASKS.md flipped, Downstream copied).

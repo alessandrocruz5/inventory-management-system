@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-09-s5c-posting-engine]]"
 id: 06
 unit: IMS-8
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: [05]

@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -324,6 +324,25 @@ Revert the PR. There's no schema change. Documents and movements posted while it
 ## Open items for the user (bookkeeping, not in this PR)
 - TASKS.md still shows IMS-7 as `[~]`, and `_index.md` shows the S5b plan as `in-progress`, though PR #6 merged (`da95a481`). Its Downstream block, at S5b plan `:124-133`, isn't in TASKS.md yet. Mark IMS-7 `[x]`, set S5b to `done` and copy the block before IMS-8 starts.
 
+## Outcome
+Shipped as IMS-8, PR #7, merged 2026-11-11 (`50d5c73e`). Built on `1f8a1deb` (engine) and `fae509ba` (code-guardian fixes).
+- **What shipped:** `PostingEngine` (steps 2–10), `DocumentPoster`, `POST /api/documents/receipts` and `/issues`, the five slugs, retries set to 3, and tests for T1, T2, T4a–f, T5 probes, T10 and the step-7 race. 346 .NET tests and 64 web tests pass.
+- **Deviations from the plan:** prompt 03 was written in an earlier session before this workflow ran it, so it was verified rather than built. The 422 order is item, then location (matching step 7). A repeated `Idempotency-Key` header is `400` (added in review). The step-7 location tests were added in review, since prompt 06 covered only the item.
+- **Gotchas:** the D1 out-of-range case returns `500` if the guard is removed, but from SqlClient's decimal(19,4) range check, not SQL 8115. The Testcontainers start-up flake appears when both integration modules start at once; `--max-parallel-test-modules 1` avoids it.
+- **Deferred:** see TASKS.md IMS-8 Downstream (S9 2601 on reversals, S11 applock -3, S4 handlers' 500 on exhausted retries, S7/T13 decimal scale).
+
 ## Log
 - 2026-11-09: planned (D1 overflow guards, D2 replay before database checks, D3 response shape; all three were the user's picks).
 - 2026-11-09: audited, 5 fixes applied (step-7 race test, pinned lock paths, ascending ids, key collation, helper reuse) plus 4 notes.
+- 2026-11-09: build started on IMS-8; rollback point fb6edbd27e6b051665d6edc08c590d4e1a15ce96. IMS-7 bookkeeping (open item) closed first.
+- 2026-11-09: 02 done (haiku, 0 retries): five slugs in PROBLEM_MESSAGES with an it.each test (64 web tests); spec §6 steps 1, 2, 8 and §15 amended for D1/D2.
+- 2026-11-09: 01 done (opus, 0 retries): DTOs, PostingValidation, RequestHash; 75 new unit tests (138 total). >100 lines reports only errors["lines"]; the JSON writer escapes non-ASCII, pinned by a literal test.
+- 2026-11-11: 03 done (opus, 0 retries): written by an earlier session on 2026-11-09 but never logged; the user kept it and it was verified here (build, format, Done-when greps, 290 tests green with 3 retries). Ids via sp_sequence_get_range, which 04's tests prove at run time. No FK on LastMovementId, so the step-9 SaveChanges order is safe.
+- 2026-11-11: 04 done (opus, 0 retries): DocumentPoster (D2 order), DocumentResponse (D3), POST /api/documents/receipts, T5 probe, 17 PostingTests runs; 308 tests green. The engine's first run-time exercise passed as written (sp_sequence_get_range path, so ids are contiguous). The 422 order is item, then location, matching step 7. A repeated Idempotency-Key header is comma-joined (left for code-guardian).
+- 2026-11-11: 05 done (opus, 0 retries): POST /api/documents/issues on the shared poster, T5 probe, 12 new tests incl. the D2 replay after deactivation; 320 tests green. Issue/IssueLine/BalanceAsync helpers added on PostingTests for 06.
+- 2026-11-11: 06 done (opus, 0 retries): T1 set R, T2, T4a–f, both step-7 deactivation races, T10; Microsoft.Extensions.TimeProvider.Testing 10.11.0; ApiFactory.Clock. 332 tests green, the integration project 3 runs in a row; web lint, build and 64 tests green. No production bug found. Four private PostingTests helpers re-written inline in PostingConcurrencyTests (PostingTests.cs wasn't in 06's files).
+- 2026-11-11: shipped as 1f8a1deb, PR #7; CI build and test green. Full-stack smoke: 201, then 200 + Idempotent-Replayed with the same id.
+- 2026-11-11: code-guardian REQUEST CHANGES, no Blockers. The user approved Should-fix 1–5 plus nit 12, now being fixed in the unit's files: a deadlock retry test and a MaxRetryCount==3 assertion; the D1 step-8 guard test; the step-7 location race twins; a repeated Idempotency-Key header becomes 400; R3 API rows; helper de-dup. Nits 6 (S9 2601 on UX_StockDocuments_Reverses), 7 (S11 applock -3), 8 (S4 handlers don't map RetryLimitExceeded → 409) and 11 (201 vs replay decimal scale, S7/T13) go to TASKS.md Downstream at merge.
+- 2026-11-11: review fixes done (opus, 0 retries) as fae509ba: 14 new tests (346 total; the integration project 3 runs in a row). The deadlock test is confirmed real by the API log (1205 victim, then an EF retry). Mutation checks (retry 4, D1 guard removed, plain step-7 location read) each failed their test and were reverted. A repeated Idempotency-Key is now 400 validation. Without the D1 guard the 500 comes from SqlClient's decimal(19,4) parameter range check, not 8115.
+- 2026-11-11: CI green on fae509ba (build, test). Gate: CI only (the user's pick; the code-guardian review stands, with its Should-fix items applied). Waiting for the user to merge PR #7.
+- 2026-11-11: merged (PR #7, 50d5c73e). TASKS.md IMS-8 flipped to [x] with its result and Downstream; plan and _index set to done; Outcome added. Bookkeeping is uncommitted until the user is back on develop and has pulled.
