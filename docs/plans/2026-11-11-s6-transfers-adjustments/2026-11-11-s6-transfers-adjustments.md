@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -271,3 +271,13 @@ Revert the PR. There's no schema or migration change. Transfer and adjustment do
 ## Log
 - 2026-11-11: planned
 - 2026-11-11: audited, 6 fixes applied (1 BLOCK resolved by the user's D5 decision, 5 FIX)
+- 2026-11-11: build started on IMS-10; rollback point c4253487ed66f743a48c7a253b414dad704c4cde
+- 2026-11-11: 01 done (opus, 0 retries): request records, Transfer/Adjustment step 1 (Validate split into Location/Body/StandardAmounts helpers, receipt/issue order unchanged), two canonical forms; 199 unit tests
+- 2026-11-11: 02 done (opus, 0 retries): DocumentPoster.Shape(kind) switch, D6 header checks, signed-delta line building, UnitCostRequired/quantityDelta mapping, ReasonCode through PostingCommand → step 4 → DocumentResponse; dropped the now-unused `using Inventory.Persistence` in both handlers; 404 tests
+- 2026-11-12: 03 done (opus, 0 retries): transfers (Staff+Admin) and adjustments (Admin) routes, handlers registered, two T5 probes; route guard green; 406 tests
+- 2026-11-12: 04 done (sonnet, 0 retries): TransferTests (9), AdjustmentTests (14), T1 API run of set A; PostingTests modifiers only; 441 tests
+- 2026-11-12: 05 done (opus, 0 retries): RetryLog, ApiFactory.Retries, LedgerInvariants (ports LedgerHarness), T3 green 3/3 with 0 execution-strategy retries (spec §6 step 6 lock order held), positive control counts ≥ 1; 442 tests
+- 2026-11-12: shipped as PR #9 (commit 83aa3bb8); local Commands green (442 .NET, 64 web). CI `build` red: NU1903 on Aspire.Hosting/Aspire.Hosting.AppHost 13.6.4 (GHSA-f7vh-h5g3-7jrh, published 2026-11-10, patched in 13.6.5). Unrelated to the slice; build stopped at the CI gate. AppHost smoke skipped (needs the seed-password secret); covered by Transfer/AdjustmentTests
+- 2026-11-13: merged develop (IMS-19 Aspire 13.6.5) into IMS-10 at 11fc0832; PR #9 CI green (build, test). Gate: CI + code-guardian.
+- 2026-11-13: code-guardian APPROVE WITH NITS (0 Blockers). Fixes (opus, 0 retries) in 3e4e6f37: T3 forces contention (holder U-locks the middle balance until all 50 transfers queue), 4 inactive item/location tests, ReasonCode passed only for adjustments. 446 .NET green; CI green. Remaining nits to Downstream.
+- 2026-11-13: PR #9 merged to develop; plan done

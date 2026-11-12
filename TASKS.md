@@ -19,7 +19,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - [x] IMS-9 — S5d Opening stock · Added · plan: [[2026-11-11-s5d-opening-stock]] prompts: 01, 02 · depends: IMS-8 · model: sonnet (merged 2026-11-11)
   - Result: `Api seed` posts 31 opening-stock receipts (QC 19 items, MKT 12; `CANDLE-WHT` none) through `PostingEngine` under `seed:<tenant>:<sku>:<location>` keys, `PostedBy` `Guid.Empty`. A held key means already seeded (renamed branch is skipped, not failed). `Seed_twice_changes_nothing` covers the ledger; `SeedTests` added. 347 .NET tests.
   - Downstream: (S7) show `PostedBy` `Guid.Empty` as "System". (S12/T14) use `CANDLE-WHT` or an own item, since other seeded items carry stock. (S11) check ledger health on the demo tenant inside `SeedTests` or `Platform.IntegrationTests` only; `SeedTests` owns `SeedTenants.Demo` and leaves QC renamed. Compare keys with `StringComparer.Ordinal`, never `ORDER BY IdempotencyKey`. Editing an `OpeningStock` row does not repost; use an adjustment (S6).
-- [ ] IMS-10 — S6 Transfers and adjustments · Added · plan: [[2026-11-11-s6-transfers-adjustments]] prompts: 01, 02, 03, 04, 05 · depends: IMS-8 · model: opus
+- [x] IMS-10 — S6 Transfers and adjustments · Added · plan: [[2026-11-11-s6-transfers-adjustments]] prompts: 01, 02, 03, 04, 05 · depends: IMS-8 · model: opus (merged 2026-11-13)
 - [ ] IMS-11 — S7 Stock screens · Added · spec: §12 S7 · depends: IMS-10 · model: sonnet
 - [ ] IMS-12 — S8 Item history · Added · spec: §12 S8 · depends: IMS-10 · model: sonnet
 - [ ] IMS-13 — S9 Reversals · Added · spec: §12 S9 · depends: IMS-10, IMS-11 · model: opus
@@ -108,3 +108,6 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - **S10:** replaces the `qty > OnHand` rejection in `OutflowCost` (when `AllowNegative`) with the estimate branch. Replaces the negative-inflow `InvalidOperationException` in `Post` with `Revaluation`, which emits a movement at `LineNo + 1000`. Adds sets N and X to `CostingVectorTests`. The LUC fold already groups by document. `Reverse` skips the short check when `AllowNegative` (as specified) while `Post` still rejects.
 - **S11:** INV-5's windowed SQL must return what `CostingPolicy.LastUnitCost` returns. T9 can compare the two.
 - **Build:** restore needs `DOTNET_SYSTEM_NET_DISABLEIPV6=1` on this machine.
+
+## Hotfixes
+- [~] IMS-19 — Bump Aspire packages to 13.6.5 (GHSA-f7vh-h5g3-7jrh) · Fixed · files: src/AppHost/AppHost.csproj, src/Modules/Inventory/Inventory/Inventory.csproj, src/Modules/Platform/Platform/Platform.csproj · depends: — · model: haiku

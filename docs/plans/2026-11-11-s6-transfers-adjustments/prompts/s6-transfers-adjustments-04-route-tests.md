@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-11-s6-transfers-adjustments]]"
 id: 04
 unit: IMS-10
-status: todo
+status: done
 model: sonnet
 effort: high
 depends_on: [03]
