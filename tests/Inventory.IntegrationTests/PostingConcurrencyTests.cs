@@ -1,4 +1,6 @@
 using System.Data;
+using System.Data.SqlTypes;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -446,13 +448,30 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
 
         var retriesBefore = retries.Count;
 
+        // Every transfer locks the same six balances in clustered-key order (TenantId, ItemId, LocationId). The holder
+        // U-locks the fourth of them, so the first transfer to reach step 6 takes the three before it and waits, and the
+        // rest queue behind it: all 50 are then inside SQL Server together, and can't pass by running one after another.
+        // Released together, any two that took their locks in different orders would deadlock, and the retry would show.
+        var middle = items
+            .SelectMany(item => new[] { (Item: item, Location: a), (Item: item, Location: b) })
+            .OrderBy(k => new SqlGuid(k.Item))
+            .ThenBy(k => new SqlGuid(k.Location))
+            .ElementAt(3);
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        (await LockBalanceAsync(holder, tx, middle.Item, middle.Location, ct)).ShouldBe(100m);
+
         // Even sends go A→B in line order [1, 2, 3], odd sends B→A in [3, 2, 1]: the request's line order can't be what
         // keeps the locks ordered.
-        var responses = await InParallelAsync(50, index => PostingTests.PostDocumentAsync(client, TransferTests.Transfers, PostingTests.NewKey(),
+        var sending = InParallelAsync(50, index => PostingTests.PostDocumentAsync(client, TransferTests.Transfers, PostingTests.NewKey(),
             index % 2 == 0
                 ? TransferTests.Transfer(a, b, TransferTests.TransferLine(items[0], 1m), TransferTests.TransferLine(items[1], 1m), TransferTests.TransferLine(items[2], 1m))
                 : TransferTests.Transfer(b, a, TransferTests.TransferLine(items[2], 1m), TransferTests.TransferLine(items[1], 1m), TransferTests.TransferLine(items[0], 1m)),
             ct));
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        (await WaitUntilQueuedAsync(holder, tx, 50, ct)).ShouldBe(50, "not every transfer was waiting at step 6 when the holder let go");
+        await tx.RollbackAsync(ct);
+        var responses = await sending;
 
         // 50 × 201, so no 409 concurrency-conflict and no 500.
         Count(responses, HttpStatusCode.Created).ShouldBe(50, Statuses(responses));
@@ -548,6 +567,43 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         command.Parameters.Add(new SqlParameter("@x", SqlDbType.UniqueIdentifier) { Value = item });
         command.Parameters.Add(new SqlParameter("@l", SqlDbType.UniqueIdentifier) { Value = location });
         return (decimal?)await command.ExecuteScalarAsync(ct);
+    }
+
+    /// <summary>
+    /// Waits (10 s at most) until <paramref name="count"/> requests wait on <paramref name="holder"/>, directly or behind
+    /// another waiter, polling sys.dm_exec_requests as sa; returns the last count seen.
+    /// </summary>
+    private async Task<int> WaitUntilQueuedAsync(SqlConnection holder, SqlTransaction tx, int count, CancellationToken ct)
+    {
+        int spid;
+        await using (var command = new SqlCommand("SELECT @@SPID", holder, tx))
+        {
+            spid = Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+        }
+
+        await using var admin = new SqlConnection(db.AdminConnectionString);
+        await admin.OpenAsync(ct);
+        await using var poll = new SqlCommand("""
+            WITH waiters AS (
+                SELECT session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @spid
+                UNION ALL
+                SELECT r.session_id FROM sys.dm_exec_requests AS r JOIN waiters AS w ON r.blocking_session_id = w.session_id)
+            SELECT COUNT(DISTINCT session_id) FROM waiters;
+            """, admin);
+        poll.Parameters.Add(new SqlParameter("@spid", SqlDbType.Int) { Value = spid });
+
+        var waited = Stopwatch.StartNew();
+        var queued = 0;
+        while (waited.Elapsed < TimeSpan.FromSeconds(10) && queued < count)
+        {
+            queued = (int)(await poll.ExecuteScalarAsync(ct))!;
+            if (queued < count)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            }
+        }
+
+        return queued;
     }
 
     private static Task<int> DocumentsWithKeyAsync(SqlConnection connection, string key, CancellationToken ct) =>

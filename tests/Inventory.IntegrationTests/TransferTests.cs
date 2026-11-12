@@ -199,6 +199,66 @@ public sealed class TransferTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Transfer_from_an_inactive_location_is_422()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var b = await PostingTests.NewLocationAsync(client, ct, "B");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+
+        // Both are empty, so both deactivate; the source is checked first, as at step 7.
+        (await client.PostAsync($"/api/locations/{a}/deactivate", null, ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await client.PostAsync($"/api/locations/{b}/deactivate", null, ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        var documentsBefore = await DocumentCountAsync(connection, ct);
+
+        var response = await PostingTests.PostDocumentAsync(client, Transfers, PostingTests.NewKey(), Transfer(a, b, TransferLine(item, 1m)), ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/inactive-location");
+        problem["locationId"]!.GetValue<Guid>().ShouldBe(a);
+        (await DocumentCountAsync(connection, ct)).ShouldBe(documentsBefore);
+        (await PostingTests.BalanceAsync(connection, item, a, ct)).ShouldBeNull();
+        (await PostingTests.BalanceAsync(connection, item, b, ct)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Transfer_of_an_inactive_item_is_422()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var b = await PostingTests.NewLocationAsync(client, ct, "B");
+        var stocked = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var inactive = await PostingTests.NewItemAsync(client, "RICE-2", ct);
+        await PostingTests.ReceiveAsync(client, a, stocked, 3m, 10m, ct);
+
+        // It has no stock, so it deactivates. Items are checked before stock, so this isn't insufficient-stock.
+        (await client.PostAsync($"/api/items/{inactive}/deactivate", null, ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        var documentsBefore = await DocumentCountAsync(connection, ct);
+
+        var response = await PostingTests.PostDocumentAsync(client, Transfers, PostingTests.NewKey(),
+            Transfer(a, b, TransferLine(stocked, 1m), TransferLine(inactive, 1m)), ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/inactive-item");
+        problem["itemId"]!.GetValue<Guid>().ShouldBe(inactive);
+
+        // The valid first line isn't written either.
+        (await DocumentCountAsync(connection, ct)).ShouldBe(documentsBefore);
+        (await PostingTests.BalanceAsync(connection, stocked, a, ct)).ShouldBe((3m, 30m));
+        (await PostingTests.BalanceAsync(connection, stocked, b, ct)).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Same_key_and_body_replays_with_200()
     {
         var ct = TestContext.Current.CancellationToken;

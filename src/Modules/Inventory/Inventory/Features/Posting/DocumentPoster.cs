@@ -122,7 +122,8 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
             .ToList();
 
         var command = new PostingCommand(
-            kind, type, postingLines, key, requestHash, validated.Reference, validated.Notes, user.UserId, validated.ReasonCode);
+            kind, type, postingLines, key, requestHash, validated.Reference, validated.Notes, user.UserId,
+            kind == PostingKind.Adjustment ? validated.ReasonCode : null);
         return ToResult(http, kind, validated, await engine.PostAsync(command, ct));
     }
 

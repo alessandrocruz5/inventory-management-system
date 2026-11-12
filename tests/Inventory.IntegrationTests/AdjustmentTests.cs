@@ -308,6 +308,52 @@ public sealed class AdjustmentTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Adjustment_of_an_inactive_item_is_422()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        (await client.PostAsync($"/api/items/{item}/deactivate", null, ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+
+        var response = await PostingTests.PostDocumentAsync(client, Adjustments, PostingTests.NewKey(),
+            Adjustment(location, "Found", Delta(item, 1m, 1m)), ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/inactive-item");
+        problem["itemId"]!.GetValue<Guid>().ShouldBe(item);
+        (await AdjustmentCountAsync(connection, ct)).ShouldBe(0);
+        (await PostingTests.BalanceAsync(connection, item, location, ct)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Adjustment_at_an_inactive_location_is_422()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        (await client.PostAsync($"/api/locations/{location}/deactivate", null, ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+
+        var response = await PostingTests.PostDocumentAsync(client, Adjustments, PostingTests.NewKey(),
+            Adjustment(location, "Found", Delta(item, 1m, 1m)), ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/inactive-location");
+        problem["locationId"]!.GetValue<Guid>().ShouldBe(location);
+        (await AdjustmentCountAsync(connection, ct)).ShouldBe(0);
+        (await PostingTests.BalanceAsync(connection, item, location, ct)).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Balance_beyond_the_column_range_names_quantityDelta()
     {
         var ct = TestContext.Current.CancellationToken;
