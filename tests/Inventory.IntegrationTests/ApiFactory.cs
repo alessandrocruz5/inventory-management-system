@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Inventory.IntegrationTests;
 
@@ -12,6 +13,9 @@ internal sealed class ApiFactory(string connectionString, params (string Key, st
 {
     /// <summary>When set, replaces the API's <see cref="TimeProvider"/>, so a test controls every timestamp (T10).</summary>
     internal TimeProvider? Clock { get; init; }
+
+    /// <summary>When set, counts the API's EF Core execution-strategy retries, so a test can see a retried deadlock (T3).</summary>
+    internal RetryLog? Retries { get; init; }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -29,6 +33,14 @@ internal sealed class ApiFactory(string connectionString, params (string Key, st
                 s.RemoveAll<TimeProvider>();
                 s.AddSingleton(clock);
             });
+        }
+
+        if (Retries is { } retries)
+        {
+            // Provider-specific, so no category rule in appsettings*.json can filter the retry event out.
+            builder.ConfigureLogging(l => l
+                .AddProvider(retries)
+                .AddFilter<RetryLog>(category: null, LogLevel.Trace));
         }
     }
 

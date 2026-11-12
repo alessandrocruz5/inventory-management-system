@@ -11,8 +11,10 @@ using Inventory.Features.Locations.DeactivateLocation;
 using Inventory.Features.Locations.ListLocations;
 using Inventory.Features.Locations.UpdateLocation;
 using Inventory.Features.Posting;
+using Inventory.Features.Posting.PostAdjustment;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
+using Inventory.Features.Posting.PostTransfer;
 using Inventory.Persistence;
 using Inventory.Seeding;
 
@@ -53,6 +55,8 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<DocumentPoster>();
         builder.Services.AddScoped<PostReceiptHandler>();
         builder.Services.AddScoped<PostIssueHandler>();
+        builder.Services.AddScoped<PostTransferHandler>();
+        builder.Services.AddScoped<PostAdjustmentHandler>();
         return builder;
     }
 

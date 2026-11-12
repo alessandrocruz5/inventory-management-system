@@ -1,5 +1,4 @@
 using Inventory.Domain;
-using Inventory.Persistence;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -16,9 +15,6 @@ internal sealed class PostReceiptHandler(DocumentPoster poster)
         poster.PostAsync(
             http,
             PostingKind.Receipt,
-            StockDocumentType.Receipt,
-            LocationKind.Supplier,
-            counterpartIsSource: true,
             errors => PostingValidation.Receipt(request, errors),
             RequestHash.Receipt,
             cancellationToken);

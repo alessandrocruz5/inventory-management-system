@@ -1,4 +1,6 @@
 using System.Data;
+using System.Data.SqlTypes;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -21,7 +23,8 @@ namespace Inventory.IntegrationTests;
 /// <summary>
 /// T2 and T4 (spec §11) against the real API: parallel postings of the last unit, idempotency under sequential, parallel
 /// and deterministic step-4 races, the step-7 re-read of an item or location deactivation committed mid-posting, and
-/// the retry of a deadlocked posting (spec §6). T4's parallel same-key reversals land with the reversal route in S9.
+/// the retry of a deadlocked posting (spec §6), and T3: 50 parallel transfers both ways between two locations, which
+/// must never deadlock (spec §6 step 6). T4's parallel same-key reversals land with the reversal route in S9.
 /// </summary>
 public sealed class PostingConcurrencyTests(DatabaseFixture db)
 {
@@ -368,7 +371,8 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
     public async Task Deadlocked_posting_is_retried_and_posts_once()
     {
         var ct = TestContext.Current.CancellationToken;
-        await using var app = db.CreateApp();
+        var retries = new RetryLog();
+        await using var app = new ApiFactory(db.AppConnectionString) { Retries = retries };
         var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         using var client = await DatabaseFixture.SignInAsync(app, email);
         var first = await PostingTests.NewLocationAsync(client, ct);
@@ -402,20 +406,106 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         var response = await request;
 
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        retries.Count.ShouldBeGreaterThanOrEqualTo(1);
         (await DocumentsWithKeyAsync(holder, key, ct)).ShouldBe(1);
         (await PostingTests.BalanceAsync(holder, item, second, ct)).ShouldBe((1m, 10m));
         (await PostingTests.BalanceAsync(holder, item, first, ct)).ShouldBe((1m, 10m));
     }
 
+    [Fact]
+    public async Task Fifty_parallel_transfers_both_ways_never_deadlock()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var retries = new RetryLog();
+        await using var app = new ApiFactory(db.AppConnectionString) { Retries = retries };
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "WH-A");
+        var b = await PostingTests.NewLocationAsync(client, ct, "WH-B");
+        Guid[] items =
+        [
+            await PostingTests.NewItemAsync(client, "RICE-1", ct),
+            await PostingTests.NewItemAsync(client, "RICE-2", ct),
+            await PostingTests.NewItemAsync(client, "RICE-3", ct),
+        ];
+        decimal[] costsAtA = [10.00m, 20.00m, 30.00m];
+        decimal[] costsAtB = [12.50m, 21.75m, 33.10m];
+
+        // Every touched balance exists before the race, so step 5 inserts nothing and only step 6's lock path is tested.
+        for (var i = 0; i < items.Length; i++)
+        {
+            await PostingTests.ReceiveAsync(client, a, items[i], 100m, costsAtA[i], ct);
+            await PostingTests.ReceiveAsync(client, b, items[i], 100m, costsAtB[i], ct);
+        }
+
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        var initialValues = new decimal[items.Length];
+        for (var i = 0; i < items.Length; i++)
+        {
+            initialValues[i] = (await PostingTests.BalanceAsync(connection, items[i], a, ct))!.Value.StockValue
+                + (await PostingTests.BalanceAsync(connection, items[i], b, ct))!.Value.StockValue;
+        }
+
+        var retriesBefore = retries.Count;
+
+        // Every transfer locks the same six balances in clustered-key order (TenantId, ItemId, LocationId). The holder
+        // U-locks the fourth of them, so the first transfer to reach step 6 takes the three before it and waits, and the
+        // rest queue behind it: all 50 are then inside SQL Server together, and can't pass by running one after another.
+        // Released together, any two that took their locks in different orders would deadlock, and the retry would show.
+        var middle = items
+            .SelectMany(item => new[] { (Item: item, Location: a), (Item: item, Location: b) })
+            .OrderBy(k => new SqlGuid(k.Item))
+            .ThenBy(k => new SqlGuid(k.Location))
+            .ElementAt(3);
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        (await LockBalanceAsync(holder, tx, middle.Item, middle.Location, ct)).ShouldBe(100m);
+
+        // Even sends go A→B in line order [1, 2, 3], odd sends B→A in [3, 2, 1]: the request's line order can't be what
+        // keeps the locks ordered.
+        var sending = InParallelAsync(50, index => PostingTests.PostDocumentAsync(client, TransferTests.Transfers, PostingTests.NewKey(),
+            index % 2 == 0
+                ? TransferTests.Transfer(a, b, TransferTests.TransferLine(items[0], 1m), TransferTests.TransferLine(items[1], 1m), TransferTests.TransferLine(items[2], 1m))
+                : TransferTests.Transfer(b, a, TransferTests.TransferLine(items[2], 1m), TransferTests.TransferLine(items[1], 1m), TransferTests.TransferLine(items[0], 1m)),
+            ct));
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        (await WaitUntilQueuedAsync(holder, tx, 50, ct)).ShouldBe(50, "not every transfer was waiting at step 6 when the holder let go");
+        await tx.RollbackAsync(ct);
+        var responses = await sending;
+
+        // 50 × 201, so no 409 concurrency-conflict and no 500.
+        Count(responses, HttpStatusCode.Created).ShouldBe(50, Statuses(responses));
+        (retries.Count - retriesBefore).ShouldBe(0, "a deadlock was retried: the step-6 lock order didn't hold");
+
+        for (var i = 0; i < items.Length; i++)
+        {
+            var atA = (await PostingTests.BalanceAsync(connection, items[i], a, ct))!.Value;
+            var atB = (await PostingTests.BalanceAsync(connection, items[i], b, ct))!.Value;
+            atA.OnHand.ShouldBe(100m);
+            atB.OnHand.ShouldBe(100m);
+
+            // Transfers move value between A and B, never create or destroy it.
+            (atA.StockValue + atB.StockValue).ShouldBe(initialValues[i]);
+        }
+
+        await LedgerInvariants.AssertHoldAsync(connection, ct);
+        (await DocumentsOfTypeAsync(connection, "Transfer", ct)).ShouldBe(50);
+        (await MovementsOfTypeAsync(connection, "Transfer", ct)).ShouldBe(150);
+    }
+
     /// <summary>Starts every send parked behind one gate, then opens it, so the requests reach the API together.</summary>
-    private static async Task<HttpResponseMessage[]> InParallelAsync(int count, Func<Task<HttpResponseMessage>> send)
+    private static Task<HttpResponseMessage[]> InParallelAsync(int count, Func<Task<HttpResponseMessage>> send) =>
+        InParallelAsync(count, _ => send());
+
+    /// <summary>As above, passing each send its index, so the sends can differ.</summary>
+    private static async Task<HttpResponseMessage[]> InParallelAsync(int count, Func<int, Task<HttpResponseMessage>> send)
     {
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sends = Enumerable.Range(0, count)
-            .Select(async _ =>
+            .Select(async index =>
             {
                 await gate.Task;
-                return await send();
+                return await send(index);
             })
             .ToList();
         gate.SetResult();
@@ -479,6 +569,43 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         return (decimal?)await command.ExecuteScalarAsync(ct);
     }
 
+    /// <summary>
+    /// Waits (10 s at most) until <paramref name="count"/> requests wait on <paramref name="holder"/>, directly or behind
+    /// another waiter, polling sys.dm_exec_requests as sa; returns the last count seen.
+    /// </summary>
+    private async Task<int> WaitUntilQueuedAsync(SqlConnection holder, SqlTransaction tx, int count, CancellationToken ct)
+    {
+        int spid;
+        await using (var command = new SqlCommand("SELECT @@SPID", holder, tx))
+        {
+            spid = Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+        }
+
+        await using var admin = new SqlConnection(db.AdminConnectionString);
+        await admin.OpenAsync(ct);
+        await using var poll = new SqlCommand("""
+            WITH waiters AS (
+                SELECT session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @spid
+                UNION ALL
+                SELECT r.session_id FROM sys.dm_exec_requests AS r JOIN waiters AS w ON r.blocking_session_id = w.session_id)
+            SELECT COUNT(DISTINCT session_id) FROM waiters;
+            """, admin);
+        poll.Parameters.Add(new SqlParameter("@spid", SqlDbType.Int) { Value = spid });
+
+        var waited = Stopwatch.StartNew();
+        var queued = 0;
+        while (waited.Elapsed < TimeSpan.FromSeconds(10) && queued < count)
+        {
+            queued = (int)(await poll.ExecuteScalarAsync(ct))!;
+            if (queued < count)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            }
+        }
+
+        return queued;
+    }
+
     private static Task<int> DocumentsWithKeyAsync(SqlConnection connection, string key, CancellationToken ct) =>
         PostingTests.ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockDocuments WHERE IdempotencyKey = @p",
             new SqlParameter("@p", SqlDbType.VarChar, 64) { Value = key }, ct);
@@ -491,6 +618,14 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
     private static Task<int> MovementsOfDocumentAsync(SqlConnection connection, Guid document, CancellationToken ct) =>
         PostingTests.ScalarAsync<int>(connection, "SELECT COUNT(*) FROM inventory.StockMovements WHERE DocumentId = @p",
             new SqlParameter("@p", SqlDbType.UniqueIdentifier) { Value = document }, ct);
+
+    private static Task<int> MovementsOfTypeAsync(SqlConnection connection, string type, CancellationToken ct) =>
+        PostingTests.ScalarAsync<int>(connection, """
+            SELECT COUNT(*) FROM inventory.StockMovements AS m
+            JOIN inventory.StockDocuments AS d ON d.Id = m.DocumentId
+            WHERE d.Type = @p
+            """,
+            new SqlParameter("@p", SqlDbType.VarChar, 16) { Value = type }, ct);
 
     private static async Task<Guid> IdAsync(HttpResponseMessage response, CancellationToken ct) =>
         (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["id"]!.GetValue<Guid>();

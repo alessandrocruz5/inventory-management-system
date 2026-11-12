@@ -9,6 +9,7 @@ namespace Inventory.Features.Posting;
 internal sealed record DocumentResponse(
     Guid Id,
     string Type,
+    string? ReasonCode,
     string? Reference,
     string? Notes,
     DateTimeOffset PostedAt,
@@ -20,6 +21,7 @@ internal sealed record DocumentResponse(
     public static DocumentResponse From(PostedOutcome outcome) => new(
         outcome.Document.Id,
         outcome.Document.Type.ToString(),
+        outcome.Document.ReasonCode?.ToString(),
         outcome.Document.Reference,
         outcome.Document.Notes,
         outcome.Document.PostedAt,

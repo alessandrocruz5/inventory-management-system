@@ -1,5 +1,7 @@
+using Inventory.Features.Posting.PostAdjustment;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
+using Inventory.Features.Posting.PostTransfer;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -14,6 +16,8 @@ internal static class DocumentEndpoints
         var documents = api.MapGroup("/documents");
         documents.MapPostReceipt();
         documents.MapPostIssue();
+        documents.MapPostTransfer();
+        documents.MapPostAdjustment();
         return api;
     }
 }

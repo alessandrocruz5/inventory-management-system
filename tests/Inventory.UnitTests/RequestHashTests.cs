@@ -2,8 +2,10 @@ using System.Security.Cryptography;
 using System.Text;
 
 using Inventory.Features.Posting;
+using Inventory.Features.Posting.PostAdjustment;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
+using Inventory.Features.Posting.PostTransfer;
 
 using Shouldly;
 
@@ -31,6 +33,25 @@ public sealed class RequestHashTests
         errors.ShouldBeEmpty();
         return posting.ShouldNotBeNull();
     }
+
+    private static ValidatedPosting ValidTransfer(PostTransferRequest request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var posting = PostingValidation.Transfer(request, errors);
+        errors.ShouldBeEmpty();
+        return posting.ShouldNotBeNull();
+    }
+
+    private static ValidatedPosting ValidAdjustment(PostAdjustmentRequest request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var posting = PostingValidation.Adjustment(request, errors);
+        errors.ShouldBeEmpty();
+        return posting.ShouldNotBeNull();
+    }
+
+    private static byte[] AdjustmentHash(string reason, params PostAdjustmentLine[] lines) =>
+        RequestHash.Adjustment(ValidAdjustment(new PostAdjustmentRequest(Loc, reason, null, null, lines)));
 
     private static byte[] ReceiptHash(Guid location, string? reference, params PostReceiptLine[] lines) =>
         RequestHash.Receipt(ValidReceipt(new PostReceiptRequest(location, reference, null, lines)));
@@ -176,5 +197,104 @@ public sealed class RequestHashTests
     public void FormatDecimal_writes_negative_zero_as_zero()
     {
         RequestHash.FormatDecimal(decimal.Negate(0.00m)).ShouldBe("0");
+    }
+
+    [Fact]
+    public void Transfer_canonical_json_is_exact()
+    {
+        var posting = ValidTransfer(new PostTransferRequest(
+            Loc,
+            OtherLoc,
+            "  TR-1 ",
+            null,
+            [new PostTransferLine(ItemA, 4m), new PostTransferLine(ItemB, 0.5000m)]));
+
+        RequestHash.TransferCanonicalJson(posting).ShouldBe(
+            """{"fromLocationId":"0f8fad5b-d9cb-469f-a165-70867728950e","toLocationId":"3b241101-e2bb-4255-8caf-4136c566a962","reference":"TR-1","notes":null,"lines":[{"itemId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","quantity":4},{"itemId":"d3c8a2f0-5b1e-4a7c-9e26-1f04b8c7e5aa","quantity":0.5}]}""");
+    }
+
+    [Fact]
+    public void Adjustment_canonical_json_is_exact()
+    {
+        var posting = ValidAdjustment(new PostAdjustmentRequest(
+            Loc,
+            "Damaged",
+            null,
+            " water damage ",
+            [new PostAdjustmentLine(ItemA, -2.0000m, null), new PostAdjustmentLine(ItemB, 5.0000m, 42.50m)]));
+
+        RequestHash.AdjustmentCanonicalJson(posting).ShouldBe(
+            """{"locationId":"0f8fad5b-d9cb-469f-a165-70867728950e","reasonCode":"Damaged","reference":null,"notes":"water damage","lines":[{"itemId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","quantityDelta":-2,"unitCost":null},{"itemId":"d3c8a2f0-5b1e-4a7c-9e26-1f04b8c7e5aa","quantityDelta":5,"unitCost":42.5}]}""");
+    }
+
+    [Fact]
+    public void Transfer_hash_is_sha256_of_method_route_and_canonical_json()
+    {
+        var posting = ValidTransfer(new PostTransferRequest(Loc, OtherLoc, null, null, [new PostTransferLine(ItemA, 1m)]));
+        var preImage = "POST /api/documents/transfers\n" + RequestHash.TransferCanonicalJson(posting);
+
+        RequestHash.Transfer(posting).ShouldBe(SHA256.HashData(Encoding.UTF8.GetBytes(preImage)));
+    }
+
+    [Fact]
+    public void Adjustment_hash_is_sha256_of_method_route_and_canonical_json()
+    {
+        var posting = ValidAdjustment(new PostAdjustmentRequest(Loc, "Found", null, null, [new PostAdjustmentLine(ItemA, 1m, 10m)]));
+        var preImage = "POST /api/documents/adjustments\n" + RequestHash.AdjustmentCanonicalJson(posting);
+
+        RequestHash.Adjustment(posting).ShouldBe(SHA256.HashData(Encoding.UTF8.GetBytes(preImage)));
+    }
+
+    [Fact]
+    public void Routes_separate_hashes()
+    {
+        var receipt = RequestHash.Receipt(ValidReceipt(new PostReceiptRequest(Loc, null, null, [new PostReceiptLine(ItemA, 1m, 10m)])));
+        var issue = RequestHash.Issue(ValidIssue(new PostIssueRequest(Loc, null, null, [new PostIssueLine(ItemA, 1m)])));
+        var transfer = RequestHash.Transfer(ValidTransfer(new PostTransferRequest(Loc, OtherLoc, null, null, [new PostTransferLine(ItemA, 1m)])));
+        var adjustment = AdjustmentHash("Found", new PostAdjustmentLine(ItemA, 1m, 10m));
+
+        receipt.ShouldNotBe(issue);
+        receipt.ShouldNotBe(transfer);
+        issue.ShouldNotBe(transfer);
+        adjustment.ShouldNotBe(receipt);
+    }
+
+    [Fact]
+    public void A_changed_reason_changes_the_hash()
+    {
+        AdjustmentHash("Damaged", new PostAdjustmentLine(ItemA, -2m, null))
+            .ShouldNotBe(AdjustmentHash("Lost", new PostAdjustmentLine(ItemA, -2m, null)));
+    }
+
+    [Fact]
+    public void A_flipped_sign_changes_the_hash()
+    {
+        AdjustmentHash("CountCorrection", new PostAdjustmentLine(ItemA, -2m, null))
+            .ShouldNotBe(AdjustmentHash("CountCorrection", new PostAdjustmentLine(ItemA, 2m, null)));
+    }
+
+    [Fact]
+    public void Swapped_from_and_to_change_the_hash()
+    {
+        PostTransferLine line = new(ItemA, 1m);
+
+        RequestHash.Transfer(ValidTransfer(new PostTransferRequest(Loc, OtherLoc, null, null, [line])))
+            .ShouldNotBe(RequestHash.Transfer(ValidTransfer(new PostTransferRequest(OtherLoc, Loc, null, null, [line]))));
+    }
+
+    [Fact]
+    public void A_transfer_without_a_destination_cannot_be_hashed()
+    {
+        var posting = new ValidatedPosting(Loc, null, null, [new ValidatedLine(1, ItemA, 1m, null)]);
+
+        Should.Throw<InvalidOperationException>(() => RequestHash.Transfer(posting));
+    }
+
+    [Fact]
+    public void An_adjustment_without_a_reason_cannot_be_hashed()
+    {
+        var posting = new ValidatedPosting(Loc, null, null, [new ValidatedLine(1, ItemA, 1m, null)]);
+
+        Should.Throw<InvalidOperationException>(() => RequestHash.Adjustment(posting));
     }
 }

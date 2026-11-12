@@ -5,6 +5,8 @@ namespace Inventory.Persistence;
 /// <summary>
 /// A posting that passed step 1 and the step 2 lookup (spec §6, plan D2). <see cref="Lines"/> carry resolved From and To
 /// locations, numbered 1..n. <see cref="PostedBy"/> comes from the caller, so a seeder can pass its own principal.
+/// <see cref="ReasonCode"/> is set on an adjustment, null on every other type, including a reversal of an adjustment
+/// (<c>CK_StockDocuments_ReasonCode</c>).
 /// </summary>
 internal sealed record PostingCommand(
     PostingKind Kind,
@@ -14,7 +16,8 @@ internal sealed record PostingCommand(
     byte[] RequestHash,
     string? Reference,
     string? Notes,
-    Guid PostedBy);
+    Guid PostedBy,
+    AdjustmentReason? ReasonCode);
 
 /// <summary>What <see cref="PostingEngine"/> did with a posting. Only <see cref="PostedOutcome"/> wrote anything.</summary>
 internal abstract record PostingOutcome;
