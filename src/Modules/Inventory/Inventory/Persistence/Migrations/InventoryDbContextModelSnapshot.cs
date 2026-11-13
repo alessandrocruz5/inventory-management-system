@@ -267,6 +267,9 @@ namespace Inventory.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_StockDocuments_IdempotencyKey");
 
+                    b.HasIndex("TenantId", "PostedAt")
+                        .HasDatabaseName("IX_StockDocuments_PostedAt");
+
                     b.HasIndex("TenantId", "ReversesDocumentId")
                         .IsUnique()
                         .HasDatabaseName("UX_StockDocuments_Reverses")

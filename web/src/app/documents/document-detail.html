@@ -1,0 +1,63 @@
+@if (error(); as message) {
+  <p role="alert">{{ message }}</p>
+  <a routerLink="/documents">Back to documents</a>
+}
+
+@if (document(); as doc) {
+  <h1>{{ typeLabel(doc.type) }}</h1>
+
+  <dl>
+    <dt>Posted</dt>
+    <dd>{{ formatDate(doc.postedAt) }}</dd>
+    <dt>Posted by</dt>
+    <dd>{{ postedBy(doc) }}</dd>
+    @if (doc.reasonCode) {
+      <dt>Reason</dt>
+      <dd>{{ reasonLabel(doc.reasonCode) }}</dd>
+    }
+    @if (doc.reference) {
+      <dt>Reference</dt>
+      <dd>{{ doc.reference }}</dd>
+    }
+    @if (doc.notes) {
+      <dt>Notes</dt>
+      <dd>{{ doc.notes }}</dd>
+    }
+  </dl>
+
+  @if (doc.reversedByDocumentId) {
+    <p>Reversed by <a [routerLink]="['/documents', doc.reversedByDocumentId]">this reversal</a></p>
+  }
+  @if (doc.reversesDocumentId) {
+    <p>Reverses <a [routerLink]="['/documents', doc.reversesDocumentId]">this document</a></p>
+  }
+
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>From → To</th>
+        <th class="num">Qty</th>
+        <th class="num">Unit cost</th>
+        <th class="num">Total cost</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (line of doc.lines; track line.movementId) {
+        <tr>
+          <td data-label="Item">{{ line.sku }} · {{ line.itemName }}</td>
+          <td data-label="From → To" [title]="line.fromLocationName + ' → ' + line.toLocationName">
+            {{ line.fromLocationCode }} → {{ line.toLocationCode }}
+          </td>
+          <td class="num" data-label="Qty">
+            {{ formatQuantity(line.quantity) }} {{ line.baseUnit }}
+          </td>
+          <td class="num" data-label="Unit cost">
+            {{ line.unitCost === null ? '—' : formatMoney(line.unitCost) }}
+          </td>
+          <td class="num" data-label="Total cost">{{ formatMoney(line.totalCost) }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+}

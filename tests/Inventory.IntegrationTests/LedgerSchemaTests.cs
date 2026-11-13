@@ -202,6 +202,26 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Documents_posted_at_index_leads_with_TenantId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var admin = await OpenAdminAsync(ct);
+
+        var unique = await ReadStringsAsync(admin, ct,
+            "SELECT CAST(i.is_unique AS nvarchar(1)) FROM sys.indexes i " +
+            "WHERE i.object_id = OBJECT_ID(N'inventory.StockDocuments') AND i.name = N'IX_StockDocuments_PostedAt'");
+        unique.ShouldBe(["0"], "IX_StockDocuments_PostedAt must exist and be non-unique");
+
+        var keys = await ReadStringsAsync(admin, ct,
+            "SELECT c.name FROM sys.indexes i " +
+            "JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id " +
+            "JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id " +
+            "WHERE i.object_id = OBJECT_ID(N'inventory.StockDocuments') AND i.name = N'IX_StockDocuments_PostedAt' AND ic.is_included_column = 0 " +
+            "ORDER BY ic.key_ordinal");
+        keys.ShouldBe(["TenantId", "PostedAt"]);
+    }
+
+    [Fact]
     public async Task Declared_triggers_match_the_database()
     {
         var ct = TestContext.Current.CancellationToken;

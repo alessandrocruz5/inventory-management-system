@@ -13,14 +13,16 @@ const staff: CurrentUser = {
 
 describe('App', () => {
   const user = signal<CurrentUser | null>(null);
+  const isAdmin = signal(false);
   const logout = vi.fn();
 
   beforeEach(async () => {
     user.set(null);
+    isAdmin.set(false);
     logout.mockReset();
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideRouter([]), { provide: AuthService, useValue: { user, logout } }],
+      providers: [provideRouter([]), { provide: AuthService, useValue: { user, isAdmin, logout } }],
     }).compileComponents();
   });
 
@@ -55,6 +57,38 @@ describe('App', () => {
     const locations = el.querySelector('a[href="/locations"]');
     expect(locations).not.toBeNull();
     expect(locations?.textContent).toContain('Locations');
+  });
+
+  it('links to the stock screens in the toolbar', async () => {
+    user.set(staff);
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const expected: [string, string][] = [
+      ['/stock', 'Stock'],
+      ['/documents/new/receipt', 'Receive stock'],
+      ['/documents/new/issue', 'Use or sell stock'],
+      ['/documents/new/transfer', 'Move stock'],
+      ['/documents', 'Documents'],
+    ];
+    for (const [href, text] of expected) {
+      const link = el.querySelector(`a[href="${href}"]`);
+      expect(link, href).not.toBeNull();
+      expect(link?.textContent).toContain(text);
+    }
+  });
+
+  it('shows Correct stock to Admin only', async () => {
+    user.set(staff);
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('a[href="/documents/new/adjustment"]')).toBeNull();
+    isAdmin.set(true);
+    await fixture.whenStable();
+    const link = el.querySelector('a[href="/documents/new/adjustment"]');
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain('Correct stock');
   });
 
   it('shows no toolbar when signed out', async () => {
