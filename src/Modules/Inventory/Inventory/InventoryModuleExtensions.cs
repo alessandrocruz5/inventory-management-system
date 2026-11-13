@@ -1,4 +1,7 @@
 using Inventory.Contracts;
+using Inventory.Features.Documents;
+using Inventory.Features.Documents.GetDocument;
+using Inventory.Features.Documents.ListDocuments;
 using Inventory.Features.Items;
 using Inventory.Features.Items.CreateItem;
 using Inventory.Features.Items.DeactivateItem;
@@ -15,6 +18,8 @@ using Inventory.Features.Posting.PostAdjustment;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
 using Inventory.Features.Posting.PostTransfer;
+using Inventory.Features.Stock;
+using Inventory.Features.Stock.ListStock;
 using Inventory.Persistence;
 using Inventory.Seeding;
 
@@ -57,6 +62,9 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<PostIssueHandler>();
         builder.Services.AddScoped<PostTransferHandler>();
         builder.Services.AddScoped<PostAdjustmentHandler>();
+        builder.Services.AddScoped<ListStockHandler>();
+        builder.Services.AddScoped<ListDocumentsHandler>();
+        builder.Services.AddScoped<GetDocumentHandler>();
         return builder;
     }
 
@@ -65,6 +73,8 @@ public static class InventoryModuleExtensions
         endpoints.MapItemEndpoints();
         endpoints.MapLocationEndpoints();
         endpoints.MapDocumentEndpoints();
+        endpoints.MapStockEndpoints();
+        endpoints.MapDocumentQueryEndpoints();
         return endpoints;
     }
 }

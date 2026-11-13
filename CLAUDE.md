@@ -61,7 +61,7 @@ cd web && npm run lint && npm run build && npm test -- --watch=false
 - Money and quantities are decimal / decimal(19,4), never double or float; rounding is AwayFromZero to 4 dp.
 - No UPDATE or DELETE on StockDocuments or StockMovements; no hard deletes anywhere.
 - TenantId never comes from a request; IgnoreQueryFilters() without names is banned outside tests.
-- PostedAt comes only from TimeProvider; no request carries a date.
+- PostedAt comes only from TimeProvider; no write request carries a date (T10 allowlists read filters, IMS-11 D1).
 - The API connects as inventory_app, never as the server admin.
 - No banned packages, and no package outside the allowed list without asking.
 - Ask before changing section 6 or adding a column to StockMovements or StockDocuments.

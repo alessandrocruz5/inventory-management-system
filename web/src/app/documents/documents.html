@@ -1,0 +1,44 @@
+<h1>Documents</h1>
+
+<div class="filters">
+  <mat-form-field class="filter">
+    <mat-label>Type</mat-label>
+    <mat-select [value]="type()" (selectionChange)="onType($event.value)">
+      <mat-option [value]="null">All types</mat-option>
+      @for (t of types; track t) {
+        <mat-option [value]="t">{{ typeLabel(t) }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+  <mat-form-field class="filter">
+    <mat-label>From</mat-label>
+    <input
+      matInput
+      type="date"
+      [value]="from() ?? ''"
+      (change)="onFrom($any($event.target).value)"
+    />
+  </mat-form-field>
+  <mat-form-field class="filter">
+    <mat-label>To</mat-label>
+    <input matInput type="date" [value]="to() ?? ''" (change)="onTo($any($event.target).value)" />
+  </mat-form-field>
+</div>
+
+<ag-grid-angular
+  class="grid"
+  [theme]="theme"
+  [columnDefs]="columnDefs"
+  [rowData]="rows()"
+  [loading]="loading()"
+  [pagination]="false"
+  (rowClicked)="onRowClicked($event.data)"
+/>
+
+<mat-paginator
+  [length]="total()"
+  [pageIndex]="pageIndex()"
+  [pageSize]="pageSize()"
+  [pageSizeOptions]="pageSizeOptions"
+  (page)="onPage($event)"
+/>
