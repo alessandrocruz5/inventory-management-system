@@ -29,6 +29,7 @@ interface PostStockInternals {
   }>;
   submit(): Promise<void>;
   title(): string;
+  message(): string | null;
 }
 
 const ITEM = {
@@ -199,6 +200,18 @@ describe('PostStock', () => {
     post.mockResolvedValue({ id: 'd9', type: 'Issue' });
     await c.submit();
     expect(navigate).toHaveBeenCalledWith(['/documents', 'd9']);
+  });
+
+  it('never reports a committed post as failed when navigation fails', async () => {
+    const { c } = await setup('issue');
+    fill(c, 'issue');
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockRejectedValue(new Error('chunk failed'));
+    post.mockResolvedValue({ id: 'd9', type: 'Issue' });
+    await c.submit();
+    expect(c.message()).toBeNull();
+    expect(TestBed.inject(MatSnackBar).open).toHaveBeenCalledWith('Posted', 'OK', {
+      duration: 4000,
+    });
   });
 
   it('posts a negative delta without a unit cost when an adjustment line is Remove', async () => {

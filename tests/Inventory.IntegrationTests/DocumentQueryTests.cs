@@ -300,6 +300,31 @@ public sealed class DocumentQueryTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Revaluation_movements_are_not_counted_as_lines()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, tenant, client, _) = await StartAsync();
+        await using var _ = app;
+        using var __ = client;
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var item = await LedgerRows.AddItemAsync(c, "REVAL-1", ct);
+        var location = await LedgerRows.AddLocationAsync(c, "WH-R", ct);
+        var supplier = await LedgerRows.LocationIdAsync(c, "SUP", ct);
+        var adjustments = await LedgerRows.LocationIdAsync(c, "ADJ", ct);
+        var document = await LedgerRows.AddDocumentAsync(c, ct);
+        await LedgerRows.AddMovementAsync(c, document, 1, item, supplier, location, 5m, 50m, ct);
+        await LedgerRows.AddMovementAsync(c, document, 1001, item, adjustments, location, 0m, 3m, ct);
+
+        var row = (await GetAsync(client, "", ct))["items"]!.AsArray().Single(i => i!["id"]!.GetValue<Guid>() == document)!;
+        var lines = (await GetDetailAsync(client, document, ct))["lines"]!.AsArray();
+
+        row["lineCount"]!.GetValue<int>().ShouldBe(1);
+        lines.Select(l => l!["lineNo"]!.GetValue<int>()).ShouldBe([1, 1001]);
+        lines[1]!["unitCost"].ShouldBeNull();
+        lines[1]!["totalCost"]!.GetValue<decimal>().ShouldBe(3m);
+    }
+
+    [Fact]
     public async Task Unknown_document_is_404()
     {
         var ct = TestContext.Current.CancellationToken;

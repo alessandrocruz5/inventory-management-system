@@ -37,7 +37,7 @@ import {
   reasonLabel,
 } from '../shared/format';
 import { StockService } from '../stock/stock.service';
-import { DocumentsService, POSTING_TYPES, PostingType } from './documents.service';
+import { DocumentsService, POSTING_TYPES, PostedDocument, PostingType } from './documents.service';
 import {
   IdempotencyKey,
   LineDirection,
@@ -247,20 +247,23 @@ export class PostStock {
     this.posting.set(true);
     this.message.set(null);
     this.originalDocumentId.set(null);
+    let posted: PostedDocument;
     try {
       const header = this.form.controls.header.getRawValue() as PostingHeader;
-      const posted = await this.documents.post(
+      posted = await this.documents.post(
         type,
         this.key.current,
         buildPostingBody(type, header, lines),
       );
-      this.snackBar.open('Posted', 'OK', { duration: 4000 });
-      await this.router.navigate(['/documents', posted.id]);
     } catch (err) {
       this.showErrors(err, type, lines);
+      return;
     } finally {
       this.posting.set(false);
     }
+    // The posting is committed: a failed navigation must never read as a failed post.
+    this.snackBar.open('Posted', 'OK', { duration: 4000 });
+    await this.router.navigate(['/documents', posted.id]).catch(() => false);
   }
 
   private showErrors(err: unknown, type: PostingType, lines: PostingLine[]): void {
