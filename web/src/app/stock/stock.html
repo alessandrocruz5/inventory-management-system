@@ -1,0 +1,31 @@
+<h1>Stock on hand</h1>
+
+<div class="filters">
+  <mat-form-field class="location">
+    <mat-label>Location</mat-label>
+    <mat-select [value]="locationId()" (selectionChange)="onLocation($event.value)">
+      <mat-option [value]="null">All locations</mat-option>
+      @for (location of locations(); track location.id) {
+        <mat-option [value]="location.id">{{ location.code }} · {{ location.name }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+</div>
+
+<ag-grid-angular
+  class="grid"
+  [theme]="theme"
+  [columnDefs]="columnDefs"
+  [rowData]="rows()"
+  [pinnedBottomRowData]="totalsRow()"
+  [loading]="loading()"
+  [pagination]="false"
+/>
+
+<mat-paginator
+  [length]="total()"
+  [pageIndex]="pageIndex()"
+  [pageSize]="pageSize()"
+  [pageSizeOptions]="pageSizeOptions"
+  (page)="onPage($event)"
+/>

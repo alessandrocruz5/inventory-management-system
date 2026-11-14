@@ -1,0 +1,37 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+h1 {
+  margin: 0;
+  font: var(--mat-sys-headline-medium);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.location {
+  flex: 1 1 240px;
+  max-width: 400px;
+}
+
+@media (max-width: 599px) {
+  .filters {
+    flex-direction: column;
+  }
+
+  .location {
+    max-width: none;
+  }
+}
+
+.grid {
+  height: 480px;
+  width: 100%;
+}

@@ -101,6 +101,7 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             document.HasIndex(d => new { d.TenantId, d.IdempotencyKey }).IsUnique().HasDatabaseName("UX_StockDocuments_IdempotencyKey");
             document.HasIndex(d => new { d.TenantId, d.ReversesDocumentId }).IsUnique()
                 .HasFilter("[ReversesDocumentId] IS NOT NULL").HasDatabaseName("UX_StockDocuments_Reverses");
+            document.HasIndex(d => new { d.TenantId, d.PostedAt }).HasDatabaseName("IX_StockDocuments_PostedAt");
             document.HasOne<StockDocument>().WithMany().HasForeignKey(d => new { d.TenantId, d.ReversesDocumentId }).OnDelete(DeleteBehavior.NoAction);
         });
 
