@@ -630,6 +630,33 @@ public sealed class LocationsTests(DatabaseFixture db)
     }
 
     /// <summary>Posts a valid create request and returns the 201 body.</summary>
+    [Fact]
+    public async Task Another_tenants_location_cannot_be_toggled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var id = (await CreateAsync(clientB, "BR-B", "Branch B", ct))["id"]!.GetValue<Guid>();
+        var item = await PostingTests.NewItemAsync(clientB, "B-1", ct);
+        await PostingTests.ReceiveAsync(clientB, id, item, 3m, 10m, ct);
+        var version = (await GetJsonAsync(clientB, "/api/locations?page=1&pageSize=100", ct))["items"]!.AsArray()
+            .Single(i => i!["id"]!.GetValue<Guid>() == id)!["version"]!.GetValue<string>();
+
+        var response = await clientA.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new { code = "BR-B", name = "Branch B", version, allowNegativeStock = true },
+            ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        await using var c = await LedgerRows.OpenAsync(db, b, ct);
+        var flags = await AllowNegativeFlagsAsync(c, id, ct);
+        flags.ShouldNotBeEmpty();
+        flags.ShouldAllBe(flag => !flag);
+    }
+
     internal static async Task<JsonNode> CreateAsync(HttpClient client, string code, string name, CancellationToken ct)
     {
         var response = await client.PostAsJsonAsync("/api/locations", new { code, name }, ct);
