@@ -21,7 +21,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
   - Downstream: (S7) show `PostedBy` `Guid.Empty` as "System". (S12/T14) use `CANDLE-WHT` or an own item, since other seeded items carry stock. (S11) check ledger health on the demo tenant inside `SeedTests` or `Platform.IntegrationTests` only; `SeedTests` owns `SeedTenants.Demo` and leaves QC renamed. Compare keys with `StringComparer.Ordinal`, never `ORDER BY IdempotencyKey`. Editing an `OpeningStock` row does not repost; use an adjustment (S6).
 - [x] IMS-10 — S6 Transfers and adjustments · Added · plan: [[2026-11-11-s6-transfers-adjustments]] prompts: 01, 02, 03, 04, 05 · depends: IMS-8 · model: opus (merged 2026-11-13)
 - [x] IMS-11 — S7 Stock screens · Added · plan: [[2026-11-13-s7-stock-screens]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10 · depends: IMS-10 · model: opus (merged 2026-11-15)
-- [~] IMS-12 — S8 Item history · Added · plan: [[2026-11-15-s8-item-history]] prompts: 01, 02, 03, 04, 05 · depends: IMS-10 · model: sonnet
+- [x] IMS-12 — S8 Item history · Added · plan: [[2026-11-15-s8-item-history]] prompts: 01, 02, 03, 04, 05 · depends: IMS-10 · model: sonnet (merged 2026-11-15)
 - [ ] IMS-13 — S9 Reversals · Added · plan: [[2026-11-15-s9-reversals]] prompts: 01, 02, 03, 04, 05, 06, 07 · depends: IMS-10, IMS-11 · model: opus
 - [ ] IMS-14 — S10 Negative stock · Added · spec: §12 S10 · depends: IMS-8, IMS-11 · model: opus
 - [ ] IMS-15 — S11 Ledger health · Added · spec: §12 S11 · depends: IMS-13 · model: opus
