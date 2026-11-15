@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-15-s10-negative-stock]]"
 id: 08
 unit: IMS-14
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: [07]

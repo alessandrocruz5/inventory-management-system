@@ -23,7 +23,9 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - [x] IMS-11 — S7 Stock screens · Added · plan: [[2026-11-13-s7-stock-screens]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10 · depends: IMS-10 · model: opus (merged 2026-11-15)
 - [x] IMS-12 — S8 Item history · Added · plan: [[2026-11-15-s8-item-history]] prompts: 01, 02, 03, 04, 05 · depends: IMS-10 · model: sonnet (merged 2026-11-15)
 - [x] IMS-13 — S9 Reversals · Added · plan: [[2026-11-15-s9-reversals]] prompts: 01, 02, 03, 04, 05, 06, 07 · depends: IMS-10, IMS-11 · model: opus (merged 2026-11-15)
-- [ ] IMS-14 — S10 Negative stock · Added · plan: [[2026-11-15-s10-negative-stock]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09 · depends: IMS-8, IMS-11 · model: opus
+- [x] IMS-14 — S10 Negative stock · Added · plan: [[2026-11-15-s10-negative-stock]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09 · depends: IMS-8, IMS-11 · model: opus (merged 2026-11-15)
+  - Result: estimate costing and revaluation for negative balances; per-location `allowNegativeStock` toggle (`PUT /api/locations/{id}`, 422 `negative-balances-exist`); red negatives on `/stock`; "Allow negative stock" switch on `/locations`. Two-tenant toggle test added after review.
+  - Downstream: (S11) rebuild must also reset empty `(item, ADJ)` balance rows (0 / 0 / null `LastMovementId`); INV-5 must include revaluation movements (qty 0, same document as the inflow); INV-3 is toggle-aware. (S12/T14) the switch reads "Allow negative stock" with confirm "Allow". Follow-ups: `DeactivateLocation/Handler.cs:44` raw lock lacks the TenantId predicate that the toggle now has; measure `(item, ADJ)` lock contention under load.
 - [ ] IMS-15 — S11 Ledger health · Added · spec: §12 S11 · depends: IMS-13 · model: opus
 - [ ] IMS-16 — S12 End to end · Added · spec: §12 S12 · depends: IMS-13 · model: sonnet
 - [ ] IMS-17 — S13 Compose output (stretch) · Added · spec: §12 S13 · depends: IMS-16 · model: haiku

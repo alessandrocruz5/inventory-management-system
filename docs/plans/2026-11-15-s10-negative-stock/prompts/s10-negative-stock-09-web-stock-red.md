@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-15-s10-negative-stock]]"
 id: 09
 unit: IMS-14
-status: todo
+status: done
 model: haiku
 effort: low
 depends_on: []

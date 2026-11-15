@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -229,3 +229,27 @@ Revert the PR. There's no schema change. Before reverting, turn every toggle off
 - 2026-11-15: planned
 - 2026-11-15: applied Codex audit (0 applied, 0 disputed): PASS, nothing to apply
 - 2026-11-15: audited; ticket step: existing IMS-14, TASKS.md line rewritten in place
+- 2026-11-15: build started; rollback point 0e6dc2aa5507bbb80c10e2252fe95b9bf5266882
+- 2026-11-15: 01 done (opus, 0 retries): estimate branch in OutflowCost, CostingPolicy.Revaluation; 217 unit tests green
+- 2026-11-15: 02 done (opus, 0 retries): Post revalues at LineNo 1000 + n via adjustmentLocationId; engine locks (item, ADJ) for receipts/transfers and guards movement costs (D6); 534 tests green. Approved extra file: `tests/Platform.IntegrationTests/SetupTests.cs` (seed BalanceRows 50 → 69, missed by the blast radius). Gaps: no prompt tests R3's movement-cost `400` (D6); the flake flag is `dotnet test --max-parallel-test-modules 1` (no `--`: after `--` every module runs zero tests)
+- 2026-11-15: 03 done (sonnet, 0 retries): harness per-location toggle + toggle-aware INV-3 + Revaluation(); vector sets N and X, 3 reversal/toggle-off facts; all reproduce to 4 dp; 230 unit tests green
+- 2026-11-15: 04 done (opus, 0 retries): PUT /locations/{id} takes optional allowNegativeStock; strategy + transaction, IX_Balances_Location UPDLOCK/HOLDLOCK → check → per-row mirror; 422 negative-balances-exist (Kernel + Problems); LocationsTests +5 facts and AllowNegativeAsync helper; 53 + 21 tests green. Angular slug mapping pending in 07; BlockingBalance doc still says "blocks deactivation"
+- 2026-11-15: 05 done (sonnet, 0 retries): PostingVectorTests Set_N and Set_X through the API; NegativeStockTests with 7 facts (transfer-in, never-received, positive adjustment, toggle-off 422, replay, reversal, reversal after toggle-off); all expected values reproduced; 12 tests green, no files outside the list
+- 2026-11-15: 06 done (opus, 0 retries): LocationsTests Toggle_off_waits_for_an_uncommitted_negative_balance and Toggle_off_holds_off_postings_until_commit (lock → check → update observed, range lock LCK_M_RIn_NL); PostingConcurrencyTests 20 parallel issues past zero all 201 @ 10.0000, receipt 20 @ 12 revalues 30.0000; 50 tests green, Toggle_off_* 5/5 runs green; no files outside the list
+- 2026-11-15: 07 done (haiku, 0 retries): problem-messages negative-balances-exist mapped; LocationsService.setAllowNegativeStock PUTs code/name/version/allowNegativeStock; web lint, build, 164 Vitest tests green; no files outside the list
+- 2026-11-15: 08 done (sonnet, 0 retries): Allow negative stock switch + confirm on /locations for Admin, chip for Staff; 6 new specs; web lint, build, 170 Vitest tests green; no files outside the list; 375 px layout not checked in a browser
+- 2026-11-15: 09 done (haiku, 0 retries): stock-negative cellClassRules on Qty and Value, global .ag-cell.stock-negative in styles.scss, 1 spec; web lint, build, 22/22 Vitest files green; no files outside the list. 🎫 IMS-14 — all prompts done (9/9). Ship step not run.
+- 2026-11-15: code-guardian (PR 14, 5021e4a0): REQUEST CHANGES; blocker: toggle lock filtered on LocationId only. Fixed in 5021e4a0 (explicit TenantId from ITenantContext). Re-review: APPROVE WITH NITS. Added two-tenant toggle test in b7728849 (LocationsTests 30/30 green). Nits and follow-ups: DeactivateLocation/Handler.cs:44 has the same LocationId-only raw lock (pre-existing on develop, out of unit scope, track as follow-up); LocationsTests Staff suite not re-probed; the two-tenant test checks isolation by the 404 that precedes the lock, not the lock range itself; (item, ADJ) lock contention under load not measured. Dismissed: LineNo collision (MaxLines is 100).
+
+## Outcome
+Shipped as PR 14 (`IMS-14: S10 Negative stock`), merged to `develop`. Commits: `43bc641a` (prompts 01–09), `5021e4a0` (tenant predicate on the toggle lock), `b7728849` (two-tenant toggle test).
+
+Deviations from the plan:
+- Prompt 02 approved an extra file, `tests/Platform.IntegrationTests/SetupTests.cs`, missed by the blast radius.
+- Code-guardian's blocker (toggle lock filtered on `LocationId` alone) was not in the plan. Fixed with an explicit `TenantId` from `ITenantContext`.
+- The two-tenant test checks isolation via the 404 before the lock. It does not prove the lock range.
+
+Gotchas:
+- `dotnet test --max-parallel-test-modules 1` takes the flag without `--`; after `--` every module runs zero tests.
+- `DeactivateLocation/Handler.cs:44` has the same LocationId-only raw lock. Pre-existing, out of scope, tracked as a follow-up.
+- The `(item, ADJ)` lock on every receipt and transfer is unmeasured under load.
