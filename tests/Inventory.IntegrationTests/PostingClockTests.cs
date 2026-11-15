@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json.Nodes;
 
+using Inventory.Features.Documents.ListDocuments;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
 
@@ -63,7 +64,26 @@ public sealed class PostingClockTests(DatabaseFixture db)
         var issueId = issued["id"]!.GetValue<Guid>();
         (await DocumentPostedAtAsync(connection, issueId, ct)).ShouldBe(later);
         (await MovementPostedAtAsync(connection, issueId, ct)).ShouldHaveSingleItem().ShouldBe(later);
+
+        fake.Advance(TimeSpan.FromMinutes(5));
+        var reversal = await ReversalTests.ReverseAsync(client, issueId, PostingTests.NewKey(), ct);
+
+        reversal.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var latest = now.AddMinutes(10);
+        var reversed = (await reversal.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        reversed["postedAt"]!.GetValue<DateTimeOffset>().ShouldBe(latest);
+        reversed["balancesAsOf"]!.GetValue<DateTimeOffset>().ShouldBe(latest);
+        var reversalId = reversed["id"]!.GetValue<Guid>();
+        (await DocumentPostedAtAsync(connection, reversalId, ct)).ShouldBe(latest);
+        (await MovementPostedAtAsync(connection, reversalId, ct)).ShouldHaveSingleItem().ShouldBe(latest);
     }
+
+    // Read filters bind a date to narrow a list; nothing stores it. Every other request date is banned (CLAUDE.md review constraint).
+    private static readonly Dictionary<string, string> AllowedDates = new()
+    {
+        ["Inventory.Features.Documents.ListDocuments.ListDocumentsRequest.PostedFrom"] = "read filter; never stored",
+        ["Inventory.Features.Documents.ListDocuments.ListDocumentsRequest.PostedTo"] = "read filter; never stored",
+    };
 
     [Fact]
     public void No_request_type_carries_a_date()
@@ -77,13 +97,15 @@ public sealed class PostingClockTests(DatabaseFixture db)
         // The scan must see the posting requests, or it would pass on nothing.
         types.ShouldContain(typeof(PostReceiptRequest));
         types.ShouldContain(typeof(PostIssueRequest));
+        types.ShouldContain(typeof(ListDocumentsRequest));
 
         var dated = types
             .SelectMany(t => t.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                 .Where(p => dateTypes.Contains(Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType))
                 .Select(p => $"{t.FullName}.{p.Name}"))
             .ToList();
-        dated.ShouldBeEmpty();
+        dated.Where(d => !AllowedDates.ContainsKey(d)).ShouldBeEmpty();
+        AllowedDates.Keys.ShouldBeSubsetOf(dated);
     }
 
     private static async Task<DateTimeOffset> DocumentPostedAtAsync(SqlConnection connection, Guid document, CancellationToken ct)

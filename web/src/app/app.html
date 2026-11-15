@@ -3,6 +3,24 @@
     <span class="app-name">Inventory</span>
     <span class="tenant">{{ user.tenantName }}</span>
     <nav class="nav">
+      <a mat-button routerLink="/stock" routerLinkActive="active">Stock</a>
+      <a mat-button routerLink="/documents/new/receipt" routerLinkActive="active">Receive stock</a>
+      <a mat-button routerLink="/documents/new/issue" routerLinkActive="active"
+        >Use or sell stock</a
+      >
+      <a mat-button routerLink="/documents/new/transfer" routerLinkActive="active">Move stock</a>
+      @if (auth.isAdmin()) {
+        <a mat-button routerLink="/documents/new/adjustment" routerLinkActive="active"
+          >Correct stock</a
+        >
+      }
+      <a
+        mat-button
+        routerLink="/documents"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        >Documents</a
+      >
       <a mat-button routerLink="/items" routerLinkActive="active">Items</a>
       <a mat-button routerLink="/locations" routerLinkActive="active">Locations</a>
     </nav>

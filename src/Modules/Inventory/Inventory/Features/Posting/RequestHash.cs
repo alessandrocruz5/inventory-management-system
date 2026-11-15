@@ -12,7 +12,9 @@ namespace Inventory.Features.Posting;
 /// (<c>locationId</c>, <c>reference</c>, <c>notes</c>, <c>lines[itemId, quantity, unitCost]</c>), an issue (the same
 /// without <c>unitCost</c>), a transfer (<c>fromLocationId</c>, <c>toLocationId</c>, <c>reference</c>, <c>notes</c>,
 /// <c>lines[itemId, quantity]</c>) and an adjustment (<c>locationId</c>, <c>reasonCode</c>, <c>reference</c>,
-/// <c>notes</c>, <c>lines[itemId, quantityDelta, unitCost]</c>). Hidden coupling: changing a form changes every hash
+/// <c>notes</c>, <c>lines[itemId, quantityDelta, unitCost]</c>). A reversal hashes
+/// <c>"POST /api/documents/{id}/reversal\n{}"</c>: its body is empty, so its canonical form is <c>{}</c> and the
+/// route carries the document id. Hidden coupling: changing a form changes every hash
 /// of it, so a retry of an earlier post would get a false <c>409 idempotency-key-reused</c>.
 /// </summary>
 internal static class RequestHash
@@ -21,6 +23,7 @@ internal static class RequestHash
     public const string IssuesRoute = "/api/documents/issues";
     public const string TransfersRoute = "/api/documents/transfers";
     public const string AdjustmentsRoute = "/api/documents/adjustments";
+    public const string ReversalBody = "{}";
 
     // Scale 28: dividing by it strips trailing zeros without changing the value.
     private const decimal One = 1.0000000000000000000000000000m;
@@ -36,6 +39,12 @@ internal static class RequestHash
 
     /// <summary>The 32-byte hash of an adjustment; its lines carry a signed <c>quantityDelta</c> and <c>unitCost</c>.</summary>
     public static byte[] Adjustment(ValidatedPosting posting) => Hash(AdjustmentsRoute, AdjustmentCanonicalJson(posting));
+
+    /// <summary>The route a reversal of <paramref name="documentId"/> is posted to, as the hash names it (lowercase "D").</summary>
+    public static string ReversalRoute(Guid documentId) => $"/api/documents/{documentId:D}/reversal";
+
+    /// <summary>The 32-byte hash of a reversal of <paramref name="documentId"/> (plan D4).</summary>
+    public static byte[] Reversal(Guid documentId) => Hash(ReversalRoute(documentId), ReversalBody);
 
     /// <summary>
     /// No whitespace, every property always written in a fixed order, null for absent. Guids are lowercase

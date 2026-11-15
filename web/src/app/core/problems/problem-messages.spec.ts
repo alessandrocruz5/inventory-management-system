@@ -46,6 +46,12 @@ describe('problemMessage', () => {
     );
   });
 
+  it('maps the reversal slugs', () => {
+    for (const slug of ['reversal-not-latest', 'already-reversed', 'cannot-reverse-reversal']) {
+      expect(problemMessage({ type: `/problems/${slug}` })).toBe(PROBLEM_MESSAGES[slug]);
+    }
+  });
+
   it.each([
     'idempotency-key-missing',
     'idempotency-key-reused',

@@ -13,8 +13,9 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace Inventory.Persistence;
 
 /// <summary>
-/// The ledger's write path (spec §6): the step 2 lookup and steps 3–10. <see cref="PostingRules"/> decides; this class
-/// owns the transaction, the locks and the SQL. Documents and movements are only ever inserted, never changed.
+/// The ledger's write path for postings and reversals (spec §6): the step 2 lookup and steps 3–10.
+/// <see cref="PostingRules"/> decides; this class owns the transaction, the locks and the SQL. Documents and movements
+/// are only ever inserted, never changed.
 /// </summary>
 internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant, TimeProvider clock)
 {
@@ -62,17 +63,41 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
     /// Steps 3–10 in one transaction, inside the execution strategy so a deadlock (1205) retries up to 3 times (spec §6).
     /// Nothing is written unless the result is a <see cref="PostedOutcome"/> that isn't a replay.
     /// </summary>
-    public async Task<PostingOutcome> PostAsync(PostingCommand command, CancellationToken ct)
+    public Task<PostingOutcome> PostAsync(PostingCommand command, CancellationToken ct) => RunAsync(
+        token => AttemptAsync(command, token),
+        // Null: a parallel duplicate committed the key first, so a row must exist now. Answer as step 2 would.
+        async token => await FindExistingAsync(command.IdempotencyKey, command.RequestHash, token)
+            ?? throw new InvalidOperationException(
+                $"Idempotency key '{command.IdempotencyKey}' hit a unique violation, but no document holds it."),
+        ct);
+
+    /// <summary>
+    /// A reversal's steps 3, 4 and 6–10 in one transaction, with <see cref="PostAsync"/>'s retries. Spec §6 reversal rules:
+    /// latest only, the original's movements mirrored, and step 8's checks as for any posting (plan D6–D9). When step 4
+    /// hits a unique index, the same key replays as step 2 would; otherwise the original's reversal answers (plan D5).
+    /// </summary>
+    public Task<PostingOutcome> ReverseAsync(ReversalCommand command, CancellationToken ct) => RunAsync(
+        token => AttemptReversalAsync(command, token),
+        async token => await FindExistingAsync(command.IdempotencyKey, command.RequestHash, token)
+            ?? await AlreadyReversedAsync(command.OriginalDocumentId, token)
+            ?? throw new InvalidOperationException(
+                $"Reversal of {command.OriginalDocumentId} hit a unique violation, but neither its key nor a reversal exists."),
+        ct);
+
+    /// <summary>
+    /// Runs <paramref name="attempt"/> inside the execution strategy. Its null (step 4 hit a unique index) is answered by
+    /// <paramref name="lostKey"/>; exhausted retries become <see cref="RetriesExhaustedOutcome"/>.
+    /// </summary>
+    private async Task<PostingOutcome> RunAsync(
+        Func<CancellationToken, Task<PostingOutcome?>> attempt,
+        Func<CancellationToken, Task<PostingOutcome>> lostKey,
+        CancellationToken ct)
     {
         PostingOutcome? outcome;
         try
         {
-            outcome = await db.Database.CreateExecutionStrategy().ExecuteAsync(token => AttemptAsync(command, token), ct);
-
-            // Null: a parallel duplicate committed the key first, so a row must exist now. Answer as step 2 would.
-            outcome ??= await FindExistingAsync(command.IdempotencyKey, command.RequestHash, ct)
-                ?? throw new InvalidOperationException(
-                    $"Idempotency key '{command.IdempotencyKey}' hit a unique violation, but no document holds it.");
+            outcome = await db.Database.CreateExecutionStrategy().ExecuteAsync(attempt, ct);
+            outcome ??= await lostKey(ct);
         }
         catch (RetryLimitExceededException)
         {
@@ -98,15 +123,7 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
         // READ COMMITTED, with snapshot reads (RCSI is on).
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        // Step 3: the tenant's ledger lock. Postings share it; only S11's rebuild takes it exclusively.
-        var lockResult = (await db.Database.SqlQueryRaw<int>(
-                "DECLARE @r int; EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Shared', @LockOwner = 'Transaction'; SELECT @r AS [Value];",
-                new SqlParameter("@res", SqlDbType.NVarChar, 255) { Value = $"ledger:{tenant.TenantId:D}" })
-            .ToListAsync(ct)).Single();
-        if (lockResult < 0)
-        {
-            throw new InvalidOperationException($"sp_getapplock returned {lockResult} for the ledger lock.");
-        }
+        await TakeLedgerLockAsync(ct);
 
         // Step 4: the document, final at insert because the trigger forbids changing it. Inserting it claims the key.
         var document = new StockDocument
@@ -121,12 +138,7 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
             PostedAt = now,
             PostedBy = command.PostedBy,
         };
-        db.StockDocuments.Add(document);
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        if (!await TryInsertDocumentAsync(document, ct))
         {
             // A parallel duplicate blocked us on the unique index, then committed. Returning without a commit rolls back.
             return null;
@@ -157,23 +169,9 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
             }
         }
 
-        // Step 6: lock every touched balance in one statement. The parameterized IN seek on the clustered key
-        // (TenantId, ItemId, LocationId) orders the locks (spec §6), and INDEX pins that key: FORCESEEK alone could pick
-        // IX_Balances_Location and lock in (LocationId, ItemId) order. RLS supplies the TenantId seek.
         var itemIds = keys.Select(k => k.ItemId).Distinct().OrderBy(id => new SqlGuid(id)).ToList();
         var locationIds = keys.Select(k => k.LocationId).Distinct().OrderBy(id => new SqlGuid(id)).ToList();
-        var (lockLocations, lockLocationParameters) = InList("@l", locationIds);
-        var (lockItems, lockItemParameters) = InList("@i", itemIds);
-
-        // EF1003: the only concatenated text is the generated placeholders (@l0, @i0, …); every id is a SqlParameter.
-#pragma warning disable EF1003
-        var rows = await db.StockBalances
-            .FromSqlRaw(
-                "SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, ROWLOCK, FORCESEEK, INDEX(PK_StockBalances)) "
-                + "WHERE [LocationId] IN (" + lockLocations + ") AND [ItemId] IN (" + lockItems + ")",
-                [.. lockLocationParameters, .. lockItemParameters])
-            .AsTracking()
-            .ToListAsync(ct);
+        var rows = await LockBalancesAsync(itemIds, locationIds, ct);
 
         // Every kind moves all its lines between exactly two locations: a receipt, issue or adjustment between the
         // location and its counterpart (an adjustment's lines may point either way), a transfer from A to B. So items ×
@@ -184,25 +182,7 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
                 $"Locked {rows.Count} balances, expected {itemIds.Count} items × {locationIds.Count} locations.");
         }
 
-        // Step 7: re-read the master data with shared locks, so a deactivation that committed since step 1 is seen. The
-        // filter stays in the SQL with FORCESEEK: a scan would S-lock every row, other tenants' included.
-        var (readItems, readItemParameters) = InList("@i", itemIds);
-        var items = (await db.Items
-                .FromSqlRaw(
-                    "SELECT * FROM [inventory].[Items] WITH (READCOMMITTEDLOCK, FORCESEEK) WHERE [Id] IN (" + readItems + ")",
-                    readItemParameters)
-                .AsNoTracking()
-                .ToListAsync(ct))
-            .ToDictionary(i => i.Id);
-        var (readLocations, readLocationParameters) = InList("@l", locationIds);
-        var locations = (await db.Locations
-                .FromSqlRaw(
-                    "SELECT * FROM [inventory].[Locations] WITH (READCOMMITTEDLOCK, FORCESEEK) WHERE [Id] IN (" + readLocations + ")",
-                    readLocationParameters)
-                .AsNoTracking()
-                .ToListAsync(ct))
-            .ToDictionary(l => l.Id);
-#pragma warning restore EF1003
+        var (items, locations) = await ReadMasterDataAsync(itemIds, locationIds, ct);
 
         var lines = command.Lines.OrderBy(l => l.LineNo).ToList();
         foreach (var line in lines)
@@ -251,6 +231,257 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
             return new BalanceOutOfRangeOutcome(outOfRange.ItemId, outOfRange.LocationId);
         }
 
+        var movements = await WriteAsync(
+            document,
+            result,
+            rows.ToDictionary(r => new BalanceKey(r.ItemId, r.LocationId)),
+            locations,
+            command.PostedBy,
+            now,
+            ct);
+
+        // Step 10.
+        await tx.CommitAsync(ct);
+        return new PostedOutcome(document, movements, PhysicalInKeyOrder(rows), Replayed: false, BalancesAsOf: now);
+    }
+
+    /// <summary>One attempt at a reversal's steps 3, 4 and 6–10. Returns null when step 4 hit a unique index.</summary>
+    private async Task<PostingOutcome?> AttemptReversalAsync(ReversalCommand command, CancellationToken ct)
+    {
+        // A retry starts clean: an entity tracked by the failed attempt must not leak into this one.
+        db.ChangeTracker.Clear();
+        var now = clock.GetUtcNow();
+
+        // READ COMMITTED, with snapshot reads (RCSI is on).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        await TakeLedgerLockAsync(ct);
+
+        // Step 4 (plan D9). ReasonCode stays null even when the original is an adjustment (CK_StockDocuments_ReasonCode).
+        var document = new StockDocument
+        {
+            Type = StockDocumentType.Reversal,
+            ReversesDocumentId = command.OriginalDocumentId,
+            ReasonCode = null,
+            Reference = null,
+            Notes = null,
+            IdempotencyKey = command.IdempotencyKey,
+            RequestHash = command.RequestHash,
+            PostedAt = now,
+            PostedBy = command.PostedBy,
+        };
+        if (!await TryInsertDocumentAsync(document, ct))
+        {
+            // A 2601/2627 here is either the key or UX_StockDocuments_Reverses; ReverseAsync's fallback tells them apart
+            // (plan D5). Returning without a commit rolls back.
+            return null;
+        }
+
+        // No step 5: the original's posting created every balance it touched.
+
+        // Step 6 (plan D7): the same statement over the distinct items × locations of the original's movements.
+        var touched = command.Original.SelectMany(m => TouchedKeys(m.ItemId, m.FromLocationId, m.ToLocationId)).ToHashSet();
+        var itemIds = touched.Select(k => k.ItemId).Distinct().OrderBy(id => new SqlGuid(id)).ToList();
+        var locationIds = touched.Select(k => k.LocationId).Distinct().OrderBy(id => new SqlGuid(id)).ToList();
+        var rows = await LockBalancesAsync(itemIds, locationIds, ct);
+
+        // The cross product may lock rows no movement touches (plan D7); they're locked in key order and never changed.
+        var lockedByKey = rows.ToDictionary(r => new BalanceKey(r.ItemId, r.LocationId));
+        foreach (var key in touched)
+        {
+            if (!lockedByKey.ContainsKey(key))
+            {
+                throw new InvalidOperationException($"No balance row for {key} at step 6; the original's posting created it.");
+            }
+        }
+
+        var touchedRows = lockedByKey.Where(p => touched.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+
+        var (items, locations) = await ReadMasterDataAsync(itemIds, locationIds, ct);
+
+        var original = command.Original.OrderBy(m => m.Id).ToList();
+        foreach (var movement in original)
+        {
+            if (!Found(items, movement.ItemId, "item").IsActive)
+            {
+                return new InactiveItemOutcome(movement.ItemId);
+            }
+        }
+
+        // The reversal's From then To: each original movement's To, then its From.
+        foreach (var locationId in original.SelectMany(m => new[] { m.ToLocationId, m.FromLocationId }))
+        {
+            if (!Found(locations, locationId, "location").IsActive)
+            {
+                return new InactiveLocationOutcome(locationId);
+            }
+        }
+
+        // IsVirtual and AllowNegative come from this read, not from the row (spec §6 step 7).
+        var balances = touchedRows.ToDictionary(
+            p => p.Key,
+            p => new Balance(
+                p.Value.ItemId,
+                p.Value.LocationId,
+                IsVirtual: locations[p.Value.LocationId].Kind != LocationKind.Physical,
+                AllowNegative: locations[p.Value.LocationId].AllowNegativeStock,
+                p.Value.OnHand,
+                p.Value.StockValue,
+                p.Value.LastUnitCost,
+                p.Value.LastMovementId));
+
+        // Plan D8: every movement of the item that touches each physical balance. Read after the step-6 lock, so this
+        // snapshot sees every commit to the balance. No lock hints (IMS-6: don't U-lock ledger reads).
+        var histories = new Dictionary<BalanceKey, IReadOnlyList<LedgerMovement>>();
+        foreach (var (key, balance) in balances)
+        {
+            if (balance.IsVirtual)
+            {
+                continue;
+            }
+
+            histories[key] = await db.StockMovements.AsNoTracking()
+                .Where(m => m.ItemId == key.ItemId && (m.FromLocationId == key.LocationId || m.ToLocationId == key.LocationId))
+                .Select(m => new LedgerMovement(
+                    m.Id,
+                    m.DocumentId,
+                    m.LineNo,
+                    m.ItemId,
+                    m.FromLocationId,
+                    m.ToLocationId,
+                    m.Quantity,
+                    m.TotalCost,
+                    m.ReversesMovementId))
+                .ToListAsync(ct);
+        }
+
+        // Step 8: latest only, the short check and the mirrored movements, in C# (plan D6).
+        PostingResult result;
+        try
+        {
+            result = PostingRules.Reverse(command.Original, balances, histories);
+        }
+        catch (ReversalNotLatestException e)
+        {
+            // Resolved inside the transaction; returning without a commit rolls back.
+            var blocking = await db.StockMovements.AsNoTracking()
+                .Where(m => m.Id == e.BlockingMovementId)
+                .Select(m => m.DocumentId)
+                .SingleAsync(ct);
+            return new ReversalNotLatestOutcome(e.ItemId, e.LocationId, blocking);
+        }
+        catch (PostingRejectedException rejection)
+        {
+            return new RejectedOutcome(rejection);
+        }
+
+        // No plan D1 range check (plan D9): a reversal restores values the table already held.
+        var movements = await WriteAsync(document, result, touchedRows, locations, command.PostedBy, now, ct);
+
+        // Step 10.
+        await tx.CommitAsync(ct);
+        return new PostedOutcome(document, movements, PhysicalInKeyOrder(touchedRows.Values), Replayed: false, BalancesAsOf: now);
+    }
+
+    /// <summary>The original's reversal as <see cref="AlreadyReversedOutcome"/>, or null when none committed (plan D5).</summary>
+    private async Task<PostingOutcome?> AlreadyReversedAsync(Guid originalId, CancellationToken ct)
+    {
+        var id = await db.StockDocuments.AsNoTracking()
+            .Where(d => d.ReversesDocumentId == originalId)
+            .Select(d => (Guid?)d.Id)
+            .SingleOrDefaultAsync(ct);
+        return id is { } reversalId ? new AlreadyReversedOutcome(reversalId) : null;
+    }
+
+    private async Task TakeLedgerLockAsync(CancellationToken ct)
+    {
+        // Step 3: the tenant's ledger lock. Postings share it; only S11's rebuild takes it exclusively.
+        var lockResult = (await db.Database.SqlQueryRaw<int>(
+                "DECLARE @r int; EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Shared', @LockOwner = 'Transaction'; SELECT @r AS [Value];",
+                new SqlParameter("@res", SqlDbType.NVarChar, 255) { Value = $"ledger:{tenant.TenantId:D}" })
+            .ToListAsync(ct)).Single();
+        if (lockResult < 0)
+        {
+            throw new InvalidOperationException($"sp_getapplock returned {lockResult} for the ledger lock.");
+        }
+    }
+
+    /// <summary>Step 4's insert. False when it hit a unique index (2601/2627); the caller returns without a commit.</summary>
+    private async Task<bool> TryInsertDocumentAsync(StockDocument document, CancellationToken ct)
+    {
+        db.StockDocuments.Add(document);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Step 6's statement. <paramref name="itemIds"/> and <paramref name="locationIds"/> are sorted by <see cref="SqlGuid"/>.</summary>
+    private async Task<List<StockBalance>> LockBalancesAsync(
+        IReadOnlyList<Guid> itemIds, IReadOnlyList<Guid> locationIds, CancellationToken ct)
+    {
+        // Step 6: lock every touched balance in one statement. The parameterized IN seek on the clustered key
+        // (TenantId, ItemId, LocationId) orders the locks (spec §6), and INDEX pins that key: FORCESEEK alone could pick
+        // IX_Balances_Location and lock in (LocationId, ItemId) order. RLS supplies the TenantId seek.
+        var (lockLocations, lockLocationParameters) = InList("@l", locationIds);
+        var (lockItems, lockItemParameters) = InList("@i", itemIds);
+
+        // EF1003: the only concatenated text is the generated placeholders (@l0, @i0, …); every id is a SqlParameter.
+#pragma warning disable EF1003
+        return await db.StockBalances
+            .FromSqlRaw(
+                "SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, ROWLOCK, FORCESEEK, INDEX(PK_StockBalances)) "
+                + "WHERE [LocationId] IN (" + lockLocations + ") AND [ItemId] IN (" + lockItems + ")",
+                [.. lockLocationParameters, .. lockItemParameters])
+            .AsTracking()
+            .ToListAsync(ct);
+#pragma warning restore EF1003
+    }
+
+    private async Task<(Dictionary<Guid, Item> Items, Dictionary<Guid, Location> Locations)> ReadMasterDataAsync(
+        IReadOnlyList<Guid> itemIds, IReadOnlyList<Guid> locationIds, CancellationToken ct)
+    {
+        // Step 7: re-read the master data with shared locks, so a deactivation that committed since step 1 is seen. The
+        // filter stays in the SQL with FORCESEEK: a scan would S-lock every row, other tenants' included.
+        // EF1003: the only concatenated text is the generated placeholders (@l0, @i0, …); every id is a SqlParameter.
+#pragma warning disable EF1003
+        var (readItems, readItemParameters) = InList("@i", itemIds);
+        var items = (await db.Items
+                .FromSqlRaw(
+                    "SELECT * FROM [inventory].[Items] WITH (READCOMMITTEDLOCK, FORCESEEK) WHERE [Id] IN (" + readItems + ")",
+                    readItemParameters)
+                .AsNoTracking()
+                .ToListAsync(ct))
+            .ToDictionary(i => i.Id);
+        var (readLocations, readLocationParameters) = InList("@l", locationIds);
+        var locations = (await db.Locations
+                .FromSqlRaw(
+                    "SELECT * FROM [inventory].[Locations] WITH (READCOMMITTEDLOCK, FORCESEEK) WHERE [Id] IN (" + readLocations + ")",
+                    readLocationParameters)
+                .AsNoTracking()
+                .ToListAsync(ct))
+            .ToDictionary(l => l.Id);
+#pragma warning restore EF1003
+
+        return (items, locations);
+    }
+
+    /// <summary>Step 9 in one SaveChanges, without the commit. Returns the inserted movements in <c>result.Movements</c> order.</summary>
+    private async Task<List<StockMovement>> WriteAsync(
+        StockDocument document,
+        PostingResult result,
+        IReadOnlyDictionary<BalanceKey, StockBalance> tracked,
+        IReadOnlyDictionary<Guid, Location> locations,
+        Guid postedBy,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
         // Step 9: ids in LineNo order (Movements' order), the movement inserts and the balance updates, in one SaveChanges.
         var firstId = await TakeMovementIdsAsync(result.Movements.Count, ct);
         var movements = result.Movements
@@ -266,7 +497,7 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
                 TotalCost = m.TotalCost,
                 ReversesMovementId = m.ReversesMovementId,
                 PostedAt = now,
-                PostedBy = command.PostedBy,
+                PostedBy = postedBy,
             })
             .ToList();
         db.StockMovements.AddRange(movements);
@@ -281,7 +512,6 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
             }
         }
 
-        var tracked = rows.ToDictionary(r => new BalanceKey(r.ItemId, r.LocationId));
         foreach (var balance in result.Balances)
         {
             var row = tracked[balance.Key];
@@ -293,10 +523,7 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
         }
 
         await db.SaveChangesAsync(ct);
-
-        // Step 10.
-        await tx.CommitAsync(ct);
-        return new PostedOutcome(document, movements, PhysicalInKeyOrder(rows), Replayed: false, BalancesAsOf: now);
+        return movements;
     }
 
     /// <summary>

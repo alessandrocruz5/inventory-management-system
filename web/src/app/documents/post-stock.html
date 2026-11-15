@@ -1,0 +1,123 @@
+<h1>{{ title() }}</h1>
+
+<form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  @if (message(); as text) {
+    <p class="banner" role="alert">{{ text }}</p>
+  }
+  @if (originalDocumentId(); as docId) {
+    <p><a [routerLink]="['/documents', docId]">Open the original posting</a></p>
+  }
+
+  <div class="header" [formGroup]="form.controls.header">
+    @if (type() === 'transfer') {
+      <mat-form-field>
+        <mat-label>From</mat-label>
+        <mat-select formControlName="fromLocationId">
+          @for (l of locations(); track l.id) {
+            <mat-option [value]="l.id">{{ l.code }} · {{ l.name }}</mat-option>
+          }
+        </mat-select>
+        <mat-error>{{
+          errorText(form.controls.header.controls.fromLocationId, 'Choose a location.')
+        }}</mat-error>
+      </mat-form-field>
+      <mat-form-field>
+        <mat-label>To</mat-label>
+        <mat-select formControlName="toLocationId">
+          @for (l of locations(); track l.id) {
+            <mat-option [value]="l.id">{{ l.code }} · {{ l.name }}</mat-option>
+          }
+        </mat-select>
+        <mat-error>{{
+          errorText(form.controls.header.controls.toLocationId, 'Choose a location.')
+        }}</mat-error>
+      </mat-form-field>
+    } @else {
+      <mat-form-field>
+        <mat-label>Location</mat-label>
+        <mat-select formControlName="locationId">
+          @for (l of locations(); track l.id) {
+            <mat-option [value]="l.id">{{ l.code }} · {{ l.name }}</mat-option>
+          }
+        </mat-select>
+        <mat-error>{{
+          errorText(form.controls.header.controls.locationId, 'Choose a location.')
+        }}</mat-error>
+      </mat-form-field>
+    }
+    @if (type() === 'adjustment') {
+      <mat-form-field>
+        <mat-label>Reason</mat-label>
+        <mat-select formControlName="reasonCode">
+          @for (r of reasons; track r) {
+            <mat-option [value]="r">{{ reasonLabel(r) }}</mat-option>
+          }
+        </mat-select>
+        <mat-error>{{
+          errorText(form.controls.header.controls.reasonCode, 'Choose a reason.')
+        }}</mat-error>
+      </mat-form-field>
+    }
+    <mat-form-field>
+      <mat-label>Reference</mat-label>
+      <input matInput formControlName="reference" maxlength="100" />
+      <mat-error>{{ errorText(form.controls.header.controls.reference, 'Required.') }}</mat-error>
+    </mat-form-field>
+    <mat-form-field class="item">
+      <mat-label>Notes</mat-label>
+      <textarea matInput formControlName="notes" maxlength="500" rows="2"></textarea>
+      <mat-error>{{ errorText(form.controls.header.controls.notes, 'Required.') }}</mat-error>
+    </mat-form-field>
+  </div>
+
+  @for (line of form.controls.lines.controls; track line; let i = $index) {
+    <div class="line" [formGroup]="line">
+      <mat-form-field class="item">
+        <mat-label>Item</mat-label>
+        <input matInput [formControl]="line.controls.item" [matAutocomplete]="auto" />
+        <mat-autocomplete #auto="matAutocomplete" [displayWith]="itemLabel">
+          @for (o of options()[i] ?? []; track o.id) {
+            <mat-option [value]="o">{{ o.sku }} · {{ o.name }}</mat-option>
+          }
+        </mat-autocomplete>
+        <mat-error>{{ errorText(line.controls.item, 'Choose an item from the list.') }}</mat-error>
+      </mat-form-field>
+      @if (duplicates().includes(i)) {
+        <p class="dup item">This item is already on another line.</p>
+      }
+      @if (type() === 'adjustment') {
+        <mat-button-toggle-group formControlName="direction" aria-label="Direction">
+          <mat-button-toggle value="add">Add</mat-button-toggle>
+          <mat-button-toggle value="remove">Remove</mat-button-toggle>
+        </mat-button-toggle-group>
+      }
+      <mat-form-field>
+        <mat-label>Quantity</mat-label>
+        <input matInput type="number" formControlName="quantity" />
+        <mat-error>{{ errorText(line.controls.quantity, 'Enter a quantity.') }}</mat-error>
+      </mat-form-field>
+      @if (showUnitCost(line)) {
+        <mat-form-field>
+          <mat-label>Unit cost</mat-label>
+          <input matInput type="number" formControlName="unitCost" />
+          <mat-error>{{ errorText(line.controls.unitCost, 'Enter a unit cost.') }}</mat-error>
+        </mat-form-field>
+      }
+      @if (onHandText(i); as text) {
+        <p class="on-hand">{{ text }}</p>
+      }
+      <div>
+        <button mat-button type="button" [disabled]="lineCount() <= 1" (click)="removeLine(i)">
+          Remove line
+        </button>
+      </div>
+    </div>
+  }
+
+  <div class="actions">
+    <button mat-button type="button" [disabled]="lineCount() >= maxLines" (click)="addLine()">
+      Add line
+    </button>
+    <button mat-flat-button type="submit" [disabled]="!canSubmit()">Post</button>
+  </div>
+</form>

@@ -36,6 +36,15 @@ public static class ProblemTypes
     /// <summary>A posting names an inactive location (spec §6).</summary>
     public const string InactiveLocation = "inactive-location";
 
+    /// <summary>A later posting touched a balance of the document being reversed (spec §6): post a correcting document instead.</summary>
+    public const string ReversalNotLatest = "reversal-not-latest";
+
+    /// <summary>The document already has a reversal (spec §6; <c>UX_StockDocuments_Reverses</c>).</summary>
+    public const string AlreadyReversed = "already-reversed";
+
+    /// <summary>The document is itself a reversal, which can't be reversed (spec §6).</summary>
+    public const string CannotReverseReversal = "cannot-reverse-reversal";
+
     /// <summary>The problem <c>type</c> for a slug.</summary>
     public static string Uri(string slug) => Prefix + slug;
 }

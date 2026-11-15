@@ -1,8 +1,12 @@
 using Inventory.Contracts;
+using Inventory.Features.Documents;
+using Inventory.Features.Documents.GetDocument;
+using Inventory.Features.Documents.ListDocuments;
 using Inventory.Features.Items;
 using Inventory.Features.Items.CreateItem;
 using Inventory.Features.Items.DeactivateItem;
 using Inventory.Features.Items.GetItem;
+using Inventory.Features.Items.ListItemMovements;
 using Inventory.Features.Items.ListItems;
 using Inventory.Features.Items.UpdateItem;
 using Inventory.Features.Locations;
@@ -15,6 +19,9 @@ using Inventory.Features.Posting.PostAdjustment;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
 using Inventory.Features.Posting.PostTransfer;
+using Inventory.Features.Reversals.ReverseDocument;
+using Inventory.Features.Stock;
+using Inventory.Features.Stock.ListStock;
 using Inventory.Persistence;
 using Inventory.Seeding;
 
@@ -45,6 +52,7 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<IDataSeeder, InventorySeeder>();
         builder.Services.AddScoped<ListItemsHandler>();
         builder.Services.AddScoped<GetItemHandler>();
+        builder.Services.AddScoped<ListItemMovementsHandler>();
         builder.Services.AddScoped<CreateItemHandler>();
         builder.Services.AddScoped<UpdateItemHandler>();
         builder.Services.AddScoped<DeactivateItemHandler>();
@@ -57,6 +65,10 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<PostIssueHandler>();
         builder.Services.AddScoped<PostTransferHandler>();
         builder.Services.AddScoped<PostAdjustmentHandler>();
+        builder.Services.AddScoped<ReverseDocumentHandler>();
+        builder.Services.AddScoped<ListStockHandler>();
+        builder.Services.AddScoped<ListDocumentsHandler>();
+        builder.Services.AddScoped<GetDocumentHandler>();
         return builder;
     }
 
@@ -65,6 +77,8 @@ public static class InventoryModuleExtensions
         endpoints.MapItemEndpoints();
         endpoints.MapLocationEndpoints();
         endpoints.MapDocumentEndpoints();
+        endpoints.MapStockEndpoints();
+        endpoints.MapDocumentQueryEndpoints();
         return endpoints;
     }
 }

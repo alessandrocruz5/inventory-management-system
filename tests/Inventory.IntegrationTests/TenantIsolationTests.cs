@@ -150,6 +150,77 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     }
 
     [Fact]
+    [ProbesRoute("GET /api/stock/")]
+    public async Task Each_tenant_lists_only_its_own_stock()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationA = await PostingTests.NewLocationAsync(clientA, ct);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct);
+        var itemA = await PostingTests.NewItemAsync(clientA, "SAME-1", ct);
+        var itemB = await PostingTests.NewItemAsync(clientB, "SAME-1", ct);
+        await PostingTests.ReceiveAsync(clientA, locationA, itemA, 5m, 10m, ct);
+        await PostingTests.ReceiveAsync(clientB, locationB, itemB, 5m, 10m, ct);
+
+        foreach (var (client, expected) in new[] { (clientA, itemA), (clientB, itemB) })
+        {
+            var response = await client.GetAsync("/api/stock", ct);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var list = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            list["items"]!.AsArray().Select(i => i!["itemId"]!.GetValue<Guid>()).ShouldBe([expected]);
+            list["total"]!.GetValue<int>().ShouldBe(1);
+        }
+
+        foreach (var query in new[] { $"?locationId={locationB}", $"?itemId={itemB}" })
+        {
+            var response = await clientA.GetAsync("/api/stock" + query, ct);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var list = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            list["items"]!.AsArray().ShouldBeEmpty();
+            list["total"]!.GetValue<int>().ShouldBe(0);
+            list["totals"]!["stockValue"]!.GetValue<decimal>().ShouldBe(0m);
+        }
+    }
+
+    [Fact]
+    [ProbesRoute("GET /api/documents/")]
+    public async Task Each_tenant_lists_only_its_own_documents()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var documents = new List<(HttpClient Client, Guid Id)>();
+        foreach (var client in new[] { clientA, clientB })
+        {
+            var location = await PostingTests.NewLocationAsync(client, ct);
+            var item = await PostingTests.NewItemAsync(client, "SAME-1", ct);
+            var posted = await PostingTests.PostDocumentAsync(client, PostingTests.Receipts, PostingTests.NewKey(),
+                PostingTests.Receipt(location, PostingTests.Line(item, 5m, 10m)), ct);
+            posted.StatusCode.ShouldBe(HttpStatusCode.Created);
+            documents.Add((client, (await posted.Content.ReadFromJsonAsync<JsonNode>(ct))!["id"]!.GetValue<Guid>()));
+        }
+
+        foreach (var (client, expected) in documents)
+        {
+            var response = await client.GetAsync("/api/documents", ct);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var list = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            list["items"]!.AsArray().Select(i => i!["id"]!.GetValue<Guid>()).ShouldBe([expected]);
+            list["total"]!.GetValue<int>().ShouldBe(1);
+        }
+    }
+
+    [Fact]
     [ProbesRoute("GET /api/items/{id:guid}")]
     public async Task Another_tenants_item_id_is_404()
     {
@@ -161,6 +232,62 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
         using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
 
         var response = await clientA.GetAsync($"/api/items/{idB}", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+    }
+
+    [Fact]
+    [ProbesRoute("GET /api/items/{id:guid}/movements")]
+    public async Task Another_tenants_item_history_is_404()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct);
+        var itemB = await PostingTests.NewItemAsync(clientB, "SAME-1", ct);
+        await PostingTests.ReceiveAsync(clientB, locationB, itemB, 1m, 10m, ct);
+
+        var response = await clientA.GetAsync($"/api/items/{itemB}/movements", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+
+        var locationA = await PostingTests.NewLocationAsync(clientA, ct);
+        var itemA = await PostingTests.NewItemAsync(clientA, "SAME-1", ct);
+        await PostingTests.ReceiveAsync(clientA, locationA, itemA, 2m, 10m, ct);
+
+        var own = await clientA.GetAsync($"/api/items/{itemA}/movements", ct);
+
+        own.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var history = (await own.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        history["total"]!.GetValue<int>().ShouldBe(1);
+        history["items"]!.AsArray()[0]!["locationId"]!.GetValue<Guid>().ShouldBe(locationA);
+    }
+
+    [Fact]
+    [ProbesRoute("GET /api/documents/{id:guid}")]
+    public async Task Another_tenants_document_id_is_404()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct);
+        var itemB = await PostingTests.NewItemAsync(clientB, "B-ONLY", ct);
+        var posted = await PostingTests.PostDocumentAsync(clientB, PostingTests.Receipts, PostingTests.NewKey(),
+            PostingTests.Receipt(locationB, PostingTests.Line(itemB, 1m, 10m)), ct);
+        posted.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var idB = (await posted.Content.ReadFromJsonAsync<JsonNode>(ct))!["id"]!.GetValue<Guid>();
+
+        var response = await clientA.GetAsync($"/api/documents/{idB}", ct);
 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
         var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
@@ -516,6 +643,36 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
         balanceBefore.ShouldBe((5m, 50m));
         (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe(balanceBefore);
         ((int)(await count.ExecuteScalarAsync(ct))!).ShouldBe(movementsBefore);
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/documents/{id:guid}/reversal")]
+    public async Task Another_tenants_document_cannot_be_reversed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = (await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct))["id"]!.GetValue<Guid>();
+        var itemB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+        var posted = await PostingTests.PostDocumentAsync(clientB, PostingTests.Receipts, PostingTests.NewKey(),
+            PostingTests.Receipt(locationB, PostingTests.Line(itemB, 5m, 10m)), ct);
+        posted.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var idB = (await posted.Content.ReadFromJsonAsync<JsonNode>(ct))!["id"]!.GetValue<Guid>();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/documents/{idB}/reversal");
+        request.Headers.Add("Idempotency-Key", PostingTests.NewKey());
+        var response = await clientA.SendAsync(request, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe((5m, 50m));
+        await using var reversals = new SqlCommand("SELECT COUNT(*) FROM inventory.StockDocuments WHERE Type = 'Reversal'", connection);
+        ((int)(await reversals.ExecuteScalarAsync(ct))!).ShouldBe(0);
     }
 
     [Fact]
