@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Features.Locations.UpdateLocation;
 
-internal sealed class UpdateLocationHandler(InventoryDbContext db, ICurrentUser user, TimeProvider clock)
+internal sealed class UpdateLocationHandler(InventoryDbContext db, ICurrentUser user, ITenantContext tenant, TimeProvider clock)
 {
     private static readonly string[] DuplicateCode = ["A location with this code already exists."];
 
@@ -70,7 +70,7 @@ internal sealed class UpdateLocationHandler(InventoryDbContext db, ICurrentUser 
             // HOLDLOCK also locks the empty key range, so no posting adds a balance here before we commit. A posting that
             // waits on these locks reads the new flag at step 7. The INDEX and FORCESEEK hints keep the range to this location.
             var balances = await db.StockBalances
-                .FromSql($"SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, HOLDLOCK, FORCESEEK, INDEX([IX_Balances_Location])) WHERE [LocationId] = {id}")
+                .FromSql($"SELECT * FROM [inventory].[StockBalances] WITH (UPDLOCK, HOLDLOCK, FORCESEEK, INDEX([IX_Balances_Location])) WHERE [TenantId] = {tenant.TenantId} AND [LocationId] = {id}")
                 .AsTracking()
                 .ToListAsync(cancellationToken);
             if (!allow)
