@@ -14,6 +14,11 @@ import { StockRow, StockService } from './stock.service';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+/** Negative balances show in red (spec §10). Applies to the pinned totals row too. */
+const NEGATIVE_CELL: ColDef<StockRow>['cellClassRules'] = {
+  'stock-negative': (params) => typeof params.value === 'number' && params.value < 0,
+};
+
 @Component({
   selector: 'app-stock',
   imports: [AgGridAngular, MatFormFieldModule, MatPaginatorModule, MatSelectModule],
@@ -40,6 +45,7 @@ export class Stock {
       field: 'onHand',
       headerName: 'Qty',
       type: 'rightAligned',
+      cellClassRules: NEGATIVE_CELL,
       valueFormatter: (params) =>
         params.value === undefined || params.value === null ? '' : formatQuantity(params.value),
     },
@@ -55,6 +61,7 @@ export class Stock {
       field: 'stockValue',
       headerName: 'Value',
       type: 'rightAligned',
+      cellClassRules: NEGATIVE_CELL,
       valueFormatter: (params) =>
         params.value === undefined || params.value === null ? '' : formatMoney(params.value),
     },

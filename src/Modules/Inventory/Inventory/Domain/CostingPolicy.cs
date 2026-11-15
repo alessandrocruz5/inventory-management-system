@@ -27,19 +27,46 @@ internal static class CostingPolicy
 
     /// <summary>
     /// The cost of an issue, transfer-out or negative adjustment line from a physical balance (spec §7). Taking the
-    /// whole balance takes its whole value, so rounding never leaves a residue.
+    /// whole balance takes its whole value, so rounding never leaves a residue. With <c>AllowNegative</c>, an outflow
+    /// past zero is costed at an estimate: what is on hand drains at its value and the rest at the current average
+    /// while stock is positive; at or below zero, at <c>LastUnitCost</c>, or ₱0 if the item was never received there.
     /// </summary>
     public static decimal OutflowCost(decimal quantity, Balance balance)
     {
-        if (quantity > balance.OnHand)
+        if (quantity > balance.OnHand && !balance.AllowNegative)
         {
-            // S10: when AllowNegative, estimate instead (spec §7)
             throw new InsufficientStockException(balance.ItemId, balance.LocationId, balance.OnHand, quantity);
         }
 
-        return quantity == balance.OnHand
-            ? balance.StockValue
-            : Round4(quantity * balance.StockValue / balance.OnHand);
+        if (quantity == balance.OnHand)
+        {
+            return balance.StockValue;
+        }
+
+        if (quantity < balance.OnHand)
+        {
+            return Round4(quantity * balance.StockValue / balance.OnHand);
+        }
+
+        return balance.OnHand > 0
+            ? balance.StockValue + Round4((quantity - balance.OnHand) * (balance.StockValue / balance.OnHand))
+            : Round4(quantity * (balance.LastUnitCost ?? 0m));
+    }
+
+    /// <summary>
+    /// The estimate variance an inflow settles (spec §7): when an inflow that isn't a reversal lifts a negative physical
+    /// balance to zero or above, the stock on hand is revalued at the inflow's unit cost. &gt; 0 posts a revaluation
+    /// physical → Adjustment, &lt; 0 Adjustment → physical, 0 posts nothing. <paramref name="cost"/> is the inflow's TotalCost.
+    /// </summary>
+    public static decimal Revaluation(decimal quantity, decimal cost, Balance balance)
+    {
+        var onHand = balance.OnHand + quantity;
+        if (balance.OnHand >= 0 || onHand < 0)
+        {
+            return 0m;
+        }
+
+        return balance.StockValue + cost - Round4(onHand * cost / quantity);
     }
 
     /// <summary>

@@ -183,7 +183,7 @@ public sealed class SetupTests(DatabaseFixture db)
         after.Items.ShouldBe(20);
         after.Documents.ShouldBe(31);
         after.Movements.ShouldBe(31);
-        after.BalanceRows.ShouldBe(50); // 31 branch balances and 19 Supplier balances
+        after.BalanceRows.ShouldBe(69); // 31 branch, 19 Supplier and 19 empty Adjustment balances (IMS-14 plan D1)
 
         await using var scope = app.Services.CreateAsyncScope();
         var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();

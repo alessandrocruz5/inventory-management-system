@@ -134,6 +134,28 @@ describe('Stock', () => {
     expect(fmt(4, 1234.5)).toBe('₱1,234.50');
   });
 
+  it('marks negative quantity and value cells', async () => {
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    const defs = component(fixture).columnDefs;
+    const qty = defs.find((d) => d.field === 'onHand');
+    const value = defs.find((d) => d.field === 'stockValue');
+    const avg = defs.find((d) => d.field === 'averageCost');
+    const rule = (def: ColDef<StockRow> | undefined, v: unknown) =>
+      (def?.cellClassRules?.['stock-negative'] as ((p: unknown) => boolean) | undefined)?.({
+        value: v,
+      });
+    expect(rule(qty, -2)).toBe(true);
+    expect(rule(qty, 0)).toBe(false);
+    expect(rule(qty, 5)).toBe(false);
+    expect(rule(qty, undefined)).toBe(false);
+    expect(rule(value, -2)).toBe(true);
+    expect(rule(value, 0)).toBe(false);
+    expect(rule(value, 5)).toBe(false);
+    expect(rule(value, undefined)).toBe(false);
+    expect(avg?.cellClassRules).toBeUndefined();
+  });
+
   it('navigates to the item on row click', async () => {
     const fixture = TestBed.createComponent(Stock);
     await fixture.whenStable();

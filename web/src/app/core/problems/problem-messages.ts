@@ -7,6 +7,8 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
   'concurrency-conflict': 'Someone else changed this record. Reload it and try again.',
   'stock-not-zero':
     'This still has stock. Move, use or correct the stock to zero before deactivating it.',
+  'negative-balances-exist':
+    'Some items here are below zero. Receive or correct them to zero or above before turning negative stock off.',
   'idempotency-key-missing': 'Something went wrong sending this. Please try again.',
   'idempotency-key-reused':
     'This form was already used for a different posting. Open the original or start a new form.',

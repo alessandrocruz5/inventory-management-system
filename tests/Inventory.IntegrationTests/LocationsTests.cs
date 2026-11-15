@@ -1,3 +1,4 @@
+using System.Data;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -102,7 +103,7 @@ public sealed class LocationsTests(DatabaseFixture db)
     }
 
     [Fact]
-    public async Task Update_changes_code_and_name_and_ignores_allowNegativeStock()
+    public async Task Update_changes_code_name_and_allowNegativeStock()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var app = db.CreateApp();
@@ -121,14 +122,130 @@ public sealed class LocationsTests(DatabaseFixture db)
         var location = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
         location["code"]!.GetValue<string>().ShouldBe("BR-2");
         location["name"]!.GetValue<string>().ShouldBe("Renamed");
-        location["allowNegativeStock"]!.GetValue<bool>().ShouldBeFalse();
+        location["allowNegativeStock"]!.GetValue<bool>().ShouldBeTrue();
         location["version"]!.GetValue<string>().ShouldNotBe(v1);
 
         await using var scope = app.Services.GetRequiredService<ITenantScopeFactory>().BeginScope(tenant);
         var inventory = scope.Services.GetRequiredService<InventoryDbContext>();
         var row = await inventory.Locations.SingleAsync(l => l.Id == id, ct);
-        row.AllowNegativeStock.ShouldBeFalse();
+        row.AllowNegativeStock.ShouldBeTrue();
         row.Code.ShouldBe("BR-2");
+    }
+
+    [Fact]
+    public async Task Toggle_on_and_off_mirrors_every_balance()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        var first = await PostingTests.NewItemAsync(client, "AB-1", ct);
+        var second = await PostingTests.NewItemAsync(client, "AB-2", ct);
+        await PostingTests.ReceiveAsync(client, id, first, 3m, 10m, ct);
+        await PostingTests.ReceiveAsync(client, id, second, 5m, 20m, ct);
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var sup = await LedgerRows.LocationIdAsync(c, "SUP", ct);
+
+        (await AllowNegativeAsync(client, id, true, ct))["allowNegativeStock"]!.GetValue<bool>().ShouldBeTrue();
+
+        (await AllowNegativeFlagsAsync(c, id, ct)).ShouldBe([true, true]);
+        (await AllowNegativeFlagsAsync(c, sup, ct)).ShouldAllBe(flag => !flag);
+
+        (await AllowNegativeAsync(client, id, false, ct))["allowNegativeStock"]!.GetValue<bool>().ShouldBeFalse();
+
+        (await AllowNegativeFlagsAsync(c, id, ct)).ShouldBe([false, false]);
+        var supFlags = await AllowNegativeFlagsAsync(c, sup, ct);
+        supFlags.Count.ShouldBe(2);
+        supFlags.ShouldAllBe(flag => !flag);
+    }
+
+    [Fact]
+    public async Task Toggle_off_over_a_negative_balance_is_422()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        var item = await PostingTests.NewItemAsync(client, "AB-1", ct);
+        await AllowNegativeAsync(client, id, true, ct);
+        await PostingTests.ReceiveAsync(client, id, item, 4m, 50m, ct);
+        (await PostingTests.PostDocumentAsync(
+                client, PostingTests.Issues, PostingTests.NewKey(), PostingTests.Issue(id, PostingTests.IssueLine(item, 6m)), ct))
+            .StatusCode.ShouldBe(HttpStatusCode.Created);
+        var current = await ListedAsync(client, id, ct);
+        var version = current["version"]!.GetValue<string>();
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new { code = "BR-1", name = "Branch", version, allowNegativeStock = false },
+            ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/negative-balances-exist");
+        problem["status"]!.GetValue<int>().ShouldBe(422);
+        var balance = problem["balances"]!.AsArray().ShouldHaveSingleItem()!;
+        balance.AsObject().Select(p => p.Key).ShouldBe(["itemId", "locationId", "onHand", "stockValue"], ignoreOrder: true);
+        balance["itemId"]!.GetValue<Guid>().ShouldBe(item);
+        balance["locationId"]!.GetValue<Guid>().ShouldBe(id);
+        balance["onHand"]!.GetValue<decimal>().ShouldBe(-2m);
+        balance["stockValue"]!.GetValue<decimal>().ShouldBe(-100m);
+
+        var after = await ListedAsync(client, id, ct);
+        after["allowNegativeStock"]!.GetValue<bool>().ShouldBeTrue();
+        after["version"]!.GetValue<string>().ShouldBe(version);
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await AllowNegativeFlagsAsync(c, id, ct)).ShouldBe([true]);
+    }
+
+    [Fact]
+    public async Task Absent_allowNegativeStock_leaves_the_toggle_unchanged()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        var on = await AllowNegativeAsync(client, id, true, ct);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new { code = "BR-1", name = "Renamed", version = on["version"]!.GetValue<string>() },
+            ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var location = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        location["name"]!.GetValue<string>().ShouldBe("Renamed");
+        location["allowNegativeStock"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Toggle_with_a_stale_version_is_409()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var created = await CreateAsync(client, "BR-1", "Branch", ct);
+        var id = created["id"]!.GetValue<Guid>();
+        var v1 = created["version"]!.GetValue<string>();
+        var item = await PostingTests.NewItemAsync(client, "AB-1", ct);
+        await PostingTests.ReceiveAsync(client, id, item, 3m, 10m, ct);
+        (await client.PutAsJsonAsync($"/api/locations/{id}", new { code = "BR-1", name = "Branch", version = v1, allowNegativeStock = true }, ct))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new { code = "BR-1", name = "Branch", version = v1, allowNegativeStock = false },
+            ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["type"]!.GetValue<string>().ShouldBe("/problems/concurrency-conflict");
+        (await ListedAsync(client, id, ct))["allowNegativeStock"]!.GetValue<bool>().ShouldBeTrue();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await AllowNegativeFlagsAsync(c, id, ct)).ShouldBe([true]);
     }
 
     [Fact]
@@ -371,6 +488,86 @@ public sealed class LocationsTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Toggle_off_waits_for_an_uncommitted_negative_balance()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        var version = (await AllowNegativeAsync(client, id, true, ct))["version"]!.GetValue<string>();
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        var item = await LedgerRows.AddItemAsync(holder, "AB-1", ct);
+        await using var tx = holder.BeginTransaction();
+        await LedgerRows.AddBalanceAsync(holder, item, id, isVirtual: false, allowNegative: true, -2m, -100m, ct, tx);
+
+        // Under RCSI a plain read skips the uncommitted balance; only the locking read makes the toggle wait for it.
+        var toggle = client.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new { code = "BR-1", name = "Branch", version, allowNegativeStock = false },
+            ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        tx.Commit();
+
+        var response = await toggle;
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/negative-balances-exist");
+        var balance = problem["balances"]!.AsArray().ShouldHaveSingleItem()!;
+        balance["itemId"]!.GetValue<Guid>().ShouldBe(item);
+        balance["locationId"]!.GetValue<Guid>().ShouldBe(id);
+        balance["onHand"]!.GetValue<decimal>().ShouldBe(-2m);
+    }
+
+    [Fact]
+    public async Task Toggle_off_holds_off_postings_until_commit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var id = (await CreateAsync(client, "BR-1", "Branch", ct))["id"]!.GetValue<Guid>();
+        await AllowNegativeAsync(client, id, true, ct);
+        var item = (await ItemsTests.CreateAsync(client, "AB-1", "Rice", "kg", ct))["id"]!.GetValue<Guid>();
+        await PostingTests.ReceiveAsync(client, id, item, 1m, 10m, ct);
+        var version = (await ListedAsync(client, id, ct))["version"]!.GetValue<string>();
+        await using var probe = await LedgerRows.OpenAsync(db, tenant, ct);
+        var other = await LedgerRows.AddItemAsync(probe, "AB-2", ct);
+
+        // The holder X-locks the location row, so the toggle pauses in SaveChanges after taking its balance locks.
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await ItemsTests.ExecuteAsync(holder, tx, "UPDATE inventory.Locations SET Name = Name WHERE Id = @id", ("@id", id));
+        var toggle = client.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new { code = "BR-1", name = "Branch", version, allowNegativeStock = false },
+            ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+
+        // Posting step 6 locks the item's balance, and a first posting of another item here inserts into the locked range.
+        await ItemsTests.ExecuteAsync(probe, null, "SET LOCK_TIMEOUT 500;");
+        await ItemsTests.AssertLockTimeoutAsync(probe, """
+            SELECT OnHand FROM inventory.StockBalances WITH (UPDLOCK, ROWLOCK) WHERE ItemId = @i AND LocationId = @l
+            """, ("@i", item), ("@l", id));
+        await ItemsTests.AssertRangeLockedAsync(db, probe, other, id);
+
+        // The issue either waits at step 6 behind the toggle or starts after it commits; either way step 7 sees the change.
+        var issue = PostingTests.PostDocumentAsync(
+            client, PostingTests.Issues, PostingTests.NewKey(), PostingTests.Issue(id, PostingTests.IssueLine(item, 3m)), ct);
+        tx.Rollback();
+
+        var response = await toggle;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["allowNegativeStock"]!.GetValue<bool>().ShouldBeFalse();
+        await PostingTests.AssertInsufficientStockAsync(await issue, item, id, available: 1m, requested: 3m, ct);
+
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await PostingTests.BalanceAsync(c, item, id, ct)).ShouldBe((1m, 10m));
+        (await AllowNegativeFlagsAsync(c, id, ct)).ShouldBe([false]);
+        await LedgerInvariants.AssertHoldAsync(c, ct);
+    }
+
+    [Fact]
     public async Task Staff_gets_403_on_every_admin_route()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -405,12 +602,78 @@ public sealed class LocationsTests(DatabaseFixture db)
         Convert.ToBase64String(row.RowVersion).ShouldBe(version);
     }
 
+    [Fact]
+    public async Task Staff_gets_403_when_flipping_the_toggle()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, adminEmail) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var staffEmail = await AddUserAsync(app, tenant, Roles.Staff);
+        using var admin = await DatabaseFixture.SignInAsync(app, adminEmail);
+        var created = await CreateAsync(admin, "BR-1", "Branch", ct);
+        var id = created["id"]!.GetValue<Guid>();
+        var version = created["version"]!.GetValue<string>();
+        using var staff = await DatabaseFixture.SignInAsync(app, staffEmail);
+
+        var response = await staff.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new { code = "BR-1", name = "Branch", version, allowNegativeStock = true },
+            ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        response.Headers.Location.ShouldBeNull();
+        await using var scope = app.Services.GetRequiredService<ITenantScopeFactory>().BeginScope(tenant);
+        var inventory = scope.Services.GetRequiredService<InventoryDbContext>();
+        var row = await inventory.Locations.SingleAsync(l => l.Id == id, ct);
+        row.AllowNegativeStock.ShouldBeFalse();
+        Convert.ToBase64String(row.RowVersion).ShouldBe(version);
+    }
+
     /// <summary>Posts a valid create request and returns the 201 body.</summary>
     internal static async Task<JsonNode> CreateAsync(HttpClient client, string code, string name, CancellationToken ct)
     {
         var response = await client.PostAsJsonAsync("/api/locations", new { code, name }, ct);
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         return (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+    }
+
+    /// <summary>Sets a location's negative-stock toggle from its listed code, name and version; asserts 200 and returns the body.</summary>
+    internal static async Task<JsonNode> AllowNegativeAsync(HttpClient client, Guid id, bool allow, CancellationToken ct)
+    {
+        var location = await ListedAsync(client, id, ct);
+        var response = await client.PutAsJsonAsync(
+            $"/api/locations/{id}",
+            new
+            {
+                code = location["code"]!.GetValue<string>(),
+                name = location["name"]!.GetValue<string>(),
+                version = location["version"]!.GetValue<string>(),
+                allowNegativeStock = allow,
+            },
+            ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+    }
+
+    /// <summary>The location's row from the first list page.</summary>
+    private static async Task<JsonNode> ListedAsync(HttpClient client, Guid id, CancellationToken ct) =>
+        (await GetJsonAsync(client, "/api/locations?page=1&pageSize=100", ct))["items"]!.AsArray()
+            .Single(i => i!["id"]!.GetValue<Guid>() == id)!;
+
+    /// <summary>Every balance's <c>AllowNegative</c> at a location, by item.</summary>
+    private static async Task<List<bool>> AllowNegativeFlagsAsync(SqlConnection c, Guid location, CancellationToken ct)
+    {
+        await using var command = new SqlCommand(
+            "SELECT AllowNegative FROM inventory.StockBalances WHERE LocationId = @id ORDER BY ItemId", c);
+        command.Parameters.Add(new SqlParameter("@id", SqlDbType.UniqueIdentifier) { Value = location });
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var flags = new List<bool>();
+        while (await reader.ReadAsync(ct))
+        {
+            flags.Add(reader.GetBoolean(0));
+        }
+
+        return flags;
     }
 
     /// <summary>Adds another user to an existing tenant and returns their email.</summary>

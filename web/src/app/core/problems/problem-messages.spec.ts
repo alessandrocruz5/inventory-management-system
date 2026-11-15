@@ -46,6 +46,12 @@ describe('problemMessage', () => {
     );
   });
 
+  it('maps negative-balances-exist', () => {
+    expect(
+      problemMessage({ type: '/problems/negative-balances-exist', status: 422, balances: [] }),
+    ).toBe(PROBLEM_MESSAGES['negative-balances-exist']);
+  });
+
   it('maps the reversal slugs', () => {
     for (const slug of ['reversal-not-latest', 'already-reversed', 'cannot-reverse-reversal']) {
       expect(problemMessage({ type: `/problems/${slug}` })).toBe(PROBLEM_MESSAGES[slug]);

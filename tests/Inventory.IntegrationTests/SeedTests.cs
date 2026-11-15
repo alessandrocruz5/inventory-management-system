@@ -25,7 +25,8 @@ namespace Inventory.IntegrationTests;
 public sealed class SeedTests(DatabaseFixture db)
 {
     private const int DocumentTotal = 31;
-    private const int BalanceTotal = 50;
+    // 31 physical + 19 SUP + 19 empty ADJ: every receipt locks (item, ADJ) for a possible revaluation (IMS-14 plan D1).
+    private const int BalanceTotal = 69;
 
     [Fact]
     public async Task Seed_posts_opening_stock_once_through_the_engine()
