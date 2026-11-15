@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-15-s8-item-history]]"
 id: 05
 unit: IMS-12
-status: todo
+status: done
 model: haiku
 effort: low
 depends_on: [04]

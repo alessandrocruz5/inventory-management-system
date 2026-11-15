@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: draft
+status: in-progress
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -179,3 +179,12 @@ Revert the PR. No schema change and no data written, so nothing to roll back in 
 
 ## Log
 - 2026-11-15: planned
+- 2026-11-15: audited (Codex PASS; Claude PASS, 6 NOTEs, optional), 0 fixes applied
+- 2026-11-15: build started on IMS-12; rollback point 9ca43cbf2443e3eb46ab2c7b6ee9237f995d1aa6
+- 2026-11-15: 01 code written (build and format green) but NOT verified: Testcontainers SQL Server 2025 segfaults under QEMU (exit 139) on this arm64 host, so all integration tests fail at fixture start. Status left todo.
+- 2026-11-15: 01 re-run (build-unit, in-session on haiku; prompt wants sonnet): build -warnaserror and format green; the 60 integration tests still fail at SQL Server 2025 container start (same arm64 host limit as above). Code reviewed against the prompt: handler, response types and test file match. Status left todo until the tests run on a host with a native or x64 Docker engine.
+- 2026-11-15: 01 done (sonnet, 0 retries): Done-when commands green on the user's host (build, format, filtered and full dotnet test); the arm64 container limit only blocked this session.
+- 2026-11-15: 02 done (sonnet, 0 retries): GET /items/{id}/movements with windowed running balance; build, format, filtered (71) and full (486) dotnet test green, verified in-session; scope clean (8 declared files).
+- 2026-11-15: 03 done (haiku in-session, 0 retries): ItemsService gains ItemBalance/ItemDetail/ItemMovement, get returns ItemDetail, movements(id,page,pageSize); lint, build, prettier and 144 Vitest green; no other ItemsService.get caller.
+- 2026-11-15: 04 done (sonnet in-session, 0 retries): ItemDetail screen + items/:id route; lint, build (no budget error) and 151 Vitest green (7 new); scope clean (4 declared files).
+- 2026-11-15: 05 done (build-unit, in-session on haiku; matches prompt model): stock row click navigates to /items/:itemId, totals row ignored. Web lint, build and 153 web tests green; dotnet build -warnaserror and format green; dotnet test 486 passed (Testcontainers ran on this host this time).

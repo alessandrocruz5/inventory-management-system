@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-15-s8-item-history]]"
 id: 04
 unit: IMS-12
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: [03]
