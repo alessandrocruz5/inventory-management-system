@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: in-progress
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -230,3 +230,15 @@ Revert the PR, then roll the schema back on the PR's build before running the ol
 ## Log
 - 2026-11-13: planned
 - 2026-11-13: audited, 4 fixes applied (0 BLOCK, 4 FIX; 5 NOTEs not applied)
+- 2026-11-13: build started; rollback point afced56c97ac1ac57f0ad2f0a8781996d66c9d29
+- 2026-11-13: 01 done (opus, 0 retries): IX_StockDocuments_PostedAt + migration 20261113032743_DocumentsPostedAtIndex; 447 .NET tests
+- 2026-11-13: 02 done (sonnet, 0 retries): GET /api/stock with totals, T5 probe, 8 StockTests; 456 .NET tests
+- 2026-11-13: 03 done (sonnet, 0 retries): GET /api/documents, T10 named exemption (D1), CLAUDE.md constraint reworded, T5 probe, 8 DocumentQueryTests; 465 .NET tests
+- 2026-11-13: 04 done (sonnet, 0 retries): GET /api/documents/{id}, T5 probe, 6 more DocumentQueryTests; 472 .NET tests
+- 2026-11-13: 05 done (sonnet, 0 retries): shared/format.ts, StockService, DocumentsService + specs; verify fixed DocumentLine from/to fields to non-null (server always fills both); 88 web tests
+- 2026-11-13: 06 done (sonnet, 0 retries): Stock on hand screen (grid, location filter, pinned API totals row reading 'Total'); 94 web tests
+- 2026-11-13: 07 done (sonnet, 0 retries): posting-form.ts pure logic + T13 spec (line editor, idempotency key, amounts); 117 web tests
+- 2026-11-13: 08 done (sonnet, 0 retries): PostStock form + postStockGuard (9 + 4 spec facts); item control holds the chosen Item object (no separate id control); 130 web tests
+- 2026-11-13: 09 done (sonnet, 0 retries): Documents list + DocumentDetail screens; 140 web tests
+- 2026-11-13: 10 done (sonnet, 0 retries): routes (/ → /stock, documents, documents/new/:type, documents/:id), nav links, Home deleted; 142 web tests
+- 2026-11-13: shipped PR #11 (8b59f637); code-guardian APPROVE WITH NITS, 0 Blockers; fixed 2 Should-fix in e9c3f049 (navigate after post; revaluation lineCount test); CI green; 473 .NET / 143 web tests

@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-13-s7-stock-screens]]"
 id: 10
 unit: IMS-11
-status: todo
+status: done
 model: sonnet
 effort: low
 depends_on: [09]
