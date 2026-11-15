@@ -32,6 +32,20 @@
     <p>Reverses <a [routerLink]="['/documents', doc.reversesDocumentId]">this document</a></p>
   }
 
+  @if (canReverse()) {
+    <button mat-flat-button type="button" (click)="reverse()" [disabled]="reversing()">
+      Reverse
+    </button>
+  }
+  @if (reverseError(); as e) {
+    <p role="alert">
+      {{ e.message }}
+      @if (e.linkId) {
+        <a [routerLink]="['/documents', e.linkId]">{{ e.linkLabel }}</a>
+      }
+    </p>
+  }
+
   <table>
     <thead>
       <tr>

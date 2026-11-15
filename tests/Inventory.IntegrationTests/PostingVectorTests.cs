@@ -8,7 +8,7 @@ using Shouldly;
 
 namespace Inventory.IntegrationTests;
 
-/// <summary>T1's API run of vector sets R and A (spec §7): the costing rounding, the adjustment average and the remainder rule, through the real routes.</summary>
+/// <summary>T1's API run of vector sets R, A and V (spec §7): the costing rounding, the adjustment average, the remainder rule, and the transfer, reversal and rejection steps, through the real routes.</summary>
 public sealed class PostingVectorTests(DatabaseFixture db)
 {
     [Fact]
@@ -118,5 +118,96 @@ public sealed class PostingVectorTests(DatabaseFixture db)
         received.ShouldBe(85.0400m);
         removed.ShouldBe(85.0400m);
         removed.ShouldBe(received);
+    }
+
+    [Fact]
+    public async Task Set_V_moves_reverses_and_rejects_through_the_api()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = (await LocationsTests.CreateAsync(client, "A", "Location A", ct))["id"]!.GetValue<Guid>();
+        var b = (await LocationsTests.CreateAsync(client, "B", "Location B", ct))["id"]!.GetValue<Guid>();
+        var item = (await ItemsTests.CreateAsync(client, "V-1", "V-1", "pc", ct))["id"]!.GetValue<Guid>();
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        var sup = await LedgerRows.LocationIdAsync(connection, "SUP", ct);
+
+        await PostAsync("V1", PostingTests.Receipts, PostingTests.Receipt(a, PostingTests.Line(item, 10m, 100.00m)), 1000.0000m);
+        await AssertBalancesAsync("V1", (10m, 1000.0000m, null), null);
+        await PostAsync("V2", PostingTests.Receipts, PostingTests.Receipt(a, PostingTests.Line(item, 10m, 120.00m)), 1200.0000m);
+        await AssertBalancesAsync("V2", (20m, 2200.0000m, null), null);
+        await PostAsync("V3", PostingTests.Issues, PostingTests.Issue(a, PostingTests.IssueLine(item, 15m)), 1650.0000m);
+        await AssertBalancesAsync("V3", (5m, 550.0000m, null), null);
+        var v4 = await PostAsync("V4", PostingTests.Receipts, PostingTests.Receipt(a, PostingTests.Line(item, 5m, 130.00m)), 650.0000m);
+        await AssertBalancesAsync("V4", (10m, 1200.0000m, 120.0000m), null);
+        var v5 = await PostAsync("V5", TransferTests.Transfers, TransferTests.Transfer(a, b, TransferTests.TransferLine(item, 4m)), 480.0000m);
+        await AssertBalancesAsync("V5", (6m, 720.0000m, null), (4m, 480.0000m, null));
+        var v6 = await PostAsync("V6", PostingTests.Receipts, PostingTests.Receipt(b, PostingTests.Line(item, 6m, 125.00m)), 750.0000m);
+        await AssertBalancesAsync("V6", (6m, 720.0000m, null), (10m, 1230.0000m, 123.0000m));
+
+        // V7: the reversal takes the receipt back out of B at its original cost.
+        var reversal = await ReversalTests.ReverseAsync(client, v6, PostingTests.NewKey(), ct);
+        reversal.StatusCode.ShouldBe(HttpStatusCode.Created, "V7");
+        var reversed = (await reversal.Content.ReadFromJsonAsync<JsonNode>(ct))!["movements"]!.AsArray().ShouldHaveSingleItem()!;
+        reversed["totalCost"]!.GetValue<decimal>().ShouldBe(750.0000m, "V7");
+        reversed["fromLocationId"]!.GetValue<Guid>().ShouldBe(b, "V7");
+        reversed["toLocationId"]!.GetValue<Guid>().ShouldBe(sup, "V7");
+        await AssertBalancesAsync("V7", (6m, 720.0000m, null), (4m, 480.0000m, 120.0000m));
+
+        // V8: the transfer V5 touched A after V4 was posted.
+        var blocked = await ReversalTests.ReverseAsync(client, v4, PostingTests.NewKey(), ct);
+        await ReversalTests.AssertProblemAsync(blocked, HttpStatusCode.Conflict, "reversal-not-latest", ct);
+        var blockedProblem = await ReversalTests.ProblemAsync(blocked, ct);
+        blockedProblem["locationId"]!.GetValue<Guid>().ShouldBe(a, "V8");
+        blockedProblem["blockingDocumentId"]!.GetValue<Guid>().ShouldBe(v5, "V8");
+        await AssertBalancesAsync("V8", (6m, 720.0000m, null), (4m, 480.0000m, null));
+
+        // V9: only 6 are on hand at A.
+        var tooMany = await PostingTests.PostDocumentAsync(client, PostingTests.Issues, PostingTests.NewKey(),
+            PostingTests.Issue(a, PostingTests.IssueLine(item, 7m)), ct);
+        await PostingTests.AssertInsufficientStockAsync(tooMany, item, a, 6m, 7m, ct);
+        await AssertBalancesAsync("V9", (6m, 720.0000m, null), (4m, 480.0000m, null));
+
+        // V10: the last 6 take the remainder.
+        await PostAsync("V10", PostingTests.Issues, PostingTests.Issue(a, PostingTests.IssueLine(item, 6m)), 720.0000m);
+        await AssertBalancesAsync("V10", (0m, 0.0000m, null), (4m, 480.0000m, null));
+
+        await LedgerInvariants.AssertHoldAsync(connection, ct);
+
+        async Task<Guid> PostAsync(string step, string route, object body, decimal cost)
+        {
+            var response = await PostingTests.PostDocumentAsync(client, route, PostingTests.NewKey(), body, ct);
+            response.StatusCode.ShouldBe(HttpStatusCode.Created, step);
+            var document = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            document["movements"]!.AsArray().ShouldHaveSingleItem()!["totalCost"]!.GetValue<decimal>().ShouldBe(cost, step);
+            return document["id"]!.GetValue<Guid>();
+        }
+
+        // lastUnitCost is checked only where the table names it.
+        async Task AssertBalancesAsync(string step, (decimal OnHand, decimal StockValue, decimal? LastUnitCost) atA,
+            (decimal OnHand, decimal StockValue, decimal? LastUnitCost)? atB)
+        {
+            var balanceA = (await ReversalTests.BalanceAsync(connection, item, a, ct)).ShouldNotBeNull(step);
+            (balanceA.OnHand, balanceA.StockValue).ShouldBe((atA.OnHand, atA.StockValue), $"{step} A");
+            if (atA.LastUnitCost is not null)
+            {
+                balanceA.LastUnitCost.ShouldBe(atA.LastUnitCost, $"{step} A");
+            }
+
+            var balanceB = await ReversalTests.BalanceAsync(connection, item, b, ct);
+            if (atB is null)
+            {
+                balanceB.ShouldBeNull(step);
+                return;
+            }
+
+            balanceB.ShouldNotBeNull(step);
+            (balanceB.Value.OnHand, balanceB.Value.StockValue).ShouldBe((atB.Value.OnHand, atB.Value.StockValue), $"{step} B");
+            if (atB.Value.LastUnitCost is not null)
+            {
+                balanceB.Value.LastUnitCost.ShouldBe(atB.Value.LastUnitCost, $"{step} B");
+            }
+        }
     }
 }

@@ -19,7 +19,7 @@ internal sealed record PostingCommand(
     Guid PostedBy,
     AdjustmentReason? ReasonCode);
 
-/// <summary>What <see cref="PostingEngine"/> did with a posting. Only <see cref="PostedOutcome"/> wrote anything.</summary>
+/// <summary>What <see cref="PostingEngine"/> did with a posting or a reversal. Only <see cref="PostedOutcome"/> wrote anything.</summary>
 internal abstract record PostingOutcome;
 
 /// <summary>
@@ -51,3 +51,16 @@ internal sealed record BalanceOutOfRangeOutcome(Guid ItemId, Guid LocationId) : 
 
 /// <summary>Every retry failed with a transient error (deadlock 1205 included): <c>409 concurrency-conflict</c>.</summary>
 internal sealed record RetriesExhaustedOutcome : PostingOutcome;
+
+/// <summary>
+/// A reversal that passed the route's checks (plan D3): the original document is not a reversal and had no reversal
+/// when checked. <see cref="Original"/> is every movement of it, revaluations included, in any order.
+/// </summary>
+internal sealed record ReversalCommand(
+    Guid OriginalDocumentId, IReadOnlyList<LedgerMovement> Original, string IdempotencyKey, byte[] RequestHash, Guid PostedBy);
+
+/// <summary>The original already has a reversal, found after a race on <c>UX_StockDocuments_Reverses</c> (plan D5).</summary>
+internal sealed record AlreadyReversedOutcome(Guid ReversalDocumentId) : PostingOutcome;
+
+/// <summary>A later movement touched a physical balance of the original (spec §6): 409 reversal-not-latest.</summary>
+internal sealed record ReversalNotLatestOutcome(Guid ItemId, Guid LocationId, Guid BlockingDocumentId) : PostingOutcome;

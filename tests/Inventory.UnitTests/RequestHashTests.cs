@@ -102,6 +102,25 @@ public sealed class RequestHashTests
     }
 
     [Fact]
+    public void Reversal_hash_is_sha256_of_method_route_and_empty_body()
+    {
+        RequestHash.Reversal(Loc).ShouldBe(
+            SHA256.HashData(Encoding.UTF8.GetBytes("POST /api/documents/0f8fad5b-d9cb-469f-a165-70867728950e/reversal\n{}")));
+    }
+
+    [Fact]
+    public void Reversals_of_different_documents_hash_differently()
+    {
+        RequestHash.Reversal(Loc).ShouldNotBe(RequestHash.Reversal(OtherLoc));
+    }
+
+    [Fact]
+    public void A_reversal_never_hashes_like_a_receipt()
+    {
+        RequestHash.Reversal(Loc).ShouldNotBe(ReceiptHash(Loc, null, new PostReceiptLine(ItemA, 1m, 1m)));
+    }
+
+    [Fact]
     public void Issue_hash_is_sha256_of_method_route_and_canonical_json()
     {
         var posting = ValidIssue(new PostIssueRequest(Loc, null, null, [new PostIssueLine(ItemA, 1m)]));

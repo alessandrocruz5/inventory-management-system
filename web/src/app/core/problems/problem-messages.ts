@@ -13,6 +13,10 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
   'insufficient-stock': 'There is not enough stock for one of the lines.',
   'inactive-item': 'One of the items is no longer active.',
   'inactive-location': 'This location is no longer active.',
+  'reversal-not-latest':
+    'Stock of this item has moved since this document, so it can no longer be reversed. Post a correcting document instead.',
+  'already-reversed': 'This document has already been reversed.',
+  'cannot-reverse-reversal': 'A reversal cannot be reversed. Post a new document instead.',
 };
 
 export const DEFAULT_PROBLEM_MESSAGE = 'Something went wrong. Please try again.';

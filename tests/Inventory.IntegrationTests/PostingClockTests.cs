@@ -64,6 +64,18 @@ public sealed class PostingClockTests(DatabaseFixture db)
         var issueId = issued["id"]!.GetValue<Guid>();
         (await DocumentPostedAtAsync(connection, issueId, ct)).ShouldBe(later);
         (await MovementPostedAtAsync(connection, issueId, ct)).ShouldHaveSingleItem().ShouldBe(later);
+
+        fake.Advance(TimeSpan.FromMinutes(5));
+        var reversal = await ReversalTests.ReverseAsync(client, issueId, PostingTests.NewKey(), ct);
+
+        reversal.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var latest = now.AddMinutes(10);
+        var reversed = (await reversal.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        reversed["postedAt"]!.GetValue<DateTimeOffset>().ShouldBe(latest);
+        reversed["balancesAsOf"]!.GetValue<DateTimeOffset>().ShouldBe(latest);
+        var reversalId = reversed["id"]!.GetValue<Guid>();
+        (await DocumentPostedAtAsync(connection, reversalId, ct)).ShouldBe(latest);
+        (await MovementPostedAtAsync(connection, reversalId, ct)).ShouldHaveSingleItem().ShouldBe(latest);
     }
 
     // Read filters bind a date to narrow a list; nothing stores it. Every other request date is banned (CLAUDE.md review constraint).

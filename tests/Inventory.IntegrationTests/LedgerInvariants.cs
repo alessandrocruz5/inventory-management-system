@@ -7,10 +7,10 @@ using Shouldly;
 namespace Inventory.IntegrationTests;
 
 /// <summary>
-/// The ledger invariants INV-1, INV-2, INV-3 and INV-5 (spec §6), folded from the tenant's <c>StockMovements</c> and
+/// The ledger invariants INV-1 to INV-5 (spec §6), folded from the tenant's <c>StockMovements</c> and
 /// checked against its <c>StockBalances</c>. It ports the in-memory oracle <c>LedgerHarness.AssertInvariants</c> from
-/// the unit tests rule for rule, reading the rows from SQL instead. INV-4 (the reversal mirror) is added with reversals
-/// in S9, and S11's health endpoint is the product check; this is the test oracle.
+/// the unit tests rule for rule, reading the rows from SQL instead. S11's health endpoint is the product check;
+/// this is the test oracle.
 /// </summary>
 internal static class LedgerInvariants
 {
@@ -89,6 +89,30 @@ internal static class LedgerInvariants
         {
             var sum = group.Sum(b => b.OnHand);
             Check(sum == 0m, $"INV-2 OnHand of item {group.Key} sums to {sum}");
+        }
+
+        // INV-4: a reversal mirrors the movement it names, and no movement is reversed twice.
+        var byId = movements.ToDictionary(m => m.Id);
+        foreach (var m in movements.Where(m => m.ReversesMovementId is not null))
+        {
+            var r = m.ReversesMovementId!.Value;
+            if (!byId.TryGetValue(r, out var o))
+            {
+                failures.Add($"INV-4 movement {m.Id} reverses missing {r}");
+                continue;
+            }
+
+            Check(o.ReversesMovementId is null, $"INV-4 movement {m.Id} reverses {r}, which is itself a reversal");
+            Check(m.ItemId == o.ItemId, $"INV-4 movement {m.Id} item {m.ItemId} differs from {r} item {o.ItemId}");
+            Check(m.Quantity == o.Quantity, $"INV-4 movement {m.Id} quantity {m.Quantity} differs from {r} quantity {o.Quantity}");
+            Check(m.TotalCost == o.TotalCost, $"INV-4 movement {m.Id} total cost {m.TotalCost} differs from {r} total cost {o.TotalCost}");
+            Check(m.FromLocationId == o.ToLocationId, $"INV-4 movement {m.Id} from {m.FromLocationId} is not {r} to {o.ToLocationId}");
+            Check(m.ToLocationId == o.FromLocationId, $"INV-4 movement {m.Id} to {m.ToLocationId} is not {r} from {o.FromLocationId}");
+        }
+
+        foreach (var group in movements.Where(m => m.ReversesMovementId is not null).GroupBy(m => m.ReversesMovementId!.Value))
+        {
+            Check(group.Count() == 1, $"INV-4 movement {group.Key} is reversed {group.Count()} times by {string.Join(", ", group.Select(m => m.Id))}");
         }
 
         failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
