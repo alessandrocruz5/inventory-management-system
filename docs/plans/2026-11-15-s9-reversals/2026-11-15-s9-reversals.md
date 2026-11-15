@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
