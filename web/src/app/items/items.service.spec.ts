@@ -83,7 +83,18 @@ describe('ItemsService', () => {
 
   it('get encodes the id', async () => {
     const promise = service.get('a/b');
-    httpMock.expectOne('/api/items/a%2Fb').flush(item);
-    await promise;
+    httpMock.expectOne('/api/items/a%2Fb').flush({ ...item, balances: [] });
+    expect((await promise).balances).toEqual([]);
+  });
+
+  it('movements encodes the id and sends page and pageSize', async () => {
+    const page = { items: [], page: 2, pageSize: 50, total: 0 };
+    const promise = service.movements('a/b', 2, 50);
+    const req = httpMock.expectOne((r) => r.url === '/api/items/a%2Fb/movements');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('page')).toBe('2');
+    expect(req.request.params.get('pageSize')).toBe('50');
+    req.flush(page);
+    expect(await promise).toEqual(page);
   });
 });
