@@ -14,3 +14,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 - Inventory: `Locations` and `ProvisionTenantAsync` (IMS-3).
 - Tenancy: `TenantId` column default and save interceptor, named `Tenant` query filter, and row-level security on `security.TenantPolicy` with a session-context interceptor (IMS-4).
 - Tenancy: `Locations` is tenant-owned, with route guard (T5), catalog (T6), isolation (T11) and rollback tests, plus a T12 rule against bare `IgnoreQueryFilters()` (IMS-4).
+- Stock screens: `GET /stock` with totals, `GET /documents` and `GET /documents/{id}`, and Angular stock-on-hand, post-stock form, and documents list and detail screens (IMS-11).
