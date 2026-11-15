@@ -1,0 +1,181 @@
+import { HttpErrorResponse } from '@angular/common/http';
+import { signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { PageEvent } from '@angular/material/paginator';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { BehaviorSubject } from 'rxjs';
+import { AuthService } from '../core/auth/auth.service';
+import { ItemDetail } from './item-detail';
+import { ItemDetail as ItemDetailData, ItemMovement, ItemsService } from './items.service';
+
+interface ItemDetailInternals {
+  onPage(event: PageEvent): Promise<void>;
+}
+
+describe('ItemDetail', () => {
+  const get = vi.fn();
+  const movements = vi.fn();
+  const params = new BehaviorSubject(convertToParamMap({ id: 'i1' }));
+
+  const item = (over: Partial<ItemDetailData> = {}): ItemDetailData =>
+    ({
+      id: 'i1',
+      sku: 'SKU-1',
+      name: 'Widget',
+      baseUnit: 'pc',
+      isActive: true,
+      balances: [
+        {
+          locationId: 'l1',
+          locationCode: 'MAIN',
+          locationName: 'Main',
+          onHand: 10,
+          stockValue: 1230,
+          averageCost: 123,
+          lastUnitCost: 125,
+        },
+      ],
+      ...over,
+    }) as ItemDetailData;
+
+  const movement = (over: Partial<ItemMovement>): ItemMovement => ({
+    movementId: 1,
+    documentId: 'd6',
+    documentType: 'Receipt',
+    lineNo: 1,
+    postedAt: '2026-10-30T06:14:00Z',
+    postedBy: '00000000-0000-0000-0000-000000000000',
+    direction: 'In',
+    locationId: 'l1',
+    locationCode: 'MAIN',
+    locationName: 'Main',
+    counterpartLocationId: 'l2',
+    counterpartLocationCode: 'SUP',
+    counterpartLocationName: 'Supplier',
+    quantityChange: 6,
+    valueChange: 750,
+    runningOnHand: 10,
+    runningValue: 1230,
+    ...over,
+  });
+
+  const page = (items: ItemMovement[]) => ({ items, page: 1, pageSize: 25, total: items.length });
+
+  const twoMovements = () => [
+    movement({}),
+    movement({
+      movementId: 2,
+      documentId: 'd5',
+      documentType: 'Transfer',
+      direction: 'Out',
+      counterpartLocationCode: 'B',
+      counterpartLocationName: 'Branch B',
+      quantityChange: -4,
+      valueChange: -480,
+      runningOnHand: 6,
+      runningValue: 720,
+      postedBy: 'u-1',
+    }),
+  ];
+
+  beforeEach(async () => {
+    get.mockReset();
+    movements.mockReset();
+    get.mockResolvedValue(item());
+    movements.mockResolvedValue(page(twoMovements()));
+    params.next(convertToParamMap({ id: 'i1' }));
+    await TestBed.configureTestingModule({
+      imports: [ItemDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ItemsService, useValue: { get, movements } },
+        { provide: AuthService, useValue: { user: signal({ id: 'u-1' }) } },
+        { provide: ActivatedRoute, useValue: { paramMap: params } },
+      ],
+    }).compileComponents();
+  });
+
+  async function render() {
+    const fixture = TestBed.createComponent(ItemDetail);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return { fixture, el: fixture.nativeElement as HTMLElement };
+  }
+
+  it('renders the item, its balances and its history', async () => {
+    const { el } = await render();
+    const text = el.textContent ?? '';
+    for (const expected of [
+      'SKU-1 · Widget',
+      '₱123.00',
+      '₱1,230.00',
+      'Received',
+      'Moved',
+      'from SUP',
+      'to B',
+      '+6',
+      '-4',
+      '+₱750.00',
+      'System',
+      'You',
+      '30 Oct 2026, 2:14 PM',
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).not.toContain('10.0000');
+  });
+
+  it('links each history row to its document', async () => {
+    const { el } = await render();
+    const hrefs = Array.from(el.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('/documents/d6');
+    expect(hrefs).toContain('/documents/d5');
+  });
+
+  it('shows empty states', async () => {
+    get.mockResolvedValue(item({ balances: [] }));
+    movements.mockResolvedValue(page([]));
+    const { el } = await render();
+    expect(el.textContent).toContain('No stock at any location yet.');
+    expect(el.textContent).toContain('No movements yet.');
+  });
+
+  it('shows Inactive for an inactive item', async () => {
+    get.mockResolvedValue(item({ isActive: false }));
+    const { el } = await render();
+    expect(el.textContent).toContain('Inactive');
+  });
+
+  it('shows the not-found message with a link back on 404', async () => {
+    get.mockRejectedValue(
+      new HttpErrorResponse({ status: 404, error: { type: '/problems/not-found' } }),
+    );
+    const { el } = await render();
+    expect(el.textContent).toContain("That record doesn't exist, or you can't see it.");
+    expect(el.querySelector('a')?.getAttribute('href')).toBe('/stock');
+  });
+
+  it('pages the history', async () => {
+    const { fixture } = await render();
+    await (fixture.componentInstance as unknown as ItemDetailInternals).onPage({
+      pageIndex: 1,
+      pageSize: 25,
+      length: 30,
+    });
+    expect(movements).toHaveBeenLastCalledWith('i1', 2, 25);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads from page 1 when the id changes', async () => {
+    const { fixture } = await render();
+    await (fixture.componentInstance as unknown as ItemDetailInternals).onPage({
+      pageIndex: 1,
+      pageSize: 25,
+      length: 30,
+    });
+    params.next(convertToParamMap({ id: 'i2' }));
+    await fixture.whenStable();
+    expect(get).toHaveBeenLastCalledWith('i2');
+    expect(movements).toHaveBeenLastCalledWith('i2', 1, 25);
+  });
+});

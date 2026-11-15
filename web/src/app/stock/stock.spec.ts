@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { AgGridAngular } from 'ag-grid-angular';
 import { ColDef } from 'ag-grid-community';
@@ -11,6 +12,7 @@ import { StockRow, StockService } from './stock.service';
 
 interface StockInternals {
   onLocation(id: string | null): void;
+  onRowClicked(row: Partial<StockRow> | undefined): void;
   totalsRow(): unknown;
   locations(): { id: string }[];
   columnDefs: ColDef<StockRow>[];
@@ -20,6 +22,7 @@ describe('Stock', () => {
   const list = vi.fn();
   const listLocations = vi.fn();
   const open = vi.fn();
+  const navigate = vi.fn();
 
   const row = (onHand: number) => ({
     itemId: 'i',
@@ -47,6 +50,7 @@ describe('Stock', () => {
     list.mockReset();
     listLocations.mockReset();
     open.mockReset();
+    navigate.mockReset();
     list.mockResolvedValue({
       items: [row(10), row(20)],
       page: 1,
@@ -70,6 +74,7 @@ describe('Stock', () => {
         { provide: StockService, useValue: { list } },
         { provide: LocationsService, useValue: { list: listLocations } },
         { provide: MatSnackBar, useValue: { open } },
+        { provide: Router, useValue: { navigate } },
       ],
     }).compileComponents();
   });
@@ -127,6 +132,21 @@ describe('Stock', () => {
     expect(fmt(5, 1234.5)).toBe('₱1,234.50');
     expect(fmt(4, null)).toBe('—');
     expect(fmt(4, 1234.5)).toBe('₱1,234.50');
+  });
+
+  it('navigates to the item on row click', async () => {
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    component(fixture).onRowClicked(row(5));
+    expect(navigate).toHaveBeenCalledWith(['/items', 'i']);
+  });
+
+  it('ignores the totals row', async () => {
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    component(fixture).onRowClicked({ stockValue: 100 });
+    component(fixture).onRowClicked(undefined);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   function component(fixture: { componentInstance: Stock }) {

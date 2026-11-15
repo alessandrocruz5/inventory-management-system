@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Paged } from '../core/api/paged';
+import { DocumentType } from '../shared/format';
 
 export interface Item {
   id: string;
@@ -10,6 +11,40 @@ export interface Item {
   baseUnit: string;
   isActive: boolean;
   version: string;
+}
+
+export interface ItemBalance {
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  onHand: number;
+  stockValue: number;
+  averageCost: number | null;
+  lastUnitCost: number | null;
+}
+
+export interface ItemDetail extends Item {
+  balances: ItemBalance[];
+}
+
+export interface ItemMovement {
+  movementId: number;
+  documentId: string;
+  documentType: DocumentType;
+  lineNo: number;
+  postedAt: string;
+  postedBy: string;
+  direction: 'In' | 'Out';
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  counterpartLocationId: string;
+  counterpartLocationCode: string;
+  counterpartLocationName: string;
+  quantityChange: number;
+  valueChange: number;
+  runningOnHand: number;
+  runningValue: number;
 }
 
 export interface ItemInput {
@@ -42,8 +77,17 @@ export class ItemsService {
     return firstValueFrom(this.http.get<Paged<Item>>('/api/items', { params }));
   }
 
-  get(id: string): Promise<Item> {
-    return firstValueFrom(this.http.get<Item>(`/api/items/${encodeURIComponent(id)}`));
+  get(id: string): Promise<ItemDetail> {
+    return firstValueFrom(this.http.get<ItemDetail>(`/api/items/${encodeURIComponent(id)}`));
+  }
+
+  movements(id: string, page: number, pageSize: number): Promise<Paged<ItemMovement>> {
+    const params = new HttpParams().set('page', page).set('pageSize', pageSize);
+    return firstValueFrom(
+      this.http.get<Paged<ItemMovement>>(`/api/items/${encodeURIComponent(id)}/movements`, {
+        params,
+      }),
+    );
   }
 
   create(input: ItemInput): Promise<Item> {

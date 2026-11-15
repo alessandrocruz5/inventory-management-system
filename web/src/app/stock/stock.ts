@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSelectModule } from '@angular/material/select';
@@ -23,6 +24,7 @@ export class Stock {
   private readonly stockService = inject(StockService);
   private readonly locationsService = inject(LocationsService);
   private readonly snackBar = inject(MatSnackBar);
+  private readonly router = inject(Router);
 
   protected readonly theme = themeQuartz;
   protected readonly columnDefs: ColDef<StockRow>[] = [
@@ -82,6 +84,12 @@ export class Stock {
     this.locationId.set(id);
     this.pageIndex.set(0);
     void this.load();
+  }
+
+  protected onRowClicked(row: Partial<StockRow> | undefined): void {
+    if (row?.itemId) {
+      void this.router.navigate(['/items', row.itemId]);
+    }
   }
 
   protected onPage(event: PageEvent): void {

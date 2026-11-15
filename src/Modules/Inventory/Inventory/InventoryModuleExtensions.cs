@@ -6,6 +6,7 @@ using Inventory.Features.Items;
 using Inventory.Features.Items.CreateItem;
 using Inventory.Features.Items.DeactivateItem;
 using Inventory.Features.Items.GetItem;
+using Inventory.Features.Items.ListItemMovements;
 using Inventory.Features.Items.ListItems;
 using Inventory.Features.Items.UpdateItem;
 using Inventory.Features.Locations;
@@ -50,6 +51,7 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<IDataSeeder, InventorySeeder>();
         builder.Services.AddScoped<ListItemsHandler>();
         builder.Services.AddScoped<GetItemHandler>();
+        builder.Services.AddScoped<ListItemMovementsHandler>();
         builder.Services.AddScoped<CreateItemHandler>();
         builder.Services.AddScoped<UpdateItemHandler>();
         builder.Services.AddScoped<DeactivateItemHandler>();

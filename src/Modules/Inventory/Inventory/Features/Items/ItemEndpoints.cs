@@ -1,6 +1,7 @@
 using Inventory.Features.Items.CreateItem;
 using Inventory.Features.Items.DeactivateItem;
 using Inventory.Features.Items.GetItem;
+using Inventory.Features.Items.ListItemMovements;
 using Inventory.Features.Items.ListItems;
 using Inventory.Features.Items.UpdateItem;
 
@@ -17,6 +18,7 @@ internal static class ItemEndpoints
         var items = api.MapGroup("/items");
         items.MapListItems();
         items.MapGetItem();
+        items.MapListItemMovements();
         items.MapCreateItem();
         items.MapUpdateItem();
         items.MapDeactivateItem();

@@ -20,6 +20,7 @@
   [pinnedBottomRowData]="totalsRow()"
   [loading]="loading()"
   [pagination]="false"
+  (rowClicked)="onRowClicked($event.data)"
 />
 
 <mat-paginator

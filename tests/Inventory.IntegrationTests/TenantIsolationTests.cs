@@ -239,6 +239,38 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     }
 
     [Fact]
+    [ProbesRoute("GET /api/items/{id:guid}/movements")]
+    public async Task Another_tenants_item_history_is_404()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct);
+        var itemB = await PostingTests.NewItemAsync(clientB, "SAME-1", ct);
+        await PostingTests.ReceiveAsync(clientB, locationB, itemB, 1m, 10m, ct);
+
+        var response = await clientA.GetAsync($"/api/items/{itemB}/movements", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+
+        var locationA = await PostingTests.NewLocationAsync(clientA, ct);
+        var itemA = await PostingTests.NewItemAsync(clientA, "SAME-1", ct);
+        await PostingTests.ReceiveAsync(clientA, locationA, itemA, 2m, 10m, ct);
+
+        var own = await clientA.GetAsync($"/api/items/{itemA}/movements", ct);
+
+        own.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var history = (await own.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        history["total"]!.GetValue<int>().ShouldBe(1);
+        history["items"]!.AsArray()[0]!["locationId"]!.GetValue<Guid>().ShouldBe(locationA);
+    }
+
+    [Fact]
     [ProbesRoute("GET /api/documents/{id:guid}")]
     public async Task Another_tenants_document_id_is_404()
     {
