@@ -144,8 +144,21 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
             return null;
         }
 
+        // The counterpart of every revaluation. Virtual locations can't be edited or deactivated, so a snapshot read is
+        // safe (IMS-14 plan D1).
+        var adjustmentId = await db.Locations.AsNoTracking()
+            .Where(l => l.Kind == LocationKind.Adjustment)
+            .Select(l => l.Id)
+            .SingleAsync(ct);
+
         // Step 5: make sure every touched balance row exists, in clustered key order so concurrent inserts can't deadlock.
-        var keys = command.Lines.SelectMany(l => TouchedKeys(l.ItemId, l.FromLocationId, l.ToLocationId))
+        // A receipt or transfer line may revalue, which touches (item, ADJ), so step 6's one statement must lock it too
+        // (IMS-14 plan D1). An adjustment line already touches ADJ, and an issue never revalues.
+        var revalues = command.Kind is PostingKind.Receipt or PostingKind.Transfer;
+        var keys = command.Lines
+            .SelectMany(l => revalues
+                ? [.. TouchedKeys(l.ItemId, l.FromLocationId, l.ToLocationId), new BalanceKey(l.ItemId, adjustmentId)]
+                : TouchedKeys(l.ItemId, l.FromLocationId, l.ToLocationId))
             .Distinct()
             .OrderBy(k => new SqlGuid(k.ItemId))
             .ThenBy(k => new SqlGuid(k.LocationId))
@@ -173,9 +186,9 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
         var locationIds = keys.Select(k => k.LocationId).Distinct().OrderBy(id => new SqlGuid(id)).ToList();
         var rows = await LockBalancesAsync(itemIds, locationIds, ct);
 
-        // Every kind moves all its lines between exactly two locations: a receipt, issue or adjustment between the
-        // location and its counterpart (an adjustment's lines may point either way), a transfer from A to B. So items ×
-        // locations is the touched set.
+        // Every line of a document touches the same set of locations: a receipt line {location, SUP, ADJ}, a transfer
+        // line {A, B, ADJ}, an issue or adjustment line its location and counterpart (an adjustment's lines may point
+        // either way). So items × locations is the touched set.
         if (rows.Count != itemIds.Count * locationIds.Count)
         {
             throw new InvalidOperationException(
@@ -218,7 +231,7 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
         PostingResult result;
         try
         {
-            result = PostingRules.Post(command.Kind, command.Lines, balances);
+            result = PostingRules.Post(command.Kind, command.Lines, balances, adjustmentId);
         }
         catch (PostingRejectedException rejection)
         {
@@ -229,6 +242,12 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
         if (result.Balances.FirstOrDefault(b => Math.Abs(b.OnHand) > MaxColumn || Math.Abs(b.StockValue) > MaxColumn) is { } outOfRange)
         {
             return new BalanceOutOfRangeOutcome(outOfRange.ItemId, outOfRange.LocationId);
+        }
+
+        // IMS-14 plan D6: an estimate or a revaluation can exceed decimal(19,4) while both balances fit (8115, a 500).
+        if (result.Movements.FirstOrDefault(m => m.TotalCost > MaxColumn) is { } costOutOfRange)
+        {
+            return new BalanceOutOfRangeOutcome(costOutOfRange.ItemId, costOutOfRange.FromLocationId);
         }
 
         var movements = await WriteAsync(

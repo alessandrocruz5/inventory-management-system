@@ -61,6 +61,52 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Twenty_parallel_issues_past_zero_all_post_then_a_receipt_settles()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct);
+        await LocationsTests.AllowNegativeAsync(client, location, true, ct);
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        await PostingTests.ReceiveAsync(client, location, item, 5m, 10m, ct);
+
+        var responses = await InParallelAsync(20, () =>
+            PostingTests.PostDocumentAsync(client, PostingTests.Issues, PostingTests.NewKey(), PostingTests.Issue(location, PostingTests.IssueLine(item, 1m)), ct));
+
+        Count(responses, HttpStatusCode.Created).ShouldBe(20, Statuses(responses));
+        foreach (var response in responses)
+        {
+            // The average is 10 while stock lasts; past zero the estimate is LastUnitCost, also 10.
+            var document = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            document["movements"]!.AsArray().ShouldHaveSingleItem()!["totalCost"]!.GetValue<decimal>().ShouldBe(10.0000m);
+        }
+
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await ReversalTests.BalanceAsync(connection, item, location, ct)).ShouldBe((-15m, -150.0000m, 10.0000m));
+        (await DocumentsOfTypeAsync(connection, "Issue", ct)).ShouldBe(20);
+
+        var receipt = await PostingTests.PostDocumentAsync(client, PostingTests.Receipts, PostingTests.NewKey(),
+            PostingTests.Receipt(location, PostingTests.Line(item, 20m, 12m)), ct);
+
+        receipt.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var sup = await LedgerRows.LocationIdAsync(connection, "SUP", ct);
+        var adj = await LedgerRows.LocationIdAsync(connection, "ADJ", ct);
+        var movements = (await receipt.Content.ReadFromJsonAsync<JsonNode>(ct))!["movements"]!.AsArray()
+            .Select(m => (
+                m!["lineNo"]!.GetValue<int>(),
+                m["fromLocationId"]!.GetValue<Guid>(),
+                m["toLocationId"]!.GetValue<Guid>(),
+                m["quantity"]!.GetValue<decimal>(),
+                m["totalCost"]!.GetValue<decimal>()))
+            .ToList();
+        movements.ShouldBe([(1, sup, location, 20m, 240.0000m), (1001, location, adj, 0m, 30.0000m)]);
+        (await ReversalTests.BalanceAsync(connection, item, location, ct)).ShouldBe((5m, 60.0000m, 12.0000m));
+        await LedgerInvariants.AssertHoldAsync(connection, ct);
+    }
+
+    [Fact]
     public async Task Same_key_and_body_sequentially_replays()
     {
         var ct = TestContext.Current.CancellationToken;

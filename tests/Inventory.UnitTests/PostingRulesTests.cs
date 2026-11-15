@@ -54,7 +54,7 @@ public sealed class PostingRulesTests
         var a = Physical(A, lastMovementId: 2);
         var balances = BalancesOf(sup, a);
 
-        var result = PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 10m, 100m)], balances);
+        var result = PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 10m, 100m)], balances, Adj);
 
         result.Movements.ShouldBe([new PlannedMovement(1, Item, Sup, A, 10m, 1000.0000m, null)]);
 
@@ -82,7 +82,7 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Physical(A, 20m, 2200m, luc: 110m), Virtual(Cus));
 
-        var result = PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 15m)], balances);
+        var result = PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 15m)], balances, Adj);
 
         result.Movements.Single().TotalCost.ShouldBe(1650m);
         var a = Of(result, A);
@@ -98,27 +98,38 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Physical(A, 6m, 720m, luc: 120m), Virtual(Cus));
 
-        var result = PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 6m)], balances);
+        var result = PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 6m)], balances, Adj);
 
         result.Movements.Single().TotalCost.ShouldBe(720m);
         Of(result, A).OnHand.ShouldBe(0m);
         Of(result, A).StockValue.ShouldBe(0m);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Issue_above_on_hand_throws_insufficient_stock(bool allowNegative)
+    [Fact]
+    public void Issue_above_on_hand_throws_insufficient_stock()
     {
-        var balances = BalancesOf(Physical(A, 6m, 720m, luc: 120m, allowNegative: allowNegative), Virtual(Cus));
+        var balances = BalancesOf(Physical(A, 6m, 720m, luc: 120m), Virtual(Cus));
 
         var ex = Should.Throw<InsufficientStockException>(
-            () => PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 7m)], balances));
+            () => PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 7m)], balances, Adj));
 
         ex.ItemId.ShouldBe(Item);
         ex.LocationId.ShouldBe(A);
         ex.Available.ShouldBe(6m);
         ex.Requested.ShouldBe(7m);
+    }
+
+    [Fact]
+    public void Issue_past_zero_with_the_toggle_on_estimates()
+    {
+        var balances = BalancesOf(Physical(A, 4m, 200m, luc: 50m, allowNegative: true), Virtual(Cus));
+
+        var result = PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 6m)], balances, Adj);
+
+        result.Movements.Single().TotalCost.ShouldBe(300.0000m);
+        Of(result, A).OnHand.ShouldBe(-2m);
+        Of(result, A).StockValue.ShouldBe(-100.0000m);
+        Of(result, A).LastUnitCost.ShouldBe(50.0000m);
     }
 
     // Post: Transfer
@@ -128,7 +139,7 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Physical(A, 10m, 1200m, luc: 120m), Physical(B));
 
-        var result = PostingRules.Post(PostingKind.Transfer, [Line(A, B, 4m)], balances);
+        var result = PostingRules.Post(PostingKind.Transfer, [Line(A, B, 4m)], balances, Adj);
 
         result.Movements.ShouldBe([new PlannedMovement(1, Item, A, B, 4m, 480m, null)]);
         var a = Of(result, A);
@@ -148,7 +159,7 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Virtual(Adj), Physical(A));
 
-        var result = PostingRules.Post(PostingKind.Adjustment, [Line(Adj, A, 2m, 12.50m)], balances);
+        var result = PostingRules.Post(PostingKind.Adjustment, [Line(Adj, A, 2m, 12.50m)], balances, Adj);
 
         result.Movements.Single().TotalCost.ShouldBe(25m);
         Of(result, A).OnHand.ShouldBe(2m);
@@ -162,7 +173,7 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Virtual(Adj), Physical(A, 3m, 30.02m, luc: 10.0067m));
 
-        var result = PostingRules.Post(PostingKind.Adjustment, [Line(Adj, A, 3m)], balances);
+        var result = PostingRules.Post(PostingKind.Adjustment, [Line(Adj, A, 3m)], balances, Adj);
 
         result.Movements.Single().TotalCost.ShouldBe(30.0200m);
         Of(result, A).OnHand.ShouldBe(6m);
@@ -176,7 +187,7 @@ public sealed class PostingRulesTests
         var balances = BalancesOf(Virtual(Adj), Physical(A));
 
         var ex = Should.Throw<UnitCostRequiredException>(
-            () => PostingRules.Post(PostingKind.Adjustment, [Line(Adj, A, 3m, lineNo: 4)], balances));
+            () => PostingRules.Post(PostingKind.Adjustment, [Line(Adj, A, 3m, lineNo: 4)], balances, Adj));
 
         ex.LineNo.ShouldBe(4);
     }
@@ -186,7 +197,7 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Physical(A, 6m, 60.04m, luc: 10.0067m), Virtual(Adj));
 
-        var result = PostingRules.Post(PostingKind.Adjustment, [Line(A, Adj, 1m)], balances);
+        var result = PostingRules.Post(PostingKind.Adjustment, [Line(A, Adj, 1m)], balances, Adj);
 
         result.Movements.ShouldBe([new PlannedMovement(1, Item, A, Adj, 1m, 10.0067m, null)]);
         Of(result, A).OnHand.ShouldBe(5m);
@@ -212,7 +223,7 @@ public sealed class PostingRulesTests
             Line(Sup, A, 10m, 100m, lineNo: 1),
         ];
 
-        var result = PostingRules.Post(PostingKind.Receipt, lines, balances);
+        var result = PostingRules.Post(PostingKind.Receipt, lines, balances, Adj);
 
         result.Movements.ShouldBe(
         [
@@ -236,7 +247,7 @@ public sealed class PostingRulesTests
             Line(A, Cus, 2m, lineNo: 2, item: OtherItem),
         ];
 
-        Should.Throw<InsufficientStockException>(() => PostingRules.Post(PostingKind.Issue, lines, balances));
+        Should.Throw<InsufficientStockException>(() => PostingRules.Post(PostingKind.Issue, lines, balances, Adj));
 
         balances[a.Key].ShouldBe(a);
         balances[otherA.Key].ShouldBe(otherA);
@@ -250,7 +261,7 @@ public sealed class PostingRulesTests
         var balances = BalancesOf(Virtual(Sup));
 
         Should.Throw<InvalidOperationException>(
-            () => PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 1m, 1m)], balances));
+            () => PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 1m, 1m)], balances, Adj));
     }
 
     public static TheoryData<string, Guid, Guid, decimal?> WrongDirectionCases => new()
@@ -271,7 +282,7 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Virtual(Sup), Virtual(Cus), Virtual(Adj), Physical(A, 10m, 1000m, luc: 100m), Physical(B));
 
-        Should.Throw<ArgumentException>(() => PostingRules.Post(Enum.Parse<PostingKind>(kind), [Line(from, to, 1m, unitCost)], balances));
+        Should.Throw<ArgumentException>(() => PostingRules.Post(Enum.Parse<PostingKind>(kind), [Line(from, to, 1m, unitCost)], balances, Adj));
     }
 
     [Fact]
@@ -285,7 +296,7 @@ public sealed class PostingRulesTests
             Line(Sup, A, 2m, 1m, lineNo: 2),
         ];
 
-        Should.Throw<ArgumentException>(() => PostingRules.Post(PostingKind.Receipt, lines, balances));
+        Should.Throw<ArgumentException>(() => PostingRules.Post(PostingKind.Receipt, lines, balances, Adj));
     }
 
     [Fact]
@@ -294,7 +305,7 @@ public sealed class PostingRulesTests
         var balances = BalancesOf(Virtual(Sup), Physical(A));
 
         Should.Throw<ArgumentOutOfRangeException>(
-            () => PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 0m, 1m)], balances));
+            () => PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 0m, 1m)], balances, Adj));
     }
 
     [Fact]
@@ -302,16 +313,176 @@ public sealed class PostingRulesTests
     {
         var balances = BalancesOf(Physical(A, 10m, 1000m, luc: 100m));
 
-        Should.Throw<ArgumentException>(() => PostingRules.Post(PostingKind.Transfer, [Line(A, A, 1m)], balances));
+        Should.Throw<ArgumentException>(() => PostingRules.Post(PostingKind.Transfer, [Line(A, A, 1m)], balances, Adj));
+    }
+
+    // Post: revaluation (S10)
+
+    [Fact]
+    public void Receipt_lifting_a_negative_balance_revalues_out_to_adjustment()
+    {
+        // Spec §7 set N, N4.
+        var balances = BalancesOf(Physical(A, -3m, -150m, luc: 50m, allowNegative: true), Virtual(Sup), Virtual(Adj));
+
+        var result = PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 10m, 56m)], balances, Adj);
+
+        result.Movements.ShouldBe(
+        [
+            new PlannedMovement(1, Item, Sup, A, 10m, 560.0000m, null),
+            new PlannedMovement(1001, Item, A, Adj, 0m, 18.0000m, null),
+        ]);
+        var a = Of(result, A);
+        a.OnHand.ShouldBe(7m);
+        a.StockValue.ShouldBe(392.0000m);
+        a.LastUnitCost.ShouldBe(56.0000m);
+        Of(result, Adj).OnHand.ShouldBe(0m);
+        Of(result, Adj).StockValue.ShouldBe(0m);
+        Of(result, Sup).OnHand.ShouldBe(-10m);
     }
 
     [Fact]
-    public void Receipt_into_a_negative_balance_throws_invalid_operation_until_S10()
+    public void Receipt_lifting_a_negative_balance_revalues_in_from_adjustment()
     {
-        var balances = BalancesOf(Virtual(Sup), Physical(A, -2m, 0m, allowNegative: true));
+        // Spec §7 set X, X3.
+        var balances = BalancesOf(Physical(A, -2m, -100m, luc: 50m, allowNegative: true), Virtual(Sup), Virtual(Adj));
+
+        var result = PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 3m, 10m)], balances, Adj);
+
+        result.Movements.ShouldBe(
+        [
+            new PlannedMovement(1, Item, Sup, A, 3m, 30.0000m, null),
+            new PlannedMovement(1001, Item, Adj, A, 0m, 80.0000m, null),
+        ]);
+        var a = Of(result, A);
+        a.OnHand.ShouldBe(1m);
+        a.StockValue.ShouldBe(10.0000m);
+        a.LastUnitCost.ShouldBe(10.0000m);
+        Of(result, Adj).OnHand.ShouldBe(0m);
+    }
+
+    [Fact]
+    public void Receipt_to_exactly_zero_revalues_the_remainder()
+    {
+        // Spec §7 set N, N7.
+        var balances = BalancesOf(Physical(A, -2m, -112m, luc: 56m, allowNegative: true), Virtual(Sup), Virtual(Adj));
+
+        var result = PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 2m, 60m)], balances, Adj);
+
+        result.Movements.ShouldBe(
+        [
+            new PlannedMovement(1, Item, Sup, A, 2m, 120.0000m, null),
+            new PlannedMovement(1001, Item, A, Adj, 0m, 8.0000m, null),
+        ]);
+        var a = Of(result, A);
+        a.OnHand.ShouldBe(0m);
+        a.StockValue.ShouldBe(0.0000m);
+        a.LastUnitCost.ShouldBe(60.0000m);
+    }
+
+    [Fact]
+    public void Inflow_that_leaves_the_balance_negative_posts_no_revaluation()
+    {
+        var balances = BalancesOf(Physical(A, -5m, -250m, luc: 50m, allowNegative: true), Virtual(Sup), Virtual(Adj));
+
+        var result = PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 2m, 56m)], balances, Adj);
+
+        result.Movements.ShouldBe([new PlannedMovement(1, Item, Sup, A, 2m, 112.0000m, null)]);
+        var a = Of(result, A);
+        a.OnHand.ShouldBe(-3m);
+        a.StockValue.ShouldBe(-138.0000m);
+        a.LastUnitCost.ShouldBe(56.0000m);
+        result.Balances.ShouldNotContain(b => b.LocationId == Adj);
+    }
+
+    [Fact]
+    public void Zero_variance_posts_no_revaluation()
+    {
+        var balances = BalancesOf(Physical(A, -2m, -100m, luc: 50m, allowNegative: true), Virtual(Sup), Virtual(Adj));
+
+        var result = PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 2m, 50m)], balances, Adj);
+
+        result.Movements.ShouldBe([new PlannedMovement(1, Item, Sup, A, 2m, 100.0000m, null)]);
+        var a = Of(result, A);
+        a.OnHand.ShouldBe(0m);
+        a.StockValue.ShouldBe(0.0000m);
+        a.LastUnitCost.ShouldBe(50.0000m);
+        result.Balances.ShouldNotContain(b => b.LocationId == Adj);
+    }
+
+    [Fact]
+    public void Transfer_into_a_negative_balance_revalues_the_destination()
+    {
+        var balances = BalancesOf(
+            Physical(A, 10m, 600m, luc: 60m),
+            Physical(B, -2m, -100m, luc: 50m, allowNegative: true),
+            Virtual(Adj));
+
+        var result = PostingRules.Post(PostingKind.Transfer, [Line(A, B, 5m)], balances, Adj);
+
+        result.Movements.ShouldBe(
+        [
+            new PlannedMovement(1, Item, A, B, 5m, 300.0000m, null),
+            new PlannedMovement(1001, Item, B, Adj, 0m, 20.0000m, null),
+        ]);
+        var a = Of(result, A);
+        a.OnHand.ShouldBe(5m);
+        a.StockValue.ShouldBe(300.0000m);
+        var b = Of(result, B);
+        b.OnHand.ShouldBe(3m);
+        b.StockValue.ShouldBe(180.0000m);
+        b.LastUnitCost.ShouldBe(60.0000m);
+        Of(result, Adj).OnHand.ShouldBe(0m);
+    }
+
+    [Fact]
+    public void Positive_adjustment_into_a_negative_balance_revalues()
+    {
+        var balances = BalancesOf(Physical(A, -2m, -100m, luc: 50m, allowNegative: true), Virtual(Adj));
+
+        var result = PostingRules.Post(PostingKind.Adjustment, [Line(Adj, A, 5m, 40m)], balances, Adj);
+
+        result.Movements.ShouldBe(
+        [
+            new PlannedMovement(1, Item, Adj, A, 5m, 200.0000m, null),
+            new PlannedMovement(1001, Item, Adj, A, 0m, 20.0000m, null),
+        ]);
+        var a = Of(result, A);
+        a.OnHand.ShouldBe(3m);
+        a.StockValue.ShouldBe(120.0000m);
+        a.LastUnitCost.ShouldBe(40.0000m);
+        Of(result, Adj).OnHand.ShouldBe(-5m);
+    }
+
+    [Fact]
+    public void Revaluations_follow_all_lines_in_line_order()
+    {
+        var balances = BalancesOf(
+            Physical(A, -2m, -100m, luc: 50m, allowNegative: true),
+            Virtual(Sup),
+            Virtual(Adj),
+            Physical(A, -2m, -100m, luc: 50m, allowNegative: true, item: OtherItem),
+            Virtual(Sup, item: OtherItem),
+            Virtual(Adj, item: OtherItem));
+
+        PostingLine[] lines =
+        [
+            Line(Sup, A, 3m, 10m, lineNo: 2, item: OtherItem),
+            Line(Sup, A, 3m, 10m, lineNo: 1),
+        ];
+
+        var result = PostingRules.Post(PostingKind.Receipt, lines, balances, Adj);
+
+        result.Movements.Select(m => m.LineNo).ShouldBe([1, 2, 1001, 1002]);
+        result.Movements.Select(m => m.ItemId).ShouldBe([Item, OtherItem, Item, OtherItem]);
+    }
+
+    [Fact]
+    public void Missing_adjustment_balance_when_a_revaluation_is_needed_throws()
+    {
+        var balances = BalancesOf(Physical(A, -2m, -100m, luc: 50m, allowNegative: true), Virtual(Sup));
 
         Should.Throw<InvalidOperationException>(
-            () => PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 5m, 10m)], balances));
+            () => PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 3m, 10m)], balances, Adj));
     }
 
     // Reverse

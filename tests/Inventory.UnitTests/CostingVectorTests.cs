@@ -5,7 +5,7 @@ using Shouldly;
 namespace Inventory.UnitTests;
 
 /// <summary>
-/// T1 unit part (spec §11): vector sets V, R and A of spec §7 :395-440. Must match the spec tables (CLAUDE.md Hidden coupling).
+/// T1 unit part (spec §11): vector sets V, R, A, N and X of spec §7 :395-467. Must match the spec tables (CLAUDE.md Hidden coupling).
 /// </summary>
 public sealed class CostingVectorTests
 {
@@ -184,6 +184,236 @@ public sealed class CostingVectorTests
         h.MovementCount.ShouldBe(movements);
         h.BalanceCount.ShouldBe(balances);
         h.AssertInvariants("A7");
+    }
+
+    [Fact]
+    public void Vector_set_N_negative_stock()
+    {
+        var h = new LedgerHarness();
+        h.AllowNegative("K");
+        decimal receipts = 0m, issues = 0m, revaluations = 0m;
+
+        var n1 = h.Receive(Item, "K", 4m, 50.00m);
+        n1.Movements.Single().TotalCost.ShouldBe(200.0000m);
+        h.Revaluation(n1).ShouldBeNull();
+        Expect(h, "K", 4m, 200.0000m);
+        ExpectLuc(h, "K", 50.0000m);
+        h.AssertInvariants("N1");
+        receipts += 200.0000m;
+
+        var n2 = h.Issue(Item, "K", 6m);
+        n2.Movements.Single().TotalCost.ShouldBe(300.0000m);
+        h.Revaluation(n2).ShouldBeNull();
+        Expect(h, "K", -2m, -100.0000m);
+        ExpectLuc(h, "K", 50.0000m);
+        h.AssertInvariants("N2");
+        issues += 300.0000m;
+
+        var n3 = h.Issue(Item, "K", 1m);
+        n3.Movements.Single().TotalCost.ShouldBe(50.0000m);
+        h.Revaluation(n3).ShouldBeNull();
+        Expect(h, "K", -3m, -150.0000m);
+        ExpectLuc(h, "K", 50.0000m);
+        h.AssertInvariants("N3");
+        issues += 50.0000m;
+
+        var n4 = h.Receive(Item, "K", 10m, 56.00m);
+        n4.Movements.Single(m => m.LineNo == 1).TotalCost.ShouldBe(560.0000m);
+        var n4Reval = h.Revaluation(n4).ShouldNotBeNull();
+        n4Reval.LineNo.ShouldBe(1001);
+        n4Reval.FromLocationId.ShouldBe(h.LocationId("K"));
+        n4Reval.ToLocationId.ShouldBe(h.LocationId("ADJ"));
+        n4Reval.Quantity.ShouldBe(0m);
+        n4Reval.TotalCost.ShouldBe(18.0000m);
+        Expect(h, "K", 7m, 392.0000m);
+        ExpectLuc(h, "K", 56.0000m);
+        h.AssertInvariants("N4");
+        receipts += 560.0000m;
+        revaluations += n4Reval.TotalCost;
+
+        var n5 = h.Issue(Item, "K", 7m);
+        n5.Movements.Single().TotalCost.ShouldBe(392.0000m);
+        h.Revaluation(n5).ShouldBeNull();
+        Expect(h, "K", 0m, 0.0000m);
+        ExpectLuc(h, "K", 56.0000m);
+        h.AssertInvariants("N5");
+        issues += 392.0000m;
+
+        var n6 = h.Issue(Item, "K", 2m);
+        n6.Movements.Single().TotalCost.ShouldBe(112.0000m);
+        h.Revaluation(n6).ShouldBeNull();
+        Expect(h, "K", -2m, -112.0000m);
+        ExpectLuc(h, "K", 56.0000m);
+        h.AssertInvariants("N6");
+        issues += 112.0000m;
+
+        var n7 = h.Receive(Item, "K", 2m, 60.00m);
+        n7.Movements.Single(m => m.LineNo == 1).TotalCost.ShouldBe(120.0000m);
+        var n7Reval = h.Revaluation(n7).ShouldNotBeNull();
+        n7Reval.LineNo.ShouldBe(1001);
+        n7Reval.FromLocationId.ShouldBe(h.LocationId("K"));
+        n7Reval.ToLocationId.ShouldBe(h.LocationId("ADJ"));
+        n7Reval.Quantity.ShouldBe(0m);
+        n7Reval.TotalCost.ShouldBe(8.0000m);
+        Expect(h, "K", 0m, 0.0000m);
+        ExpectLuc(h, "K", 60.0000m);
+        h.AssertInvariants("N7");
+        receipts += 120.0000m;
+        revaluations += n7Reval.TotalCost;
+
+        var n8 = h.Receive(Item, "K", 5m, 60.00m);
+        n8.Movements.Single().TotalCost.ShouldBe(300.0000m);
+        h.Revaluation(n8).ShouldBeNull();
+        Expect(h, "K", 5m, 300.0000m);
+        ExpectLuc(h, "K", 60.0000m);
+        h.AssertInvariants("N8");
+        receipts += 300.0000m;
+
+        var n9 = h.Issue(Item, "K", 5m);
+        n9.Movements.Single().TotalCost.ShouldBe(300.0000m);
+        h.Revaluation(n9).ShouldBeNull();
+        Expect(h, "K", 0m, 0.0000m);
+        ExpectLuc(h, "K", 60.0000m);
+        h.AssertInvariants("N9");
+        issues += 300.0000m;
+
+        // Value conservation (spec :456): receipts = issues + revaluations.
+        receipts.ShouldBe(1180.0000m);
+        issues.ShouldBe(1154.0000m);
+        revaluations.ShouldBe(26.0000m);
+        receipts.ShouldBe(issues + revaluations);
+        h.State(Item, "ADJ").OnHand.ShouldBe(0m);
+    }
+
+    [Fact]
+    public void Vector_set_X_estimate_above_the_next_price()
+    {
+        var h = new LedgerHarness();
+        h.AllowNegative("K2");
+
+        var x1 = h.Receive(Item, "K2", 4m, 50.00m);
+        x1.Movements.Single().TotalCost.ShouldBe(200.0000m);
+        h.Revaluation(x1).ShouldBeNull();
+        Expect(h, "K2", 4m, 200.0000m);
+        ExpectLuc(h, "K2", 50.0000m);
+        h.AssertInvariants("X1");
+
+        var x2 = h.Issue(Item, "K2", 6m);
+        x2.Movements.Single().TotalCost.ShouldBe(300.0000m);
+        h.Revaluation(x2).ShouldBeNull();
+        Expect(h, "K2", -2m, -100.0000m);
+        ExpectLuc(h, "K2", 50.0000m);
+        h.AssertInvariants("X2");
+
+        // Without the revaluation, X3 would leave 1 / -70.0000 and X4 would post a cost of -70,
+        // which the TotalCost >= 0 check refuses (spec :467).
+        var x3 = h.Receive(Item, "K2", 3m, 10.00m);
+        x3.Movements.Single(m => m.LineNo == 1).TotalCost.ShouldBe(30.0000m);
+        var x3Reval = h.Revaluation(x3).ShouldNotBeNull();
+        x3Reval.LineNo.ShouldBe(1001);
+        x3Reval.FromLocationId.ShouldBe(h.LocationId("ADJ"));
+        x3Reval.ToLocationId.ShouldBe(h.LocationId("K2"));
+        x3Reval.Quantity.ShouldBe(0m);
+        x3Reval.TotalCost.ShouldBe(80.0000m);
+        Expect(h, "K2", 1m, 10.0000m);
+        ExpectLuc(h, "K2", 10.0000m);
+        h.AssertInvariants("X3");
+
+        var x4 = h.Issue(Item, "K2", 1m);
+        x4.Movements.Single().TotalCost.ShouldBe(10.0000m);
+        h.Revaluation(x4).ShouldBeNull();
+        Expect(h, "K2", 0m, 0.0000m);
+        ExpectLuc(h, "K2", 10.0000m);
+        h.AssertInvariants("X4");
+    }
+
+    // N1-N4 at location K with the toggle on; returns the N4 posting.
+    private static Posted PostN1ToN4(LedgerHarness h)
+    {
+        h.AllowNegative("K");
+        h.Receive(Item, "K", 4m, 50.00m);
+        h.Issue(Item, "K", 6m);
+        h.Issue(Item, "K", 1m);
+        Expect(h, "K", -3m, -150.0000m);
+        ExpectLuc(h, "K", 50.0000m);
+        var n4 = h.Receive(Item, "K", 10m, 56.00m);
+        Expect(h, "K", 7m, 392.0000m);
+        return n4;
+    }
+
+    [Fact]
+    public void Reversal_restores_a_negative_balance_exactly()
+    {
+        var h = new LedgerHarness();
+        var n4 = PostN1ToN4(h);
+        h.Revaluation(n4).ShouldNotBeNull().TotalCost.ShouldBe(18.0000m);
+        h.AssertInvariants("N4");
+
+        var reversal = h.Reverse(n4.DocumentId);
+
+        reversal.Movements.Count.ShouldBe(2);
+        var k = h.LocationId("K");
+        var sup = h.LocationId("SUP");
+        var adj = h.LocationId("ADJ");
+
+        var line1 = reversal.Movements.Single(m => m.LineNo == 1);
+        line1.FromLocationId.ShouldBe(k);
+        line1.ToLocationId.ShouldBe(sup);
+        line1.Quantity.ShouldBe(10m);
+        line1.TotalCost.ShouldBe(560.0000m);
+        line1.ReversesMovementId.ShouldBe(n4.Movements.Single(m => m.LineNo == 1).Id);
+
+        var line1001 = reversal.Movements.Single(m => m.LineNo == 1001);
+        line1001.FromLocationId.ShouldBe(adj);
+        line1001.ToLocationId.ShouldBe(k);
+        line1001.Quantity.ShouldBe(0m);
+        line1001.TotalCost.ShouldBe(18.0000m);
+        line1001.ReversesMovementId.ShouldBe(h.Revaluation(n4)!.Id);
+
+        Expect(h, "K", -3m, -150.0000m);
+        ExpectLuc(h, "K", 50.0000m);
+        h.State(Item, "ADJ").OnHand.ShouldBe(0m);
+        h.AssertInvariants("reversal");
+    }
+
+    [Fact]
+    public void Reversal_after_the_toggle_is_turned_off_is_rejected()
+    {
+        var h = new LedgerHarness();
+        var n4 = PostN1ToN4(h);
+        h.AssertInvariants("N4");
+        h.AllowNegative("K", false);
+
+        var movements = h.MovementCount;
+        var balances = h.BalanceCount;
+
+        var ex = Should.Throw<InsufficientStockException>(() => h.Reverse(n4.DocumentId));
+        ex.Available.ShouldBe(7m);
+        ex.Requested.ShouldBe(10m);
+
+        h.MovementCount.ShouldBe(movements);
+        h.BalanceCount.ShouldBe(balances);
+        Expect(h, "K", 7m, 392.0000m);
+        ExpectLuc(h, "K", 56.0000m);
+        h.AssertInvariants("rejected reversal");
+    }
+
+    [Fact]
+    public void Issue_past_zero_with_the_toggle_off_is_still_rejected()
+    {
+        var h = new LedgerHarness();
+        h.Receive(Item, "K", 4m, 50.00m);
+        var movements = h.MovementCount;
+        var balances = h.BalanceCount;
+
+        var ex = Should.Throw<InsufficientStockException>(() => h.Issue(Item, "K", 6m));
+        ex.Available.ShouldBe(4m);
+        ex.Requested.ShouldBe(6m);
+
+        h.MovementCount.ShouldBe(movements);
+        h.BalanceCount.ShouldBe(balances);
+        Expect(h, "K", 4m, 200.0000m);
+        h.AssertInvariants("toggle off");
     }
 
     [Fact]

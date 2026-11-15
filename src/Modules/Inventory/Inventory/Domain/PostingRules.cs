@@ -21,7 +21,19 @@ internal sealed record PostingResult(IReadOnlyList<PlannedMovement> Movements, I
 /// </summary>
 internal static class PostingRules
 {
-    public static PostingResult Post(PostingKind kind, IReadOnlyList<PostingLine> lines, IReadOnlyDictionary<BalanceKey, Balance> balances)
+    /// <summary>
+    /// Costs every line and moves its stock. An inflow that isn't a reversal and lifts a negative physical balance to zero
+    /// or above also revalues the stock on hand at its unit cost (spec §7): the variance posts as a zero-quantity
+    /// movement at <c>LineNo</c> 1000 + n (spec §5), physical → Adjustment when positive, Adjustment → physical when
+    /// negative, and nothing when zero. Movements come back as every line in <c>LineNo</c> order, then every revaluation
+    /// in <c>LineNo</c> order, so a revaluation is the document's last movement on each balance it touches.
+    /// </summary>
+    /// <param name="adjustmentLocationId">The tenant's Adjustment location, the counterpart of every revaluation (spec §6).</param>
+    public static PostingResult Post(
+        PostingKind kind,
+        IReadOnlyList<PostingLine> lines,
+        IReadOnlyDictionary<BalanceKey, Balance> balances,
+        Guid adjustmentLocationId)
     {
         ArgumentNullException.ThrowIfNull(lines);
         ArgumentNullException.ThrowIfNull(balances);
@@ -75,8 +87,9 @@ internal static class PostingRules
         var working = new Dictionary<BalanceKey, Balance>();
         var order = new List<BalanceKey>();
         var movements = new List<PlannedMovement>(lines.Count);
+        var revaluations = new List<PlannedMovement>();
 
-        Balance Current(BalanceKey key) => working.TryGetValue(key, out var balance) ? balance : balances[key];
+        Balance Current(BalanceKey key) => working.TryGetValue(key, out var balance) ? balance : Find(balances, key);
 
         void Store(Balance balance)
         {
@@ -123,27 +136,37 @@ internal static class PostingRules
             }
             else
             {
-                if (target.OnHand < 0)
-                {
-                    // S10: settle with CostingPolicy.Revaluation (spec §7)
-                    throw new InvalidOperationException(
-                        $"Line {line.LineNo}: an inflow into a negative balance needs a revaluation, which S10 adds.");
-                }
-
+                var revaluation = CostingPolicy.Revaluation(qty, cost, target);
                 var onHand = target.OnHand + qty;
-                var value = target.StockValue + cost;
+                var value = target.StockValue + cost - revaluation;
                 Store(target with
                 {
                     OnHand = onHand,
                     StockValue = value,
                     LastUnitCost = CostingPolicy.LastUnitCostAfterInflow(onHand, value, qty, cost),
                 });
+
+                if (revaluation != 0m)
+                {
+                    var adjustment = Current(new BalanceKey(line.ItemId, adjustmentLocationId));
+                    if (!adjustment.IsVirtual)
+                    {
+                        throw new InvalidOperationException(
+                            $"Line {line.LineNo}: the Adjustment location {adjustmentLocationId} isn't virtual.");
+                    }
+
+                    // Quantity 0 leaves it unchanged, but the engine sets its LastMovementId from the revaluation.
+                    Store(adjustment);
+                    revaluations.Add(revaluation > 0m
+                        ? new PlannedMovement(1000 + line.LineNo, line.ItemId, line.ToLocationId, adjustmentLocationId, 0m, revaluation, null)
+                        : new PlannedMovement(1000 + line.LineNo, line.ItemId, adjustmentLocationId, line.ToLocationId, 0m, -revaluation, null));
+                }
             }
 
             movements.Add(new PlannedMovement(line.LineNo, line.ItemId, line.FromLocationId, line.ToLocationId, qty, cost, null));
         }
 
-        return new PostingResult(movements, order.Select(k => working[k]).ToList());
+        return new PostingResult([.. movements, .. revaluations], order.Select(k => working[k]).ToList());
     }
 
     public static PostingResult Reverse(

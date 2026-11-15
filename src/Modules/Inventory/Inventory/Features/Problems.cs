@@ -30,6 +30,15 @@ internal static class Problems
             ["balances"] = balances.Select(b => new BlockingBalance(b.ItemId, b.LocationId, b.OnHand, b.StockValue)).ToList(),
         });
 
+    public static ProblemHttpResult NegativeBalancesExist(IEnumerable<StockBalance> balances) => TypedResults.Problem(
+        statusCode: StatusCodes.Status422UnprocessableEntity,
+        title: "Negative balances exist",
+        type: ProblemTypes.Uri(ProblemTypes.NegativeBalancesExist),
+        extensions: new Dictionary<string, object?>
+        {
+            ["balances"] = balances.Select(b => new BlockingBalance(b.ItemId, b.LocationId, b.OnHand, b.StockValue)).ToList(),
+        });
+
     public static ProblemHttpResult IdempotencyKeyMissing() => TypedResults.Problem(
         statusCode: StatusCodes.Status400BadRequest,
         title: "Idempotency-Key header missing",

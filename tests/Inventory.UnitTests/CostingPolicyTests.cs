@@ -103,18 +103,92 @@ public sealed class CostingPolicyTests
         CostingPolicy.OutflowCost(quantity, BalanceOf(onHand, value)).ShouldBe(value);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void OutflowCost_above_on_hand_throws_insufficient_stock(bool allowNegative)
+    [Fact]
+    public void OutflowCost_above_on_hand_throws_insufficient_stock()
     {
         var ex = Should.Throw<InsufficientStockException>(
-            () => CostingPolicy.OutflowCost(7m, BalanceOf(6m, 720m, allowNegative: allowNegative)));
+            () => CostingPolicy.OutflowCost(7m, BalanceOf(6m, 720m)));
 
         ex.ItemId.ShouldBe(Item);
         ex.LocationId.ShouldBe(Loc);
         ex.Available.ShouldBe(6m);
         ex.Requested.ShouldBe(7m);
+    }
+
+    public static TheoryData<decimal, decimal, decimal, decimal> DrainThenEstimateCases => new()
+    {
+        { 6m, 4m, 200m, 300.0000m },   // N2: the 200 remainder + 2 × 50
+        { 4m, 3m, 30.02m, 40.0267m },  // 30.02 + Round4(1 × 30.02 / 3 = 10.006666…)
+    };
+
+    [Theory]
+    [MemberData(nameof(DrainThenEstimateCases))]
+    public void OutflowCost_past_zero_with_the_toggle_on_drains_then_estimates_at_the_average(
+        decimal quantity, decimal onHand, decimal value, decimal expected)
+    {
+        CostingPolicy.OutflowCost(quantity, BalanceOf(onHand, value, allowNegative: true)).ShouldBe(expected);
+    }
+
+    public static TheoryData<decimal, decimal, decimal, decimal, decimal> LastUnitCostEstimateCases => new()
+    {
+        { 1m, -2m, -100m, 50m, 50.0000m },     // N3
+        { 2m, 0m, 0m, 56m, 112.0000m },        // N6
+        // 0.5 × 10.0065 = 5.00325: the midpoint rounds away from zero; banker's rounding would give 5.0032.
+        { 0.5m, 0m, 0m, 10.0065m, 5.0033m },
+    };
+
+    [Theory]
+    [MemberData(nameof(LastUnitCostEstimateCases))]
+    public void OutflowCost_at_or_below_zero_with_the_toggle_on_uses_the_last_unit_cost(
+        decimal quantity, decimal onHand, decimal value, decimal luc, decimal expected)
+    {
+        CostingPolicy.OutflowCost(quantity, BalanceOf(onHand, value, luc, allowNegative: true)).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void OutflowCost_of_a_never_received_item_is_zero()
+    {
+        CostingPolicy.OutflowCost(2m, BalanceOf(0m, 0m, luc: null, allowNegative: true)).ShouldBe(0m);
+    }
+
+    [Theory]
+    [InlineData(15, 20, 2200, 1650)]
+    [InlineData(6, 6, 720, 720)]
+    public void OutflowCost_within_on_hand_ignores_the_toggle(int quantity, int onHand, int value, int expected)
+    {
+        CostingPolicy.OutflowCost(quantity, BalanceOf(onHand, value, allowNegative: true)).ShouldBe(expected);
+    }
+
+    public static TheoryData<decimal, decimal, decimal, decimal, decimal> RevaluationCases => new()
+    {
+        { 10m, 560m, -3m, -150m, 18.0000m },  // N4
+        { 2m, 120m, -2m, -112m, 8.0000m },    // N7
+        { 3m, 30m, -2m, -100m, -80.0000m },   // X3
+        { 2m, 100m, -2m, -100m, 0m },         // zero variance
+        { 3m, 30m, -2m, 0m, 20.0000m },       // never received: 1 left, worth 10
+    };
+
+    [Theory]
+    [MemberData(nameof(RevaluationCases))]
+    public void Revaluation_settles_the_estimate_variance(
+        decimal quantity, decimal cost, decimal onHand, decimal value, decimal expected)
+    {
+        CostingPolicy.Revaluation(quantity, cost, BalanceOf(onHand, value)).ShouldBe(expected);
+    }
+
+    public static TheoryData<decimal, decimal, decimal, decimal> NoRevaluationCases => new()
+    {
+        { 5m, 250m, 0m, 0m },      // from zero
+        { 5m, 250m, 3m, 150m },    // from positive
+        { 2m, 112m, -5m, -250m },  // still negative after
+    };
+
+    [Theory]
+    [MemberData(nameof(NoRevaluationCases))]
+    public void Revaluation_is_zero_unless_the_inflow_lifts_a_negative_balance(
+        decimal quantity, decimal cost, decimal onHand, decimal value)
+    {
+        CostingPolicy.Revaluation(quantity, cost, BalanceOf(onHand, value)).ShouldBe(0m);
     }
 
     [Fact]

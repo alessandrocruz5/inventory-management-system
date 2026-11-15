@@ -37,3 +37,8 @@ body {
   height: 100%;
 }
 /* You can add global styles to this file, and also import other style files */
+
+// AG Grid cells sit outside component styles: negative stock on /stock (spec §10).
+.ag-cell.stock-negative {
+  color: var(--mat-sys-error);
+}

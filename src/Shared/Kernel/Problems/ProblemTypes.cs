@@ -21,6 +21,9 @@ public static class ProblemTypes
     /// <summary>Deactivation is blocked: a physical balance still has quantity or value (spec §6).</summary>
     public const string StockNotZero = "stock-not-zero";
 
+    /// <summary>Turning a location's negative-stock toggle off is blocked: a balance there is below zero (spec §6).</summary>
+    public const string NegativeBalancesExist = "negative-balances-exist";
+
     /// <summary>A posting was sent without an <c>Idempotency-Key</c> header (spec §6).</summary>
     public const string IdempotencyKeyMissing = "idempotency-key-missing";
 

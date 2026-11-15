@@ -61,6 +61,20 @@ describe('LocationsService', () => {
     await promise;
   });
 
+  it('setAllowNegativeStock puts code, name, version and the flag', async () => {
+    const promise = service.setAllowNegativeStock(location, true);
+    const req = httpMock.expectOne('/api/locations/l1');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({
+      code: 'QC',
+      name: 'Quezon City',
+      version: location.version,
+      allowNegativeStock: true,
+    });
+    req.flush({ ...location, allowNegativeStock: true });
+    await promise;
+  });
+
   it('deactivate is a POST to /deactivate', async () => {
     const promise = service.deactivate('l1');
     const req = httpMock.expectOne('/api/locations/l1/deactivate');

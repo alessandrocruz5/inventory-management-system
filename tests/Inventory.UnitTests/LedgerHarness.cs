@@ -18,6 +18,7 @@ internal sealed class LedgerHarness
     private readonly Dictionary<string, Guid> _locations = [];
     private readonly Dictionary<Guid, bool> _isVirtual = [];
     private readonly Dictionary<string, Guid> _items = [];
+    private readonly HashSet<Guid> _allowNegative = [];
     private readonly Dictionary<BalanceKey, Balance> _balances = [];
     private readonly List<LedgerMovement> _movements = [];
     private long _nextId = 1;
@@ -35,6 +36,28 @@ internal sealed class LedgerHarness
     public int BalanceCount => _balances.Count;
 
     public int MovementCount => _movements.Count;
+
+    /// <summary>Turns a physical location's AllowNegative toggle on or off (spec §6 step 7 reads it from the location).</summary>
+    public void AllowNegative(string loc, bool allow = true)
+    {
+        if (VirtualNames.Contains(loc))
+        {
+            throw new InvalidOperationException($"{loc} is a virtual location and has no negative-stock toggle.");
+        }
+
+        var id = LocationId(loc);
+        if (allow)
+        {
+            _allowNegative.Add(id);
+        }
+        else
+        {
+            _allowNegative.Remove(id);
+        }
+    }
+
+    /// <summary>The revaluation movement of a posting (LineNo above 1000), or null.</summary>
+    public LedgerMovement? Revaluation(Posted posted) => posted.Movements.SingleOrDefault(m => m.LineNo > 1000);
 
     public Posted Receive(string item, string loc, decimal qty, decimal unitCost) =>
         Post(PostingKind.Receipt, item, "SUP", loc, qty, unitCost);
@@ -103,13 +126,20 @@ internal sealed class LedgerHarness
             {
                 b.StockValue.ShouldBe(costIn - costOut, $"{step} INV-1 StockValue");
 
-                // INV-3 (all toggles are off)
-                b.AllowNegative.ShouldBeFalse($"{step} INV-3 toggle");
-                b.OnHand.ShouldBeGreaterThanOrEqualTo(0m, $"{step} INV-3 OnHand");
-                b.StockValue.ShouldBeGreaterThanOrEqualTo(0m, $"{step} INV-3 StockValue");
+                // INV-3 (toggle-aware)
+                if (b.OnHand >= 0m)
+                {
+                    b.StockValue.ShouldBeGreaterThanOrEqualTo(0m, $"{step} INV-3 StockValue");
+                }
+
                 if (b.OnHand == 0m)
                 {
                     b.StockValue.ShouldBe(0m, $"{step} INV-3 empty balance has value");
+                }
+
+                if (!b.AllowNegative)
+                {
+                    b.OnHand.ShouldBeGreaterThanOrEqualTo(0m, $"{step} INV-3 OnHand without AllowNegative");
                 }
 
                 // INV-5
@@ -150,8 +180,10 @@ internal sealed class LedgerHarness
         var toId = LocationId(to);
         var line = new PostingLine(1, itemId, fromId, toId, qty, unitCost);
 
-        var working = WorkingCopy([new BalanceKey(itemId, fromId), new BalanceKey(itemId, toId)]);
-        return Commit(PostingRules.Post(kind, [line], working));
+        // The engine's step 5 also creates (item, ADJ) for a possible revaluation; it's committed only if Post returns it.
+        var adjustmentId = LocationId("ADJ");
+        var working = WorkingCopy([new BalanceKey(itemId, fromId), new BalanceKey(itemId, toId), new BalanceKey(itemId, adjustmentId)]);
+        return Commit(PostingRules.Post(kind, [line], working, adjustmentId));
     }
 
     // Step 5: a copy of the state plus every missing touched balance. The state itself is untouched until commit.
@@ -160,10 +192,10 @@ internal sealed class LedgerHarness
         var working = new Dictionary<BalanceKey, Balance>(_balances);
         foreach (var key in touched)
         {
-            if (!working.ContainsKey(key))
-            {
-                working[key] = new Balance(key.ItemId, key.LocationId, _isVirtual[key.LocationId], false, 0m, 0m, null, null);
-            }
+            var allow = !_isVirtual[key.LocationId] && _allowNegative.Contains(key.LocationId);
+            working[key] = working.TryGetValue(key, out var existing)
+                ? existing with { AllowNegative = allow }
+                : new Balance(key.ItemId, key.LocationId, _isVirtual[key.LocationId], allow, 0m, 0m, null, null);
         }
 
         return working;
