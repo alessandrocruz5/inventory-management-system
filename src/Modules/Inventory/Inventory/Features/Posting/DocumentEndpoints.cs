@@ -2,6 +2,7 @@ using Inventory.Features.Posting.PostAdjustment;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
 using Inventory.Features.Posting.PostTransfer;
+using Inventory.Features.Reversals.ReverseDocument;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -18,6 +19,7 @@ internal static class DocumentEndpoints
         documents.MapPostIssue();
         documents.MapPostTransfer();
         documents.MapPostAdjustment();
+        documents.MapReverseDocument();
         return api;
     }
 }

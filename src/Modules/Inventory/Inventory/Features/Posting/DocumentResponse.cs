@@ -3,12 +3,13 @@ using Inventory.Persistence;
 namespace Inventory.Features.Posting;
 
 /// <summary>
-/// A posted document as every posting route returns it, with the same shape for a <c>201</c> and a replay (plan D3):
+/// A posted document as every posting route, reversals included, returns it, with the same shape for a <c>201</c> and a replay (plan D3):
 /// its movements in <c>LineNo</c> order and the physical balances it touched, as of <see cref="BalancesAsOf"/>.
 /// </summary>
 internal sealed record DocumentResponse(
     Guid Id,
     string Type,
+    Guid? ReversesDocumentId,
     string? ReasonCode,
     string? Reference,
     string? Notes,
@@ -21,6 +22,7 @@ internal sealed record DocumentResponse(
     public static DocumentResponse From(PostedOutcome outcome) => new(
         outcome.Document.Id,
         outcome.Document.Type.ToString(),
+        outcome.Document.ReversesDocumentId,
         outcome.Document.ReasonCode?.ToString(),
         outcome.Document.Reference,
         outcome.Document.Notes,

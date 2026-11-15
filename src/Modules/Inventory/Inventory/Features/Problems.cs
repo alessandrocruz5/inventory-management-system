@@ -65,6 +65,29 @@ internal static class Problems
         type: ProblemTypes.Uri(ProblemTypes.InactiveLocation),
         extensions: new Dictionary<string, object?> { ["locationId"] = locationId });
 
+    public static ProblemHttpResult ReversalNotLatest(Guid itemId, Guid locationId, Guid blockingDocumentId) => TypedResults.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "A later posting changed this stock",
+        type: ProblemTypes.Uri(ProblemTypes.ReversalNotLatest),
+        extensions: new Dictionary<string, object?>
+        {
+            ["itemId"] = itemId,
+            ["locationId"] = locationId,
+            ["blockingDocumentId"] = blockingDocumentId,
+        });
+
+    public static ProblemHttpResult AlreadyReversed(Guid reversalDocumentId) => TypedResults.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "Document already reversed",
+        type: ProblemTypes.Uri(ProblemTypes.AlreadyReversed),
+        extensions: new Dictionary<string, object?> { ["reversalDocumentId"] = reversalDocumentId });
+
+    public static ProblemHttpResult CannotReverseReversal(Guid reversesDocumentId) => TypedResults.Problem(
+        statusCode: StatusCodes.Status422UnprocessableEntity,
+        title: "A reversal can't be reversed",
+        type: ProblemTypes.Uri(ProblemTypes.CannotReverseReversal),
+        extensions: new Dictionary<string, object?> { ["reversesDocumentId"] = reversesDocumentId });
+
     /// <summary>SQL Server 2601 (unique index) or 2627 (unique constraint): a racing insert took the key.</summary>
     public static bool IsUniqueViolation(DbUpdateException exception) => exception.InnerException is SqlException { Number: 2601 or 2627 };
 }

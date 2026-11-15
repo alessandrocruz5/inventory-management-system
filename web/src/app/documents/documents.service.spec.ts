@@ -103,6 +103,16 @@ describe('DocumentsService', () => {
     });
   }
 
+  it('reverse posts an empty body with Idempotency-Key to the reversal route', async () => {
+    const promise = service.reverse('a/b', 'k-1');
+    const req = httpMock.expectOne('/api/documents/a%2Fb/reversal');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBeNull();
+    expect(req.request.headers.get('Idempotency-Key')).toBe('k-1');
+    req.flush({ id: 'r1', type: 'Reversal' });
+    expect(await promise).toEqual({ id: 'r1', type: 'Reversal' } as never);
+  });
+
   it('routes are the documented ones', () => {
     expect(POSTING_ROUTES).toEqual({
       receipt: '/api/documents/receipts',

@@ -646,6 +646,36 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     }
 
     [Fact]
+    [ProbesRoute("POST /api/documents/{id:guid}/reversal")]
+    public async Task Another_tenants_document_cannot_be_reversed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = (await LocationsTests.CreateAsync(clientB, "B-ONLY", "Tenant B location", ct))["id"]!.GetValue<Guid>();
+        var itemB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+        var posted = await PostingTests.PostDocumentAsync(clientB, PostingTests.Receipts, PostingTests.NewKey(),
+            PostingTests.Receipt(locationB, PostingTests.Line(itemB, 5m, 10m)), ct);
+        posted.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var idB = (await posted.Content.ReadFromJsonAsync<JsonNode>(ct))!["id"]!.GetValue<Guid>();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/documents/{idB}/reversal");
+        request.Headers.Add("Idempotency-Key", PostingTests.NewKey());
+        var response = await clientA.SendAsync(request, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe((5m, 50m));
+        await using var reversals = new SqlCommand("SELECT COUNT(*) FROM inventory.StockDocuments WHERE Type = 'Reversal'", connection);
+        ((int)(await reversals.ExecuteScalarAsync(ct))!).ShouldBe(0);
+    }
+
+    [Fact]
     public void Every_api_route_is_probed_or_exempt()
     {
         using var app = db.CreateApp();

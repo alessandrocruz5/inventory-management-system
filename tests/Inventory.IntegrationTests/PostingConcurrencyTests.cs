@@ -24,7 +24,9 @@ namespace Inventory.IntegrationTests;
 /// T2 and T4 (spec §11) against the real API: parallel postings of the last unit, idempotency under sequential, parallel
 /// and deterministic step-4 races, the step-7 re-read of an item or location deactivation committed mid-posting, and
 /// the retry of a deadlocked posting (spec §6), and T3: 50 parallel transfers both ways between two locations, which
-/// must never deadlock (spec §6 step 6). T4's parallel same-key reversals land with the reversal route in S9.
+/// must never deadlock (spec §6 step 6). The reversal races: T4's parallel same-key reversals, parallel reversals with
+/// different keys, the deterministic race on <c>UX_StockDocuments_Reverses</c> at step 4, and a posting committed or
+/// rolled back while a reversal waits at step 6, which proves the latest-only check runs under the balance locks.
 /// </summary>
 public sealed class PostingConcurrencyTests(DatabaseFixture db)
 {
@@ -493,6 +495,184 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
         (await MovementsOfTypeAsync(connection, "Transfer", ct)).ShouldBe(150);
     }
 
+    [Fact]
+    public async Task Two_parallel_same_key_reversals_give_one_document()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var receipt = await ReceiptAsync(client, a, item, 5m, 10m, ct);
+        var key = PostingTests.NewKey();
+
+        var responses = await InParallelAsync(2, () => ReversalTests.ReverseAsync(client, receipt, key, ct));
+
+        // Both claim the same key at step 4, so the second replays the first: no 409.
+        Count(responses, HttpStatusCode.Created).ShouldBe(1, Statuses(responses));
+        Count(responses, HttpStatusCode.OK).ShouldBe(1, Statuses(responses));
+        responses.Single(r => r.StatusCode == HttpStatusCode.OK).Headers.GetValues("Idempotent-Replayed").ShouldBe(["true"]);
+        (await IdAsync(responses[0], ct)).ShouldBe(await IdAsync(responses[1], ct));
+
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await DocumentsOfTypeAsync(connection, "Reversal", ct)).ShouldBe(1);
+        (await ReversalTests.BalanceAsync(connection, item, a, ct)).ShouldBe((0m, 0m, null));
+        await LedgerInvariants.AssertHoldAsync(connection, ct);
+    }
+
+    [Fact]
+    public async Task Two_parallel_reversals_with_different_keys_reverse_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var receipt = await ReceiptAsync(client, a, item, 5m, 10m, ct);
+
+        var responses = await InParallelAsync(2, _ => ReversalTests.ReverseAsync(client, receipt, PostingTests.NewKey(), ct));
+
+        // The loser meets the winner at the route's pre-check or at UX_StockDocuments_Reverses; both answer the same.
+        Count(responses, HttpStatusCode.Created).ShouldBe(1, Statuses(responses));
+        Count(responses, HttpStatusCode.Conflict).ShouldBe(1, Statuses(responses));
+        var winner = await IdAsync(responses.Single(r => r.StatusCode == HttpStatusCode.Created), ct);
+        var loser = responses.Single(r => r.StatusCode == HttpStatusCode.Conflict);
+        await ReversalTests.AssertProblemAsync(loser, HttpStatusCode.Conflict, "already-reversed", ct);
+        (await ReversalTests.ProblemAsync(loser, ct))["reversalDocumentId"]!.GetValue<Guid>().ShouldBe(winner);
+
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await DocumentsOfTypeAsync(connection, "Reversal", ct)).ShouldBe(1);
+        (await ReversalTests.BalanceAsync(connection, item, a, ct)).ShouldBe((0m, 0m, null));
+        await LedgerInvariants.AssertHoldAsync(connection, ct);
+    }
+
+    [Fact]
+    public async Task Race_on_the_reversal_index_is_409_when_the_holder_commits()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var receipt = await ReceiptAsync(client, a, item, 5m, 10m, ct);
+        var otherKey = PostingTests.NewKey();
+
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        var held = await LedgerRows.AddDocumentAsync(holder, ct, tx, type: "Reversal", reverses: receipt, idempotencyKey: PostingTests.NewKey());
+
+        // RCSI hides the uncommitted reversal from the route's pre-check, so the request blocks on
+        // UX_StockDocuments_Reverses at step 4.
+        var request = Task.Run(() => ReversalTests.ReverseAsync(client, receipt, otherKey, ct), ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await tx.CommitAsync(ct);
+        var response = await request;
+
+        // The key is free, so step 4's fallback finds the original's reversal: the holder's (plan D5).
+        await ReversalTests.AssertProblemAsync(response, HttpStatusCode.Conflict, "already-reversed", ct);
+        (await ReversalTests.ProblemAsync(response, ct))["reversalDocumentId"]!.GetValue<Guid>().ShouldBe(held);
+        (await DocumentsWithKeyAsync(holder, otherKey, ct)).ShouldBe(0);
+        (await ReversalTests.BalanceAsync(holder, item, a, ct)).ShouldBe((5m, 50m, 10m));
+
+        // The holder's reversal has no movements, and the invariants read only movements and balances.
+        await LedgerInvariants.AssertHoldAsync(holder, ct);
+    }
+
+    [Fact]
+    public async Task Race_on_the_reversal_index_posts_when_the_holder_rolls_back()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var receipt = await ReceiptAsync(client, a, item, 5m, 10m, ct);
+        var otherKey = PostingTests.NewKey();
+
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        var held = await LedgerRows.AddDocumentAsync(holder, ct, tx, type: "Reversal", reverses: receipt, idempotencyKey: PostingTests.NewKey());
+
+        var request = Task.Run(() => ReversalTests.ReverseAsync(client, receipt, otherKey, ct), ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await tx.RollbackAsync(ct);
+        var response = await request;
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await IdAsync(response, ct)).ShouldNotBe(held);
+        (await DocumentsWithKeyAsync(holder, otherKey, ct)).ShouldBe(1);
+        (await DocumentsOfTypeAsync(holder, "Reversal", ct)).ShouldBe(1);
+        (await ReversalTests.BalanceAsync(holder, item, a, ct)).ShouldBe((0m, 0m, null));
+        await LedgerInvariants.AssertHoldAsync(holder, ct);
+    }
+
+    [Fact]
+    public async Task Posting_committed_while_a_reversal_waits_makes_it_not_latest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var receipt = await ArrangeLatestReceiptAsync(client, a, item, ct);
+        var key = PostingTests.NewKey();
+
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        var issue = await IssueOneAsync(holder, tx, item, a, ct);
+
+        // The route's checks and step 4 pass (RCSI shows the receipt as the latest at A); step 6 waits on A's lock.
+        var request = Task.Run(() => ReversalTests.ReverseAsync(client, receipt, key, ct), ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await tx.CommitAsync(ct);
+        var response = await request;
+
+        // Step 8 reads LastMovementId from the row it locked, so it sees the holder's issue (plan R3, D6).
+        await ReversalTests.AssertProblemAsync(response, HttpStatusCode.Conflict, "reversal-not-latest", ct);
+        var problem = await ReversalTests.ProblemAsync(response, ct);
+        problem["locationId"]!.GetValue<Guid>().ShouldBe(a);
+        problem["itemId"]!.GetValue<Guid>().ShouldBe(item);
+        problem["blockingDocumentId"]!.GetValue<Guid>().ShouldBe(issue);
+        (await DocumentsOfTypeAsync(holder, "Reversal", ct)).ShouldBe(0);
+        (await ReversalTests.BalanceAsync(holder, item, a, ct)).ShouldBe((13m, 130m, 10m));
+
+        // The holder's rows are a consistent issue.
+        await LedgerInvariants.AssertHoldAsync(holder, ct);
+    }
+
+    [Fact]
+    public async Task Posting_rolled_back_while_a_reversal_waits_lets_it_reverse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var item = await PostingTests.NewItemAsync(client, "RICE-1", ct);
+        var receipt = await ArrangeLatestReceiptAsync(client, a, item, ct);
+        var key = PostingTests.NewKey();
+
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await IssueOneAsync(holder, tx, item, a, ct);
+
+        var request = Task.Run(() => ReversalTests.ReverseAsync(client, receipt, key, ct), ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await tx.RollbackAsync(ct);
+        var response = await request;
+
+        // Undoing the receipt leaves 9 / 90; LastUnitCost folds back to the first receipt's 100 / 10.
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await DocumentsOfTypeAsync(holder, "Reversal", ct)).ShouldBe(1);
+        (await ReversalTests.BalanceAsync(holder, item, a, ct)).ShouldBe((9m, 90m, 10m));
+        await LedgerInvariants.AssertHoldAsync(holder, ct);
+    }
+
     /// <summary>Starts every send parked behind one gate, then opens it, so the requests reach the API together.</summary>
     private static Task<HttpResponseMessage[]> InParallelAsync(int count, Func<Task<HttpResponseMessage>> send) =>
         InParallelAsync(count, _ => send());
@@ -634,4 +814,55 @@ public sealed class PostingConcurrencyTests(DatabaseFixture db)
 
     private static string Statuses(HttpResponseMessage[] responses) =>
         string.Join(", ", responses.GroupBy(r => (int)r.StatusCode).OrderBy(g => g.Key).Select(g => $"{g.Key} × {g.Count()}"));
+
+    /// <summary>Posts a one-line receipt through the API and returns its id.</summary>
+    private static async Task<Guid> ReceiptAsync(HttpClient client, Guid location, Guid item, decimal quantity, decimal unitCost, CancellationToken ct)
+    {
+        var response = await PostingTests.PostDocumentAsync(client, PostingTests.Receipts, PostingTests.NewKey(),
+            PostingTests.Receipt(location, PostingTests.Line(item, quantity, unitCost)), ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        return await IdAsync(response, ct);
+    }
+
+    /// <summary>
+    /// Receives 10 @ 10 at <paramref name="location"/>, issues 1 (so the item's CUS balance exists), then receives 5 @ 10
+    /// and returns that receipt: the latest at the location, which holds 14 / 140.
+    /// </summary>
+    private static async Task<Guid> ArrangeLatestReceiptAsync(HttpClient client, Guid location, Guid item, CancellationToken ct)
+    {
+        await PostingTests.ReceiveAsync(client, location, item, 10m, 10m, ct);
+        (await PostingTests.PostDocumentAsync(client, PostingTests.Issues, PostingTests.NewKey(),
+            PostingTests.Issue(location, PostingTests.IssueLine(item, 1m)), ct)).StatusCode.ShouldBe(HttpStatusCode.Created);
+        return await ReceiptAsync(client, location, item, 5m, 10m, ct);
+    }
+
+    /// <summary>
+    /// Plays a posting's issue of 1 @ 10 from <paramref name="location"/> to CUS in the holder's open transaction: the
+    /// location's balance U-locked first, then the document, the movement and both balances. An issue leaves
+    /// <c>LastUnitCost</c> as it is. Returns the issue's document id.
+    /// </summary>
+    private static async Task<Guid> IssueOneAsync(SqlConnection holder, SqlTransaction tx, Guid item, Guid location, CancellationToken ct)
+    {
+        (await LockBalanceAsync(holder, tx, item, location, ct)).ShouldBe(14m);
+        var issue = await LedgerRows.AddDocumentAsync(holder, ct, tx, type: "Issue");
+        var cus = await LedgerRows.LocationIdAsync(holder, "CUS", ct, tx);
+        var movement = await LedgerRows.AddMovementAsync(holder, issue, 1, item, location, cus, 1m, 10m, ct, tx);
+        await UpdateBalanceAsync(holder, tx,
+            "UPDATE inventory.StockBalances SET OnHand = OnHand - 1, StockValue = StockValue - 10, LastMovementId = @m WHERE ItemId = @x AND LocationId = @l",
+            item, location, movement, ct);
+        await UpdateBalanceAsync(holder, tx,
+            "UPDATE inventory.StockBalances SET OnHand = OnHand + 1, LastMovementId = @m WHERE ItemId = @x AND LocationId = @l",
+            item, cus, movement, ct);
+        return issue;
+    }
+
+    private static async Task UpdateBalanceAsync(
+        SqlConnection holder, SqlTransaction tx, string sql, Guid item, Guid location, long movement, CancellationToken ct)
+    {
+        await using var command = new SqlCommand(sql, holder, tx);
+        command.Parameters.Add(new SqlParameter("@m", SqlDbType.BigInt) { Value = movement });
+        command.Parameters.Add(new SqlParameter("@x", SqlDbType.UniqueIdentifier) { Value = item });
+        command.Parameters.Add(new SqlParameter("@l", SqlDbType.UniqueIdentifier) { Value = location });
+        (await command.ExecuteNonQueryAsync(ct)).ShouldBe(1);
+    }
 }

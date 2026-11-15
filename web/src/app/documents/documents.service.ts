@@ -137,4 +137,13 @@ export class DocumentsService {
       }),
     );
   }
+
+  /** POST /api/documents/{id}/reversal with an empty body (spec §9). A 200 replay and a 201 both resolve here. */
+  reverse(id: string, idempotencyKey: string): Promise<PostedDocument> {
+    return firstValueFrom(
+      this.http.post<PostedDocument>(`/api/documents/${encodeURIComponent(id)}/reversal`, null, {
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }),
+    );
+  }
 }

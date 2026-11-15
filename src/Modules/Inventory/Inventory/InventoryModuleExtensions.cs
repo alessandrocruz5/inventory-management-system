@@ -19,6 +19,7 @@ using Inventory.Features.Posting.PostAdjustment;
 using Inventory.Features.Posting.PostIssue;
 using Inventory.Features.Posting.PostReceipt;
 using Inventory.Features.Posting.PostTransfer;
+using Inventory.Features.Reversals.ReverseDocument;
 using Inventory.Features.Stock;
 using Inventory.Features.Stock.ListStock;
 using Inventory.Persistence;
@@ -64,6 +65,7 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<PostIssueHandler>();
         builder.Services.AddScoped<PostTransferHandler>();
         builder.Services.AddScoped<PostAdjustmentHandler>();
+        builder.Services.AddScoped<ReverseDocumentHandler>();
         builder.Services.AddScoped<ListStockHandler>();
         builder.Services.AddScoped<ListDocumentsHandler>();
         builder.Services.AddScoped<GetDocumentHandler>();

@@ -583,6 +583,7 @@ Successful posts return `201 Created` with the full document, its movements with
 | `idempotency-key-reused` | 409 | `originalDocumentId` |
 | `reversal-not-latest` | 409 | `itemId`, `locationId`, `blockingDocumentId` |
 | `already-reversed` | 409 | `reversalDocumentId` |
+| `cannot-reverse-reversal` | 422 | `reversesDocumentId` |
 | `concurrency-conflict` | 409 | — (after 3 retries, or a stale `version` on an edit) |
 | `insufficient-stock` | 422 | `itemId`, `locationId`, `available`, `requested` |
 | `inactive-item` / `inactive-location` | 422 | the id |
