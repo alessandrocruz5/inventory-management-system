@@ -29,7 +29,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - [x] IMS-15 — S11 Ledger health · Added · plan: [[2026-11-15-s11-ledger-health]] prompts: 01, 02, 03, 04, 05, 06 · depends: IMS-13 · model: opus (merged 2026-11-16)
   - Result: Admin `GET /api/ledger/health` (INV-1 to INV-5, lock-free, counts exact, ≤ 100 rows each) and `POST /api/ledger/rebuild` (exclusive ledger applock, returns the diff, inserts missing rows, resets empty ADJ rows); shared `LedgerLock` (Shared/Exclusive) and `LedgerProjection`; T9 seeded random run with a concurrent rebuild; demo tenant healthy after the seed; `/admin/ledger` screen behind `adminGuard` with an Admin-only nav link. Two-tenant probes for both endpoints.
   - Downstream: (S12/T14) the manual check of `/admin/ledger` as Admin and Staff in the running app is still open, so cover it in the end-to-end tests. Rebuild writes `StockBalances` only through `LedgerLock` Exclusive; any new posting path must take it Shared. The health endpoint's INV-3 reports `ValueWithoutStock` first at zero stock.
-- [ ] IMS-16 — S12 End to end · Added · spec: §12 S12 · depends: IMS-13 · model: sonnet
+- [ ] IMS-16 — S12 End to end · Added · plan: [[2026-11-16-s12-end-to-end]] prompts: 01, 02, 03, 04 · depends: IMS-13 · model: sonnet
 - [ ] IMS-17 — S13 Compose output (stretch) · Added · spec: §12 S13 · depends: IMS-16 · model: haiku
 - [ ] IMS-18 — S14 Azure (stretch) · Added · spec: §12 S14 · depends: IMS-17 · model: sonnet
 
