@@ -70,6 +70,8 @@ jobs:
           pw="E2e!$(openssl rand -hex 16)Aa9"
           echo "::add-mask::$pw"
           echo "E2E_PASSWORD=$pw" >> "$GITHUB_ENV"
+      - name: Persist seed password for the AppHost
+        run: dotnet user-secrets set "Parameters:seed-password" "$E2E_PASSWORD" --project src/AppHost > /dev/null
       - run: dotnet dev-certs https
       - run: npm ci
         working-directory: web
