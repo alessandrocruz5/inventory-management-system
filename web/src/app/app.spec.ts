@@ -91,6 +91,19 @@ describe('App', () => {
     expect(link?.textContent).toContain('Correct stock');
   });
 
+  it('shows Ledger health to Admin only', async () => {
+    user.set(staff);
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('a[href="/admin/ledger"]')).toBeNull();
+    isAdmin.set(true);
+    await fixture.whenStable();
+    const link = el.querySelector('a[href="/admin/ledger"]');
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain('Ledger health');
+  });
+
   it('shows no toolbar when signed out', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

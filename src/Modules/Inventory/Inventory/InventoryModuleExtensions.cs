@@ -9,6 +9,9 @@ using Inventory.Features.Items.GetItem;
 using Inventory.Features.Items.ListItemMovements;
 using Inventory.Features.Items.ListItems;
 using Inventory.Features.Items.UpdateItem;
+using Inventory.Features.Ledger;
+using Inventory.Features.Ledger.GetLedgerHealth;
+using Inventory.Features.Ledger.RebuildLedger;
 using Inventory.Features.Locations;
 using Inventory.Features.Locations.CreateLocation;
 using Inventory.Features.Locations.DeactivateLocation;
@@ -69,6 +72,8 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<ListStockHandler>();
         builder.Services.AddScoped<ListDocumentsHandler>();
         builder.Services.AddScoped<GetDocumentHandler>();
+        builder.Services.AddScoped<GetLedgerHealthHandler>();
+        builder.Services.AddScoped<RebuildLedgerHandler>();
         return builder;
     }
 
@@ -79,6 +84,7 @@ public static class InventoryModuleExtensions
         endpoints.MapDocumentEndpoints();
         endpoints.MapStockEndpoints();
         endpoints.MapDocumentQueryEndpoints();
+        endpoints.MapLedgerEndpoints();
         return endpoints;
     }
 }

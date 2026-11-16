@@ -1,0 +1,100 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+h1 {
+  margin: 0;
+  font: var(--mat-sys-headline-medium);
+}
+
+h2 {
+  margin: 0;
+  font: var(--mat-sys-title-medium);
+}
+
+p {
+  margin: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.checked {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.error {
+  color: var(--mat-sys-error);
+}
+
+.overall {
+  font: var(--mat-sys-title-large);
+}
+
+.overall.bad {
+  color: var(--mat-sys-error);
+}
+
+.invariant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
+}
+
+.invariant.failed {
+  border-color: var(--mat-sys-error);
+}
+
+.marker {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font: var(--mat-sys-label-medium);
+  border: 1px solid currentColor;
+}
+
+.marker.fail {
+  color: var(--mat-sys-error);
+}
+
+.note {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  white-space: nowrap;
+}
+
+.num {
+  text-align: right;
+}
