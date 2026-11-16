@@ -189,6 +189,102 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     }
 
     [Fact]
+    [ProbesRoute("GET /api/ledger/health")]
+    public async Task Each_tenant_sees_only_its_own_ledger_health()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationA = await PostingTests.NewLocationAsync(clientA, ct);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct);
+        var itemA = await PostingTests.NewItemAsync(clientA, "SAME-1", ct);
+        var itemB = await PostingTests.NewItemAsync(clientB, "SAME-1", ct);
+        await PostingTests.ReceiveAsync(clientA, locationA, itemA, 5m, 10m, ct);
+        await PostingTests.ReceiveAsync(clientB, locationB, itemB, 5m, 10m, ct);
+
+        // Drift tenant B's physical balance only; the CHECKs still hold.
+        await using (var connection = await LedgerRows.OpenAsync(db, b, ct))
+        await using (var drift = new SqlCommand("""
+            UPDATE inventory.StockBalances SET OnHand = OnHand + 1, StockValue = StockValue + 10
+            WHERE TenantId = @t AND ItemId = @i AND LocationId = @l
+            """, connection))
+        {
+            drift.Parameters.Add(new SqlParameter("@t", SqlDbType.UniqueIdentifier) { Value = b });
+            drift.Parameters.Add(new SqlParameter("@i", SqlDbType.UniqueIdentifier) { Value = itemB });
+            drift.Parameters.Add(new SqlParameter("@l", SqlDbType.UniqueIdentifier) { Value = locationB });
+            (await drift.ExecuteNonQueryAsync(ct)).ShouldBe(1);
+        }
+
+        var responseA = await clientA.GetAsync("/api/ledger/health", ct);
+
+        responseA.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var healthA = (await responseA.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        healthA["healthy"]!.GetValue<bool>().ShouldBeTrue();
+        var failuresA = healthA["invariants"]!.AsArray().SelectMany(i => i!["failures"]!.AsArray()).ToList();
+        var idsA = failuresA
+            .SelectMany(f => new[] { f!["itemId"], f["locationId"] })
+            .OfType<JsonNode>()
+            .Select(n => n.GetValue<Guid>())
+            .ToList();
+        idsA.ShouldNotContain(itemB);
+        idsA.ShouldNotContain(locationB);
+        failuresA.ShouldBeEmpty();
+
+        var responseB = await clientB.GetAsync("/api/ledger/health", ct);
+
+        responseB.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var healthB = (await responseB.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        healthB["healthy"]!.GetValue<bool>().ShouldBeFalse();
+        var projectionB = healthB["invariants"]!.AsArray().Single(i => i!["id"]!.GetValue<string>() == "INV-1")!;
+        projectionB["failures"]!.AsArray()
+            .Where(f => f!["itemId"]!.GetValue<Guid>() == itemB && f["locationId"]!.GetValue<Guid>() == locationB)
+            .Select(f => f!["check"]!.GetValue<string>())
+            .ShouldBe(["OnHand", "StockValue"]);
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/ledger/rebuild")]
+    public async Task Each_tenant_rebuilds_only_its_own_ledger()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (a, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationA = await PostingTests.NewLocationAsync(clientA, ct);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct);
+        var itemA = await PostingTests.NewItemAsync(clientA, "SAME-1", ct);
+        var itemB = await PostingTests.NewItemAsync(clientB, "SAME-1", ct);
+        await PostingTests.ReceiveAsync(clientA, locationA, itemA, 5m, 10m, ct);
+        await PostingTests.ReceiveAsync(clientB, locationB, itemB, 5m, 10m, ct);
+        await using var connectionA = await LedgerRows.OpenAsync(db, a, ct);
+        await using var connectionB = await LedgerRows.OpenAsync(db, b, ct);
+        var versionsA = await LedgerRebuildTests.RowVersionsAsync(connectionA, ct);
+
+        // Drift tenant B's physical balance only; the CHECKs still hold.
+        await LedgerRebuildTests.UpdateBalanceAsync(
+            connectionB, "OnHand = OnHand + 1, StockValue = StockValue + 10", b, itemB, locationB, ct);
+
+        var rebuildA = await LedgerRebuildTests.RebuildAsync(clientA, ct);
+
+        rebuildA["differences"]!.AsArray().ShouldBeEmpty();
+        (await PostingTests.BalanceAsync(connectionB, itemB, locationB, ct)).ShouldBe((6m, 60m));
+
+        var rebuildB = await LedgerRebuildTests.RebuildAsync(clientB, ct);
+
+        var difference = rebuildB["differences"]!.AsArray().ShouldHaveSingleItem()!;
+        difference["itemId"]!.GetValue<Guid>().ShouldBe(itemB);
+        difference["locationId"]!.GetValue<Guid>().ShouldBe(locationB);
+        (await PostingTests.BalanceAsync(connectionB, itemB, locationB, ct)).ShouldBe((5m, 50m));
+        await LedgerRebuildTests.AssertHealthyAsync(clientB, ct);
+        (await LedgerRebuildTests.RowVersionsAsync(connectionA, ct)).ShouldBe(versionsA);
+    }
+
+    [Fact]
     [ProbesRoute("GET /api/documents/")]
     public async Task Each_tenant_lists_only_its_own_documents()
     {

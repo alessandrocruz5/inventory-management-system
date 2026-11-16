@@ -23,6 +23,9 @@
       >
       <a mat-button routerLink="/items" routerLinkActive="active">Items</a>
       <a mat-button routerLink="/locations" routerLinkActive="active">Locations</a>
+      @if (auth.isAdmin()) {
+        <a mat-button routerLink="/admin/ledger" routerLinkActive="active">Ledger health</a>
+      }
     </nav>
     <span class="spacer"></span>
     <span class="user">{{ user.email }} ({{ user.role }})</span>

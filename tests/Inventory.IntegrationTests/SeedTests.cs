@@ -72,6 +72,9 @@ public sealed class SeedTests(DatabaseFixture db)
                 new SqlParameter("@key", SqlDbType.VarChar, 64) { Value = InventorySeeder.OpeningStockKey("RICE-WHT", "QC") },
                 ct);
             replayed["id"]!.GetValue<Guid>().ShouldBe(expectedId);
+
+            // IMS-9: the seeded demo ledger is healthy.
+            await AssertLedgerHealthyAsync(admin, ct);
         }
 
         (await CountAsync(c, "inventory.StockDocuments", ct)).ShouldBe(DocumentTotal);
@@ -102,6 +105,13 @@ public sealed class SeedTests(DatabaseFixture db)
             ct)).ShouldBe("Physical");
         (await BalancesAtAsync(c, newQc, ct)).ShouldBeEmpty();
         (await BalancesAtAsync(c, qc, ct)).ShouldBe(oldBalances);
+
+        // The rename and the reseed leave the demo ledger healthy.
+        await using (var app = db.CreateApp())
+        {
+            using var admin = await DatabaseFixture.SignInAsync(app, "admin@demo.test");
+            await AssertLedgerHealthyAsync(admin, ct);
+        }
 
         // 5. (d) Isolation.
         await using var isolation = await LedgerRows.OpenAsync(db, SeedTenants.Isolation, ct);
@@ -186,6 +196,15 @@ public sealed class SeedTests(DatabaseFixture db)
         await using var invariant = new SqlCommand(
             "SELECT COUNT(*) FROM (SELECT ItemId FROM inventory.StockBalances GROUP BY ItemId HAVING SUM(OnHand) <> 0) x", c);
         ((int)(await invariant.ExecuteScalarAsync(ct))!).ShouldBe(0);
+    }
+
+    /// <summary><c>GET /api/ledger/health</c> is <c>200</c> and healthy. Read-only: the demo tenant is never rebuilt here.</summary>
+    private static async Task AssertLedgerHealthyAsync(HttpClient admin, CancellationToken ct)
+    {
+        using var response = await admin.GetAsync("/api/ledger/health", ct);
+        var text = await response.Content.ReadAsStringAsync(ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, text);
+        JsonNode.Parse(text)!["healthy"]!.GetValue<bool>().ShouldBeTrue(text);
     }
 
     private static async Task<int> CountAsync(SqlConnection c, string table, CancellationToken ct)

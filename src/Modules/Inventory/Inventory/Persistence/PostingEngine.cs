@@ -412,18 +412,9 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
         return id is { } reversalId ? new AlreadyReversedOutcome(reversalId) : null;
     }
 
-    private async Task TakeLedgerLockAsync(CancellationToken ct)
-    {
-        // Step 3: the tenant's ledger lock. Postings share it; only S11's rebuild takes it exclusively.
-        var lockResult = (await db.Database.SqlQueryRaw<int>(
-                "DECLARE @r int; EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Shared', @LockOwner = 'Transaction'; SELECT @r AS [Value];",
-                new SqlParameter("@res", SqlDbType.NVarChar, 255) { Value = $"ledger:{tenant.TenantId:D}" })
-            .ToListAsync(ct)).Single();
-        if (lockResult < 0)
-        {
-            throw new InvalidOperationException($"sp_getapplock returned {lockResult} for the ledger lock.");
-        }
-    }
+    // Step 3: the tenant's ledger lock. Postings share it; only S11's rebuild takes it exclusively.
+    private Task TakeLedgerLockAsync(CancellationToken ct) =>
+        LedgerLock.AcquireAsync(db.Database, tenant.TenantId, LedgerLockMode.Shared, ct);
 
     /// <summary>Step 4's insert. False when it hit a unique index (2601/2627); the caller returns without a commit.</summary>
     private async Task<bool> TryInsertDocumentAsync(StockDocument document, CancellationToken ct)

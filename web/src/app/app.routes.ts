@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { adminGuard } from './core/auth/admin.guard';
 import { authGuard } from './core/auth/auth.guard';
 import { postStockGuard } from './documents/post-stock.guard';
 
@@ -39,6 +40,11 @@ export const routes: Routes = [
     path: 'documents/:id',
     canActivate: [authGuard],
     loadComponent: () => import('./documents/document-detail').then((m) => m.DocumentDetail),
+  },
+  {
+    path: 'admin/ledger',
+    canActivate: [authGuard, adminGuard],
+    loadComponent: () => import('./ledger/ledger-health').then((m) => m.LedgerHealth),
   },
   { path: '**', redirectTo: '' },
 ];

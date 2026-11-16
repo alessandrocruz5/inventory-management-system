@@ -126,7 +126,7 @@ internal static class LedgerInvariants
         }
     }
 
-    private static async Task<List<LedgerMovement>> MovementsAsync(SqlConnection connection, CancellationToken ct)
+    internal static async Task<List<LedgerMovement>> MovementsAsync(SqlConnection connection, CancellationToken ct)
     {
         await using var command = new SqlCommand("""
             SELECT Id, DocumentId, [LineNo], ItemId, FromLocationId, ToLocationId, Quantity, TotalCost, ReversesMovementId
