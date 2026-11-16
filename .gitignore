@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # Graphify
 /graphify-out
+
+# Playwright
+playwright-report/
+blob-report/
