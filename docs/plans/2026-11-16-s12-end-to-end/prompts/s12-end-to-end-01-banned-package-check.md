@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-16-s12-end-to-end]]"
 id: 01
 unit: IMS-16
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: []
