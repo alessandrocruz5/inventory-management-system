@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -202,3 +202,19 @@ Revert the PR. There's no migration or schema change, and `PostingEngine`'s lock
 - 2026-11-15: planned
 - 2026-11-15: audited, 2 fixes applied (Codex PASS-WITH-CHANGES: D13 T9 burst order-independent, D14 plain `dotnet test` first)
 - 2026-11-15: applied Codex audit (2 applied, 0 disputed)
+- 2026-11-15: build started on IMS-15; rollback point dd38cf3e34a69554fac02e2aa5bbf9bca1835db3
+- 2026-11-15: 01 done (opus, 0 retries): LedgerLock (Shared/Exclusive, mode as fixed-switch parameter) + LedgerProjection (one CTE statement, LUC via CostingPolicy); 80/80 integration, 21/21 architecture; verified SQL matches CostingPolicy.LastUnitCost rule for rule
+- 2026-11-15: 02 done (opus, 0 retries): GET /api/ledger/health (4 lock-free statements: projection→INV-1/5, INV-2, INV-3 vs location toggle, INV-4 one UNION ALL matching the oracle); T5 probe; 8 LedgerHealthTests; verified 38/38 integration, 21/21 architecture, build + format clean, scope = 7 declared files
+- 2026-11-16: 03 done (opus, 1 retry — orchestrator error: a premature completion report led to a second agent dispatched while the first was still running; the retry only added the route/DI lines, the first agent finished the rest, deduped, and the merged result was verified): POST /api/ledger/rebuild (Exclusive applock first, key-targeted INSERT/UPDATE of the 4 ledger columns only, rows-affected = 1 asserted, decimals as decimal(19,4) SqlParameters); T5 probe; 7 LedgerRebuildTests incl. engine-vs-LedgerLock exclusive wait; verified build + format clean, 64/64 filtered integration, 21/21 architecture, scope = 7 declared files. Note for code-guardian: no test writes a 4-dp ledger value back through rebuild (T9 in 04 should cover it).
+- 2026-11-16: 04 done (opus, 0 retries): T9 LedgerRandomRunTests (seed 20261115, 500 ops + 20-posting order-independent burst with concurrent rebuild and 3 health calls; exact status predicted by an OnHand/last-movement model; 3 views every 50 ops) + demo-tenant health in SeedTests step 3 and after step 4; verified build + format clean, two runs with identical 17-line outcome counts (~9 s each), burst 20×201, rebuild diff empty, plain dotnet test 578/578, scope = 2 declared files. Reversal 422 insufficient-stock is allowed but unreachable under latest-only. 03's note stays open: the rebuild diff is empty, so T9 never writes a 4-dp value back (only shows the comparison holds at 4 dp).
+- 2026-11-16: 05 done (sonnet, 0 retries): LedgerService (health/rebuild + contract types), adminGuard, Admin-only Ledger health nav link (own @if block after Locations), 3 spec files; verified lint + build + 177/177 web tests, scope = 6 declared files
+- 2026-11-16: 06 done (sonnet, 0 retries): /admin/ledger LedgerHealth screen (5 labelled invariant blocks, failure tables, confirm-dialog rebuild with diff, ProblemDetails errors) + route behind authGuard/adminGuard; verified lint + build + 183/183 web tests, scope = 5 declared files
+- 2026-11-16: applied Codex code review (3 applied, 0 disputed)
+- 2026-11-16: IMS-15 merged (PR #15); plan done
+
+## Outcome
+**Shipped:** health and rebuild endpoints, `LedgerLock` and `LedgerProjection`, the T9 random run, seed-health checks and the `/admin/ledger` screen, in one PR (IMS-15, base `develop`). CI green; plain `dotnet test` 580/580; web 183/183.
+
+**Deviations:** the Codex code review (REQUEST CHANGES, 0 blockers) was applied in a follow-up commit. The health handler now counts every failure but keeps and streams at most 100 rows per invariant; the projection still loads every balance key (D2), so only failure rows are bounded. INV-3 checks zero stock first. Added a 105-failure cap test and a 4-dp rebuild write-back test, and confirmed the latter fails with a scale-2 parameter.
+
+**Gotchas:** posting is limited to 100 lines per document, so large-ledger tests need several receipts. Decimal `SqlParameter`s must be `decimal(19,4)` or EF sends `decimal(18,2)` and rounds. The R5 manual browser check was not done. Prompt 03's orchestration slip (a duplicate agent dispatched during the build) was merged and verified.

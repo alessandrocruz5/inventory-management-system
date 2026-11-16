@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-15-s11-ledger-health]]"
 id: 05
 unit: IMS-15
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: []

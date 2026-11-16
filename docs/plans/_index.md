@@ -4,7 +4,7 @@ Managed by `/plan-feature`, `/audit-plan` and `/build-unit`. Newest first. Statu
 
 | Created | Plan | Status | Risk | Prompts | Repo |
 |---|---|---|---|---|---|
-| 2026-11-15 | [[2026-11-15-s11-ledger-health]] | audited | high | 6 | inventory-management-system |
+| 2026-11-15 | [[2026-11-15-s11-ledger-health]] | done | high | 6 | inventory-management-system |
 | 2026-11-15 | [[2026-11-15-s10-negative-stock]] | done | high | 9 | inventory-management-system |
 | 2026-11-13 | [[2026-11-13-s7-stock-screens]] | in-progress | medium | 10 | inventory-management-system |
 | 2026-11-15 | [[2026-11-15-s9-reversals]] | done | high | 7 | inventory-management-system |
