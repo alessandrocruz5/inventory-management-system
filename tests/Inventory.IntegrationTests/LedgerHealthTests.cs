@@ -151,6 +151,49 @@ public sealed class LedgerHealthTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Failures_are_capped_at_100_but_the_count_is_the_total()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var items = new List<Guid>();
+        for (var i = 0; i < 105; i++)
+        {
+            items.Add(await PostingTests.NewItemAsync(client, $"C-{i:000}", ct));
+        }
+
+        // A document holds at most 100 lines.
+        foreach (var batch in items.Chunk(60))
+        {
+            var response = await PostingTests.PostDocumentAsync(
+                client, PostingTests.Receipts, PostingTests.NewKey(),
+                PostingTests.Receipt(a, [.. batch.Select(item => PostingTests.Line(item, 5m, 10m))]), ct);
+            response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        }
+
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using (var command = new SqlCommand(
+            "UPDATE inventory.StockBalances SET OnHand = OnHand + 1 WHERE TenantId = @t AND LocationId = @l", connection))
+        {
+            command.Parameters.Add(new SqlParameter("@t", SqlDbType.UniqueIdentifier) { Value = tenant });
+            command.Parameters.Add(new SqlParameter("@l", SqlDbType.UniqueIdentifier) { Value = a });
+            (await command.ExecuteNonQueryAsync(ct)).ShouldBe(105);
+        }
+
+        var health = await HealthAsync(client, ct);
+
+        var invariant = Invariant(health, "INV-1");
+        invariant["passed"]!.GetValue<bool>().ShouldBeFalse();
+        invariant["failureCount"]!.GetValue<int>().ShouldBe(105);
+        var failures = Failures(health, "INV-1");
+        failures.Count.ShouldBe(100);
+        failures.Select(f => f["sku"]!.GetValue<string>()).ShouldBe(Enumerable.Range(0, 100).Select(i => $"C-{i:000}"));
+        failures.ShouldAllBe(f => f["check"]!.GetValue<string>() == "OnHand");
+    }
+
+    [Fact]
     public async Task Mirror_drift_fails_INV_3()
     {
         var ct = TestContext.Current.CancellationToken;

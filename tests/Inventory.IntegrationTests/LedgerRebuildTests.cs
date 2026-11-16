@@ -86,6 +86,34 @@ public sealed class LedgerRebuildTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Rebuild_writes_four_decimal_values_back_exactly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var a = await PostingTests.NewLocationAsync(client, ct, "A");
+        var item = await PostingTests.NewItemAsync(client, "F-1", ct);
+
+        // 1.5 x 1.2346 = 1.8519 exactly, so every ledger-derived value is a true 4-decimal one: a decimal(18,2) or
+        // otherwise rounded parameter would write 1.50 / 1.85 / 1.23 instead.
+        await PostingTests.ReceiveAsync(client, a, item, 1.5m, 1.2346m, ct);
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        var lastMovementId = (await LedgerInvariants.MovementsAsync(connection, ct)).Max(m => m.Id);
+        (await StoredAsync(connection, item, a, ct)).ShouldBe((1.5m, 1.8519m, (decimal?)1.2346m, (long?)lastMovementId, false, false));
+
+        await UpdateBalanceAsync(connection, "OnHand = 9, StockValue = 99, LastUnitCost = 7, LastMovementId = NULL", tenant, item, a, ct);
+
+        var rebuild = await RebuildAsync(client, ct);
+
+        var difference = rebuild["differences"]!.AsArray().ShouldHaveSingleItem()!;
+        Snapshot(difference["before"]!).ShouldBe((9m, 99m, (decimal?)7m, (long?)null));
+        Snapshot(difference["after"]!).ShouldBe((1.5m, 1.8519m, (decimal?)1.2346m, (long?)lastMovementId));
+        (await StoredAsync(connection, item, a, ct)).ShouldBe((1.5m, 1.8519m, (decimal?)1.2346m, (long?)lastMovementId, false, false));
+        await AssertHealthyAsync(client, ct);
+    }
+
+    [Fact]
     public async Task Rebuild_resets_an_empty_ADJ_row()
     {
         var ct = TestContext.Current.CancellationToken;

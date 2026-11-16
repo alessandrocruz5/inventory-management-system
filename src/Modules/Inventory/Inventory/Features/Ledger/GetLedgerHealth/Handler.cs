@@ -40,11 +40,11 @@ internal sealed class GetLedgerHealthHandler(InventoryDbContext db, ITenantConte
     }
 
     /// <summary>INV-1 and INV-5 from one read of <see cref="LedgerProjection"/>: expected is the ledger, actual the stored row (D8).</summary>
-    private async Task<(List<InvariantFailure> Projection, List<InvariantFailure> LastUnitCost)> ProjectionAsync(
+    private async Task<(FailureSet Projection, FailureSet LastUnitCost)> ProjectionAsync(
         Guid tenantId, CancellationToken cancellationToken)
     {
-        var projection = new List<InvariantFailure>();
-        var lastUnitCost = new List<InvariantFailure>();
+        var projection = new FailureSet();
+        var lastUnitCost = new FailureSet();
 
         foreach (var row in await LedgerProjection.ReadAsync(db, tenantId, cancellationToken))
         {
@@ -84,18 +84,24 @@ internal sealed class GetLedgerHealthHandler(InventoryDbContext db, ITenantConte
     }
 
     /// <summary>INV-2: every item's OnHand sums to 0 across all its locations, virtual included.</summary>
-    private async Task<List<InvariantFailure>> ConservationAsync(Guid tenantId, CancellationToken cancellationToken)
+    private async Task<FailureSet> ConservationAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        var rows = await db.Database.SqlQuery<ConservationRow>($"""
+        var rows = db.Database.SqlQuery<ConservationRow>($"""
             SELECT b.ItemId, i.Sku, SUM(b.OnHand) AS Total
             FROM [inventory].[StockBalances] AS b
             JOIN [inventory].[Items] AS i ON i.TenantId = {tenantId} AND i.Id = b.ItemId
             WHERE b.TenantId = {tenantId}
             GROUP BY b.ItemId, i.Sku
             HAVING SUM(b.OnHand) <> 0
-            """).ToListAsync(cancellationToken);
+            """).AsAsyncEnumerable();
 
-        return [.. rows.Select(r => new InvariantFailure(r.ItemId, r.Sku, null, null, null, "OnHandSum", 0m, r.Total))];
+        var failures = new FailureSet();
+        await foreach (var r in rows.WithCancellation(cancellationToken))
+        {
+            failures.Add(new InvariantFailure(r.ItemId, r.Sku, null, null, null, "OnHandSum", 0m, r.Total));
+        }
+
+        return failures;
     }
 
     /// <summary>
@@ -104,9 +110,9 @@ internal sealed class GetLedgerHealthHandler(InventoryDbContext db, ITenantConte
     /// forbid the last two on a row whose mirror is right, so the reachable failure is a mirror that says allowed over a
     /// location that says no.
     /// </summary>
-    private async Task<List<InvariantFailure>> PhysicalSanityAsync(Guid tenantId, CancellationToken cancellationToken)
+    private async Task<FailureSet> PhysicalSanityAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        var rows = await db.Database.SqlQuery<PhysicalRow>($"""
+        var rows = db.Database.SqlQuery<PhysicalRow>($"""
             SELECT b.ItemId, i.Sku, b.LocationId, l.Code AS LocationCode, c.[Check],
                    IIF(c.[Check] = 'NegativeNotAllowed', b.OnHand, b.StockValue) AS Actual
             FROM [inventory].[StockBalances] AS b
@@ -115,14 +121,20 @@ internal sealed class GetLedgerHealthHandler(InventoryDbContext db, ITenantConte
             CROSS APPLY (
                 SELECT CASE
                     WHEN b.OnHand < 0 AND l.AllowNegativeStock = 0 THEN 'NegativeNotAllowed'
-                    WHEN b.OnHand >= 0 AND b.StockValue < 0 THEN 'ValueWithStock'
                     WHEN b.OnHand = 0 AND b.StockValue <> 0 THEN 'ValueWithoutStock'
+                    WHEN b.OnHand > 0 AND b.StockValue < 0 THEN 'ValueWithStock'
                 END AS [Check]
             ) AS c
             WHERE b.TenantId = {tenantId} AND c.[Check] IS NOT NULL
-            """).ToListAsync(cancellationToken);
+            """).AsAsyncEnumerable();
 
-        return [.. rows.Select(r => new InvariantFailure(r.ItemId, r.Sku, r.LocationId, r.LocationCode, null, r.Check, null, r.Actual))];
+        var failures = new FailureSet();
+        await foreach (var r in rows.WithCancellation(cancellationToken))
+        {
+            failures.Add(new InvariantFailure(r.ItemId, r.Sku, r.LocationId, r.LocationCode, null, r.Check, null, r.Actual));
+        }
+
+        return failures;
     }
 
     /// <summary>
@@ -130,9 +142,9 @@ internal sealed class GetLedgerHealthHandler(InventoryDbContext db, ITenantConte
     /// item, quantity and cost with From and To swapped, never reverses a reversal, and no movement is reversed twice.
     /// The FK guarantees the original exists. ReversedTwice reports the original, with the reversal count as actual.
     /// </summary>
-    private async Task<List<InvariantFailure>> ReversalMirrorAsync(Guid tenantId, CancellationToken cancellationToken)
+    private async Task<FailureSet> ReversalMirrorAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        var rows = await db.Database.SqlQuery<MirrorRow>($"""
+        var rows = db.Database.SqlQuery<MirrorRow>($"""
             SELECT f.MovementId, f.ItemId, i.Sku, f.[Check], f.Expected, f.Actual
             FROM (
                 SELECT r.Id AS MovementId, r.ItemId, c.[Check], c.Expected, c.Actual
@@ -159,22 +171,74 @@ internal sealed class GetLedgerHealthHandler(InventoryDbContext db, ITenantConte
                 JOIN [inventory].[StockMovements] AS o ON o.TenantId = {tenantId} AND o.Id = g.ReversesMovementId
             ) AS f
             JOIN [inventory].[Items] AS i ON i.TenantId = {tenantId} AND i.Id = f.ItemId
-            """).ToListAsync(cancellationToken);
+            """).AsAsyncEnumerable();
 
-        return [.. rows.Select(r => new InvariantFailure(r.ItemId, r.Sku, null, null, r.MovementId, r.Check, r.Expected, r.Actual))];
+        var failures = new FailureSet();
+        await foreach (var r in rows.WithCancellation(cancellationToken))
+        {
+            failures.Add(new InvariantFailure(r.ItemId, r.Sku, null, null, r.MovementId, r.Check, r.Expected, r.Actual));
+        }
+
+        return failures;
     }
 
-    private static InvariantResult Result(string id, string name, List<InvariantFailure> failures) => new(
-        id,
-        name,
-        failures.Count == 0,
-        failures.Count,
-        [.. failures
-            .OrderBy(f => f.Sku, StringComparer.Ordinal)
-            .ThenBy(f => f.LocationCode, StringComparer.Ordinal)
-            .ThenBy(f => f.MovementId)
-            .ThenBy(f => f.Check, StringComparer.Ordinal)
-            .Take(MaxFailures)]);
+    private static InvariantResult Result(string id, string name, FailureSet failures) =>
+        new(id, name, failures.Count == 0, failures.Count, failures.Top());
+
+    /// <summary>
+    /// Counts every failure but keeps only the first <see cref="MaxFailures"/> in display order: SKU, then location code
+    /// (<see cref="StringComparer.Ordinal"/>), then movement id, then check (plan D3). The buffer is trimmed whenever it
+    /// reaches four times the cap, so a badly drifted tenant costs the count, not its failing rows.
+    /// </summary>
+    private sealed class FailureSet
+    {
+        private readonly List<InvariantFailure> kept = [];
+
+        public int Count { get; private set; }
+
+        public void Add(InvariantFailure failure)
+        {
+            Count++;
+            kept.Add(failure);
+            if (kept.Count >= MaxFailures * 4)
+            {
+                Trim();
+            }
+        }
+
+        public List<InvariantFailure> Top()
+        {
+            Trim();
+            return kept;
+        }
+
+        private void Trim()
+        {
+            kept.Sort(Compare);
+            if (kept.Count > MaxFailures)
+            {
+                kept.RemoveRange(MaxFailures, kept.Count - MaxFailures);
+            }
+        }
+
+        private static int Compare(InvariantFailure x, InvariantFailure y)
+        {
+            var order = string.CompareOrdinal(x.Sku, y.Sku);
+            if (order != 0)
+            {
+                return order;
+            }
+
+            order = string.CompareOrdinal(x.LocationCode, y.LocationCode);
+            if (order != 0)
+            {
+                return order;
+            }
+
+            order = Comparer<long?>.Default.Compare(x.MovementId, y.MovementId);
+            return order != 0 ? order : string.CompareOrdinal(x.Check, y.Check);
+        }
+    }
 
     private sealed class ConservationRow
     {
