@@ -182,6 +182,7 @@ inventory/
     Architecture.Tests/
     e2e/                      Playwright
   deploy/                     `aspire publish` output (stretch)
+  deploy/azure/               Bicep + deploy.sh (S14, stretch)
   CLAUDE.md  TASKS.md  CHANGELOG.md  Directory.Build.props  .editorconfig  .github/workflows/ci.yml
 ```
 
@@ -680,7 +681,7 @@ Seventeen slices, one pull request each, in this order. If the sprint runs long,
 | S11 Ledger health | Health (INV-1 to INV-5) and rebuild (exclusive ledger lock) endpoints, admin screen | T9 · code-guardian review | Should |
 | S12 End to end | Playwright suite, CI `e2e` job (added to `main`'s required checks), banned-package check | T14 | Should |
 | S13 Compose output | `aspire publish` to Docker Compose, committed under `deploy/`, verified running without Aspire | Manual smoke test | Stretch |
-| S14 Azure | Container Apps (scale to zero) + Azure SQL free offer + Static Web Apps | Manual smoke test | Stretch |
+| S14 Azure | Container Apps (scale to zero) for `api` (internal) and `web` (S13's nginx image, one origin) + Azure SQL free offer, from hand-written Bicep in `deploy/azure/`. Static Web Apps was dropped: linking a backend needs its Standard plan | Manual smoke test | Stretch |
 
 Tag `v0.1.0` when the sprint closes: section 13 is met, minus anything this section lets slip to sprint 2. Each slice is one Jira story in project IMS (epic IMS-1; S1–S14 are IMS-2 to IMS-18).
 
@@ -729,3 +730,4 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-10-30: written.
 - 2026-11-04: audited ([[Inventory System — Sprint 1 Spec.audit]]), 18 fixes applied (3 BLOCK, 15 FIX). Three NOTE items folded in where the fixes needed them (lock order, `IX_Balances_Location`, foreign ids in bodies); the rest stay open in the audit. Status: audited.
 - 2026-11-09: S5c plan amended §6 steps 1, 2 and 8 (overflow guards; replay before the database checks of step 1).
+- 2026-11-17: S14 plan ([[2026-11-17-s14-azure]]) replaced Static Web Apps with nginx on Container Apps and added Data Protection keys in the database.
