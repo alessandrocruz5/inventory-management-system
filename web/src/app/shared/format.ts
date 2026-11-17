@@ -80,3 +80,34 @@ export function postedByLabel(postedBy: string, currentUserId: string | null | u
   }
   return 'Another user';
 }
+
+export type StatusTone = 'neutral' | 'good' | 'warn' | 'bad';
+export interface Status {
+  tone: StatusTone;
+  label: string;
+}
+
+/** Stock status from on-hand quantity (handoff README "Stock status"). */
+export function stockStatus(onHand: number): Status {
+  if (onHand < 0) {
+    return { tone: 'bad', label: 'Negative' };
+  }
+  if (onHand === 0) {
+    return { tone: 'neutral', label: 'Out of stock' };
+  }
+  return { tone: 'good', label: 'In stock' };
+}
+
+/** Document status (handoff README "Document status"); reversedBy wins. */
+export function documentStatus(doc: {
+  reversesDocumentId: string | null;
+  reversedByDocumentId: string | null;
+}): Status {
+  if (doc.reversedByDocumentId) {
+    return { tone: 'warn', label: 'Reversed' };
+  }
+  if (doc.reversesDocumentId) {
+    return { tone: 'neutral', label: 'Reverses another' };
+  }
+  return { tone: 'good', label: 'Posted' };
+}

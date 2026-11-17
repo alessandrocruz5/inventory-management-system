@@ -1,6 +1,7 @@
 import {
   ADJUSTMENT_REASONS,
   SYSTEM_USER_ID,
+  documentStatus,
   documentTypeLabel,
   formatManilaDateTime,
   formatMoney,
@@ -8,6 +9,7 @@ import {
   manilaDayRange,
   postedByLabel,
   reasonLabel,
+  stockStatus,
 } from './format';
 
 describe('format', () => {
@@ -84,5 +86,46 @@ describe('format', () => {
     expect(postedByLabel(me, me.toUpperCase())).toBe('You');
     expect(postedByLabel('other', me)).toBe('Another user');
     expect(postedByLabel(me, null)).toBe('Another user');
+  });
+
+  describe('stockStatus', () => {
+    it('negative', () => {
+      expect(stockStatus(-0.0001)).toEqual({ tone: 'bad', label: 'Negative' });
+      expect(stockStatus(-5)).toEqual({ tone: 'bad', label: 'Negative' });
+    });
+    it('zero', () => {
+      expect(stockStatus(0)).toEqual({ tone: 'neutral', label: 'Out of stock' });
+    });
+    it('positive', () => {
+      expect(stockStatus(0.0001)).toEqual({ tone: 'good', label: 'In stock' });
+      expect(stockStatus(12)).toEqual({ tone: 'good', label: 'In stock' });
+    });
+  });
+
+  describe('documentStatus', () => {
+    it('posted', () => {
+      expect(documentStatus({ reversesDocumentId: null, reversedByDocumentId: null })).toEqual({
+        tone: 'good',
+        label: 'Posted',
+      });
+    });
+    it('reversed', () => {
+      expect(documentStatus({ reversesDocumentId: null, reversedByDocumentId: 'r' })).toEqual({
+        tone: 'warn',
+        label: 'Reversed',
+      });
+    });
+    it('reverses another', () => {
+      expect(documentStatus({ reversesDocumentId: 'd', reversedByDocumentId: null })).toEqual({
+        tone: 'neutral',
+        label: 'Reverses another',
+      });
+    });
+    it('reversedBy wins over reverses', () => {
+      expect(documentStatus({ reversesDocumentId: 'd', reversedByDocumentId: 'r' })).toEqual({
+        tone: 'warn',
+        label: 'Reversed',
+      });
+    });
   });
 });

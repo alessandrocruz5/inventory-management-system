@@ -1,10 +1,11 @@
-// Include theming for Angular Material with `mat.theme()`.
-// This Sass mixin will define CSS variables that are used for styling Angular Material
-// components according to the Material 3 design spec.
-// Learn more about theming and how to use it for your application's
-// custom components at https://material.angular.dev/guide/theming
+// Global styles for the redesign (handoff: docs/design_handoff_inventory_redesign/README.md).
+// Component styles are capped at 4 kB / 8 kB by angular.json, so every shared style lives here,
+// including the styles that reach AG Grid's DOM.
 @use '@angular/material' as mat;
 
+// ---------------------------------------------------------------------------
+// 1. Material theme: a neutral warm-gray system with IBM Plex Sans.
+// ---------------------------------------------------------------------------
 html {
   height: 100%;
   @include mat.theme(
@@ -12,33 +13,1031 @@ html {
       color: (
         primary: mat.$azure-palette,
         tertiary: mat.$blue-palette,
+        theme-type: light,
       ),
-      typography: Roboto,
+      typography: (
+        plain-family: 'IBM Plex Sans',
+        brand-family: 'IBM Plex Sans',
+        regular-weight: 400,
+        medium-weight: 500,
+        bold-weight: 600,
+      ),
       density: 0,
+    )
+  );
+
+  // The palette above is only a base: every colour role is remapped to the handoff tokens so no
+  // blue or azure from the M3 palette survives (focus rings, selected options, toggles, paginator).
+  @include mat.theme-overrides(
+    (
+      primary: #1c1b19,
+      on-primary: #ffffff,
+      primary-container: #ecebe8,
+      on-primary-container: #1c1b19,
+      primary-fixed: #ecebe8,
+      primary-fixed-dim: #d6d3cf,
+      on-primary-fixed: #1c1b19,
+      on-primary-fixed-variant: #3a3835,
+      inverse-primary: #d6d3cf,
+      secondary: #57534e,
+      on-secondary: #ffffff,
+      secondary-container: #ecebe8,
+      on-secondary-container: #1c1b19,
+      secondary-fixed: #ecebe8,
+      secondary-fixed-dim: #d6d3cf,
+      on-secondary-fixed: #1c1b19,
+      on-secondary-fixed-variant: #57534e,
+      tertiary: #57534e,
+      on-tertiary: #ffffff,
+      tertiary-container: #ecebe8,
+      on-tertiary-container: #1c1b19,
+      tertiary-fixed: #ecebe8,
+      tertiary-fixed-dim: #d6d3cf,
+      on-tertiary-fixed: #1c1b19,
+      on-tertiary-fixed-variant: #57534e,
+      error: oklch(0.48 0.15 27),
+      on-error: #ffffff,
+      error-container: #fbefed,
+      on-error-container: #a3302a,
+      background: #f7f7f5,
+      on-background: #1c1b19,
+      surface: #ffffff,
+      on-surface: #1c1b19,
+      surface-variant: #f2f1ef,
+      on-surface-variant: #57534e,
+      surface-dim: #f7f7f5,
+      surface-bright: #ffffff,
+      surface-container-lowest: #ffffff,
+      surface-container-low: #ffffff,
+      surface-container: #ffffff,
+      surface-container-high: #fafaf9,
+      surface-container-highest: #fafaf9,
+      surface-tint: #1c1b19,
+      outline: #d6d3cf,
+      outline-variant: #e7e5e2,
+      inverse-surface: #1c1b19,
+      inverse-on-surface: #ffffff,
+      shadow: #000000,
+      scrim: #1c1b19,
     )
   );
 }
 
+// ---------------------------------------------------------------------------
+// 2. Design tokens (README "Design Tokens" and the status pill table).
+// ---------------------------------------------------------------------------
+:root {
+  --ims-bg: #f7f7f5;
+  --ims-surface: #ffffff;
+  --ims-subtle: #fafaf9;
+  --ims-chip: #f2f1ef;
+  --ims-active: #ecebe8;
+  --ims-border: #e7e5e2;
+  --ims-divider: #f0efed;
+  --ims-input-border: #d6d3cf;
+  --ims-border-strong: #a8a29e;
+  --ims-icon-disabled: #c4c0bb;
+  --ims-ink: #1c1b19;
+  --ims-secondary: #57534e;
+  --ims-muted: #78716c;
+  --ims-faint: #a8a29e;
+  --ims-primary-hover: #3a3835;
+  --ims-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --ims-neutral-bg: #f2f1ef;
+  --ims-neutral-fg: #57534e;
+  --ims-neutral-dot: #a8a29e;
+  --ims-good-bg: #edf7ef;
+  --ims-good-fg: #2f5a3b;
+  --ims-good-dot: #4c9a62;
+  --ims-good-border: #cfe6d5;
+  --ims-warn-bg: #fbf3e2;
+  --ims-warn-fg: #6e4f1f;
+  --ims-warn-dot: #d49a2e;
+  --ims-bad-bg: #fbefed;
+  --ims-bad-fg: #a3302a;
+  --ims-bad-dot: #d04a3c;
+  --ims-bad-border: #f0d3cf;
+}
+
+@supports (color: oklch(0 0 0)) {
+  :root {
+    --ims-good-bg: oklch(0.965 0.022 155);
+    --ims-good-fg: oklch(0.4 0.07 155);
+    --ims-good-dot: oklch(0.62 0.12 155);
+    --ims-good-border: oklch(0.88 0.04 155);
+    --ims-warn-bg: oklch(0.965 0.035 85);
+    --ims-warn-fg: oklch(0.44 0.08 65);
+    --ims-warn-dot: oklch(0.74 0.14 75);
+    --ims-bad-bg: oklch(0.96 0.022 25);
+    --ims-bad-fg: oklch(0.48 0.15 27);
+    --ims-bad-dot: oklch(0.6 0.18 27);
+    --ims-bad-border: oklch(0.88 0.05 25);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3. Base
+// ---------------------------------------------------------------------------
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
-  // Default the application to a light color theme. This can be changed to
-  // `dark` to enable the dark color theme, or to `light dark` to defer to the
-  // user's system settings.
   color-scheme: light;
-
-  // Set a default background, font and text colors for the application using
-  // Angular Material's system-level CSS variables. Learn more about these
-  // variables at https://material.angular.dev/guide/system-variables
-  background-color: var(--mat-sys-surface);
-  color: var(--mat-sys-on-surface);
-  font: var(--mat-sys-body-medium);
-
-  // Reset the user agent margin.
   margin: 0;
   height: 100%;
+  background-color: var(--ims-bg);
+  color: var(--ims-ink);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-/* You can add global styles to this file, and also import other style files */
 
-// AG Grid cells sit outside component styles: negative stock on /stock (spec §10).
+a {
+  color: var(--ims-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: var(--ims-secondary);
+  }
+}
+
+.material-symbols-outlined,
+mat-icon {
+  font-variation-settings:
+    'opsz' 20,
+    'wght' 350;
+}
+
+// ---------------------------------------------------------------------------
+// 4. Material component overrides (token mixins first, CSS only where no token exists)
+// ---------------------------------------------------------------------------
+html {
+  // Buttons: flat = primary, stroked = secondary (README "Buttons").
+  @include mat.button-overrides(
+    (
+      filled-container-shape: 8px,
+      filled-container-height: 40px,
+      filled-horizontal-padding: 16px,
+      filled-icon-offset: 0,
+      filled-icon-spacing: 8px,
+      filled-container-color: #1c1b19,
+      filled-label-text-color: #ffffff,
+      filled-state-layer-color: #ffffff,
+      // White at 13% over ink is #3A3835, the handoff's primary hover colour.
+      filled-hover-state-layer-opacity: 0.13,
+      filled-focus-state-layer-opacity: 0.13,
+      filled-pressed-state-layer-opacity: 0.18,
+      outlined-container-shape: 8px,
+      outlined-container-height: 40px,
+      outlined-horizontal-padding: 16px,
+      outlined-icon-offset: 0,
+      outlined-icon-spacing: 8px,
+      outlined-outline-width: 1px,
+      outlined-outline-color: #d6d3cf,
+      outlined-label-text-color: #1c1b19,
+      outlined-state-layer-color: #1c1b19,
+      outlined-hover-state-layer-opacity: 0,
+      outlined-focus-state-layer-opacity: 0.04,
+      outlined-pressed-state-layer-opacity: 0.06,
+      outlined-disabled-outline-color: #e7e5e2,
+      text-container-shape: 8px,
+      tonal-container-shape: 8px,
+      protected-container-shape: 8px,
+    )
+  );
+
+  // Form field, outline appearance (README "Inputs and selects").
+  @include mat.form-field-overrides(
+    (
+      container-height: 40px,
+      container-vertical-padding: 10px,
+      outlined-container-shape: 8px,
+      outlined-outline-width: 1px,
+      outlined-focus-outline-width: 1px,
+      outlined-outline-color: #d6d3cf,
+      outlined-hover-outline-color: #a8a29e,
+      outlined-focus-outline-color: #1c1b19,
+      outlined-error-outline-color: var(--ims-bad-dot),
+      outlined-error-hover-outline-color: var(--ims-bad-dot),
+      outlined-error-focus-outline-color: var(--ims-bad-dot),
+      outlined-input-text-color: #1c1b19,
+      outlined-input-text-placeholder-color: #a8a29e,
+      outlined-caret-color: #1c1b19,
+      outlined-error-caret-color: var(--ims-bad-fg),
+      outlined-label-text-color: #57534e,
+      outlined-focus-label-text-color: #1c1b19,
+      outlined-hover-label-text-color: #57534e,
+      outlined-error-label-text-color: var(--ims-bad-fg),
+      outlined-error-focus-label-text-color: var(--ims-bad-fg),
+      outlined-error-hover-label-text-color: var(--ims-bad-fg),
+      error-text-color: var(--ims-bad-fg),
+      error-trailing-icon-color: var(--ims-bad-fg),
+      leading-icon-color: #78716c,
+      trailing-icon-color: #78716c,
+      enabled-select-arrow-color: #78716c,
+      focus-select-arrow-color: #78716c,
+      select-option-text-color: #1c1b19,
+      container-text-size: 14px,
+      container-text-line-height: 20px,
+      container-text-tracking: 0,
+      subscript-text-size: 12px,
+      subscript-text-line-height: 16px,
+      subscript-text-tracking: 0,
+    )
+  );
+
+  // Select and autocomplete panels, options.
+  @include mat.select-overrides(
+    (
+      panel-background-color: #ffffff,
+      enabled-trigger-text-color: #1c1b19,
+      placeholder-text-color: #a8a29e,
+      enabled-arrow-color: #78716c,
+      focused-arrow-color: #78716c,
+      invalid-arrow-color: var(--ims-bad-fg),
+      trigger-text-size: 14px,
+      trigger-text-line-height: 20px,
+      trigger-text-tracking: 0,
+      container-elevation-shadow: 0 4px 16px rgba(28, 27, 25, 0.08),
+    )
+  );
+  @include mat.autocomplete-overrides(
+    (
+      background-color: #ffffff,
+      container-shape: 8px,
+      container-elevation-shadow: 0 4px 16px rgba(28, 27, 25, 0.08),
+    )
+  );
+  @include mat.option-overrides(
+    (
+      label-text-size: 14px,
+      label-text-line-height: 20px,
+      label-text-tracking: 0,
+      label-text-color: #1c1b19,
+      selected-state-label-text-color: #1c1b19,
+      selected-state-layer-color: #ecebe8,
+      hover-state-layer-color: #fafaf9,
+      focus-state-layer-color: #fafaf9,
+    )
+  );
+
+  // Slide toggle (README "Switch"): 34x20 track, 16 px knob, no icons.
+  @include mat.slide-toggle-overrides(
+    (
+      track-width: 34px,
+      track-height: 20px,
+      track-shape: 999px,
+      handle-shape: 999px,
+      unselected-handle-size: 16px,
+      selected-handle-size: 16px,
+      pressed-handle-size: 16px,
+      with-icon-handle-size: 16px,
+      // The left margin is the knob's offset: 2 px when off, 34 - 16 - 2 = 16 px when on.
+      unselected-handle-horizontal-margin: 0 2px,
+      selected-handle-horizontal-margin: 0 16px,
+      unselected-pressed-handle-horizontal-margin: 0 2px,
+      selected-pressed-handle-horizontal-margin: 0 16px,
+      unselected-with-icon-handle-horizontal-margin: 0 2px,
+      selected-with-icon-handle-horizontal-margin: 0 16px,
+      // Icon sizes of 0 keep the handle empty even when `hideIcon` is not set.
+      selected-icon-size: 0,
+      unselected-icon-size: 0,
+      track-outline-width: 0,
+      selected-track-outline-width: 0,
+      disabled-unselected-track-outline-width: 0,
+      track-outline-color: transparent,
+      selected-track-outline-color: transparent,
+      disabled-unselected-track-outline-color: transparent,
+      unselected-track-color: #d6d3cf,
+      unselected-hover-track-color: #d6d3cf,
+      unselected-focus-track-color: #d6d3cf,
+      unselected-pressed-track-color: #d6d3cf,
+      selected-track-color: #1c1b19,
+      selected-hover-track-color: #1c1b19,
+      selected-focus-track-color: #1c1b19,
+      selected-pressed-track-color: #1c1b19,
+      unselected-handle-color: #ffffff,
+      unselected-hover-handle-color: #ffffff,
+      unselected-focus-handle-color: #ffffff,
+      unselected-pressed-handle-color: #ffffff,
+      selected-handle-color: #ffffff,
+      selected-hover-handle-color: #ffffff,
+      selected-focus-handle-color: #ffffff,
+      selected-pressed-handle-color: #ffffff,
+      disabled-unselected-track-color: #e7e5e2,
+      disabled-selected-track-color: #a8a29e,
+      disabled-unselected-handle-color: #ffffff,
+      disabled-selected-handle-color: #ffffff,
+      selected-hover-state-layer-color: #1c1b19,
+      selected-focus-state-layer-color: #1c1b19,
+      selected-pressed-state-layer-color: #1c1b19,
+      unselected-hover-state-layer-color: #1c1b19,
+      unselected-focus-state-layer-color: #1c1b19,
+      unselected-pressed-state-layer-color: #1c1b19,
+      handle-elevation-shadow: 0 1px 2px rgba(0, 0, 0, 0.2),
+      disabled-handle-elevation-shadow: 0 1px 2px rgba(0, 0, 0, 0.2),
+      handle-surface-color: #ffffff,
+      label-text-color: #57534e,
+      label-text-size: 14px,
+      label-text-line-height: 20px,
+      label-text-tracking: 0,
+    )
+  );
+
+  // Paginator (also restyled for the nav buttons below).
+  @include mat.paginator-overrides(
+    (
+      container-text-color: #57534e,
+      container-background-color: transparent,
+      container-text-size: 13px,
+      container-text-line-height: 20px,
+      container-text-tracking: 0,
+      select-trigger-text-size: 13px,
+      enabled-icon-color: #57534e,
+      disabled-icon-color: #c4c0bb,
+      container-size: 52px,
+      form-field-container-height: 32px,
+      form-field-container-vertical-padding: 4px,
+    )
+  );
+
+  // Segmented control base colours (the `.segmented` class below shapes it).
+  @include mat.button-toggle-overrides(
+    (
+      background-color: transparent,
+      text-color: #78716c,
+      selected-state-background-color: #ffffff,
+      selected-state-text-color: #1c1b19,
+      divider-color: transparent,
+      state-layer-color: #1c1b19,
+      hover-state-layer-opacity: 0.04,
+      focus-state-layer-opacity: 0.06,
+      label-text-size: 14px,
+      label-text-weight: 500,
+      label-text-line-height: 20px,
+      label-text-tracking: 0,
+      height: 36px,
+      shape: 8px,
+    )
+  );
+}
+
+// Material has no token for these, so they are plain CSS on the component classes.
+
+// Hover = stronger border (README "Buttons"). The border colour has no hover token.
+.mat-mdc-outlined-button:not(:disabled):hover {
+  border-color: var(--ims-border-strong);
+}
+
+// Buttons: icons are 20 px (README "Buttons"). Material sizes `mat-icon` at 24 px.
+.mat-mdc-button-base .mat-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
+}
+
+// Text-field focus ring (README: border ink plus 0 0 0 3px rgba(28,27,25,.08)).
+// No token exists for a ring; the notched outline is the element that is 8 px rounded.
+.mat-mdc-form-field.mat-focused:not(.mat-form-field-invalid) .mdc-notched-outline {
+  border-radius: 8px;
+  box-shadow: 0 0 0 3px rgba(28, 27, 25, 0.08);
+}
+
+// Select arrow: a chevron like the handoff's `expand_more`. Material draws a 10x5 triangle SVG
+// with no token to swap it, so the SVG is hidden and a masked chevron takes its place.
+.mat-mdc-select-arrow {
+  width: 20px;
+  height: 20px;
+
+  svg {
+    display: none;
+  }
+
+  &::after {
+    content: '';
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
+}
+
+// Select panel: 8 px radius and a 1 px border (Material hard-codes a 4 px radius on one side).
+div.mat-mdc-select-panel.mat-mdc-select-panel,
+.mat-mdc-select-panel-above div.mat-mdc-select-panel.mat-mdc-select-panel,
+div.mat-mdc-autocomplete-panel.mat-mdc-autocomplete-panel {
+  border: 1px solid var(--ims-border);
+  border-radius: 8px;
+}
+
+// Paginator nav buttons: 32x32, 1 px border, 8 px radius (README screen 1, "Pagination row").
+.mat-mdc-paginator {
+  @include mat.icon-button-overrides(
+    (
+      state-layer-size: 32px,
+      icon-size: 20px,
+      container-shape: 8px,
+      icon-color: #57534e,
+      disabled-icon-color: #c4c0bb,
+      state-layer-color: #1c1b19,
+    )
+  );
+
+  // Material draws the chevron SVG 28 px wide with no token.
+  .mat-mdc-paginator-icon {
+    width: 20px;
+  }
+
+  .mat-mdc-paginator-range-actions .mat-mdc-icon-button {
+    border: 1px solid var(--ims-border);
+  }
+
+  // Paginator in a card footer sits flush right (README "Pagination row").
+  .mat-mdc-paginator-container {
+    justify-content: flex-end;
+    gap: 8px 20px;
+    padding: 0;
+    min-height: 0;
+  }
+
+  .mat-mdc-paginator-page-size,
+  .mat-mdc-paginator-range-label {
+    margin: 0;
+  }
+
+  .mat-mdc-paginator-range-label {
+    margin-right: 0;
+  }
+}
+
+// Autocomplete and select panels: no tokens for the padding either.
+.mat-mdc-autocomplete-panel,
+.mat-mdc-select-panel {
+  background-color: #ffffff;
+}
+
+// ---------------------------------------------------------------------------
+// 5. Global class API (later prompts use these names verbatim)
+// ---------------------------------------------------------------------------
+
+// Page structure
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.page--narrow {
+  max-width: 880px;
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.page-subtitle {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ims-muted);
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px 0 4px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ims-secondary);
+  text-decoration: none;
+
+  &:hover {
+    background-color: var(--ims-active);
+    color: var(--ims-secondary);
+  }
+
+  .mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
+}
+
+.section-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+// Cards
+.card {
+  background-color: var(--ims-surface);
+  border: 1px solid var(--ims-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.card__body {
+  padding: clamp(16px, 2.4vw, 24px);
+}
+
+.card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ims-border);
+
+  .mat-mdc-paginator {
+    flex: 1 1 auto;
+  }
+}
+
+// Filters and fields
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 24px;
+  padding: 16px;
+  border-bottom: 1px solid var(--ims-border);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+
+  .mat-mdc-form-field {
+    width: 100%;
+  }
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ims-secondary);
+}
+
+.field-hint {
+  color: var(--ims-faint);
+  font-weight: 400;
+}
+
+// Tables
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    padding: 10px 16px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--ims-muted);
+    text-align: left;
+    background-color: var(--ims-subtle);
+    border-bottom: 1px solid var(--ims-border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 12px 16px;
+    font-size: 14px;
+    line-height: 20px;
+    border-bottom: 1px solid var(--ims-divider);
+  }
+
+  tbody tr.clickable {
+    cursor: pointer;
+
+    &:hover {
+      background-color: var(--ims-subtle);
+    }
+  }
+
+  tfoot td {
+    background-color: var(--ims-subtle);
+    font-weight: 600;
+  }
+
+  // Numeric header cells follow their column.
+  th.num {
+    text-align: right;
+  }
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+// Text utilities
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--ims-mono);
+}
+
+.muted {
+  color: var(--ims-muted);
+}
+
+.secondary {
+  color: var(--ims-secondary);
+}
+
+.faint {
+  color: var(--ims-faint);
+}
+
+.strong {
+  font-weight: 500;
+}
+
+.tone-bad {
+  color: var(--ims-bad-fg);
+}
+
+// Stacked lists (the mobile replacement for tables)
+.stacked-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stacked-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ims-divider);
+  color: var(--ims-ink);
+  text-decoration: none;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+}
+
+a.stacked-row:hover {
+  background-color: var(--ims-subtle);
+  color: var(--ims-ink);
+}
+
+// Banners
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 20px;
+
+  .mat-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+  }
+
+  a {
+    color: inherit;
+  }
+}
+
+.banner--neutral {
+  background-color: var(--ims-neutral-bg);
+  color: var(--ims-neutral-fg);
+}
+
+.banner--good {
+  background-color: var(--ims-good-bg);
+  color: var(--ims-good-fg);
+}
+
+.banner--warn {
+  background-color: var(--ims-warn-bg);
+  color: var(--ims-warn-fg);
+}
+
+.banner--bad {
+  background-color: var(--ims-bad-bg);
+  color: var(--ims-bad-fg);
+}
+
+// Loading and empty states
+.skeleton {
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+  background-color: var(--ims-chip);
+  animation: ims-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ims-divider);
+}
+
+@keyframes ims-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+.empty-state {
+  padding: 24px 16px;
+  color: var(--ims-muted);
+  text-align: center;
+}
+
+// Button modifiers. Sizes are set through the button tokens so they beat Material's own rules
+// without a specificity fight; `.btn-dashed` needs CSS for its border style.
+.btn-sm {
+  @include mat.button-overrides(
+    (
+      filled-container-height: 32px,
+      outlined-container-height: 32px,
+      filled-horizontal-padding: 12px,
+      outlined-horizontal-padding: 12px,
+      filled-label-text-size: 13px,
+      outlined-label-text-size: 13px,
+      filled-label-text-weight: 500,
+      outlined-label-text-weight: 500,
+      outlined-outline-color: #e7e5e2,
+    )
+  );
+}
+
+.btn-md {
+  @include mat.button-overrides(
+    (
+      filled-container-height: 36px,
+      outlined-container-height: 36px,
+      filled-label-text-size: 13px,
+      outlined-label-text-size: 13px,
+      filled-label-text-weight: 500,
+      outlined-label-text-weight: 500,
+    )
+  );
+}
+
+.btn-form {
+  @include mat.button-overrides(
+    (
+      filled-container-height: 42px,
+      outlined-container-height: 42px,
+    )
+  );
+}
+
+.btn-icon {
+  --ims-icon-btn: 32px;
+
+  @include mat.button-overrides(
+    (
+      outlined-horizontal-padding: 0,
+      filled-horizontal-padding: 0,
+      outlined-icon-offset: 0,
+      outlined-icon-spacing: 0,
+      filled-icon-offset: 0,
+      filled-icon-spacing: 0,
+      outlined-outline-color: #e7e5e2,
+      outlined-label-text-color: #57534e,
+      outlined-disabled-label-text-color: #d6d3cf,
+      outlined-container-height: var(--ims-icon-btn),
+      filled-container-height: var(--ims-icon-btn),
+    )
+  );
+
+  // `min-width` has no token: Material sets 64 px on every button.
+  &.mat-mdc-button-base {
+    min-width: 0;
+    width: var(--ims-icon-btn);
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  .mat-icon,
+  .mdc-button__label + .mat-icon {
+    margin: 0;
+  }
+}
+
+.btn-icon--36 {
+  --ims-icon-btn: 36px;
+
+  @include mat.button-overrides(
+    (
+      outlined-outline-color: #d6d3cf,
+    )
+  );
+}
+
+.btn-icon--42 {
+  --ims-icon-btn: 42px;
+
+  @include mat.button-overrides(
+    (
+      outlined-outline-color: #d6d3cf,
+    )
+  );
+}
+
+.btn-dashed {
+  @include mat.button-overrides(
+    (
+      outlined-container-height: 36px,
+      outlined-outline-color: #c4c0bb,
+      outlined-label-text-size: 13px,
+      outlined-label-text-weight: 500,
+      outlined-label-text-color: #1c1b19,
+      // The hover fill is the state layer at full strength, in the subtle surface colour.
+      outlined-state-layer-color: #fafaf9,
+      outlined-hover-state-layer-opacity: 1,
+    )
+  );
+
+  // `border-style` has no token.
+  &.mat-mdc-button-base {
+    border-style: dashed;
+    background-color: transparent;
+  }
+
+  &.mat-mdc-button-base:not(:disabled):hover {
+    border-color: var(--ims-icon-disabled);
+  }
+}
+
+// Mobile touch targets (plan D19): every control reaches 44 px. Desktop is unchanged.
+@media (max-width: 759.98px) {
+  .mat-mdc-unelevated-button,
+  .mat-mdc-outlined-button,
+  .btn-sm,
+  .btn-md,
+  .btn-form,
+  .btn-dashed,
+  .back-link {
+    min-height: 44px;
+  }
+
+  .btn-icon,
+  .btn-icon--36,
+  .btn-icon--42 {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .mat-mdc-paginator {
+    @include mat.icon-button-overrides(
+      (
+        state-layer-size: 44px,
+      )
+    );
+  }
+}
+
+// Segmented control (Add / Remove): a `mat-button-toggle-group` with the `.segmented` class.
+.mat-button-toggle-group.segmented {
+  gap: 0;
+  height: 42px;
+  padding: 3px;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--ims-chip);
+
+  &.mat-button-toggle-group-appearance-standard {
+    border: 0;
+    border-radius: 8px;
+    box-shadow: none;
+  }
+
+  // Material draws a 1 px divider between toggles with no token to remove the width.
+  &.mat-button-toggle-group-appearance-standard
+    .mat-button-toggle-appearance-standard
+    + .mat-button-toggle-appearance-standard {
+    border-left: 0;
+  }
+
+  .mat-button-toggle {
+    flex: 1 1 0;
+    border-radius: 6px;
+    color: var(--ims-muted);
+  }
+
+  .mat-button-toggle-checked {
+    background-color: #ffffff;
+    color: var(--ims-ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  // Material shows a check mark in the selected toggle; the handoff has none.
+  .mat-pseudo-checkbox {
+    display: none;
+  }
+
+  .mat-button-toggle-label-content {
+    line-height: 36px;
+    padding: 0 16px;
+  }
+
+  .mat-button-toggle-button {
+    height: 36px;
+  }
+}
+
+// AG Grid helpers: the grid DOM sits outside component styles.
 .ag-cell.stock-negative {
-  color: var(--mat-sys-error);
+  color: var(--ims-bad-fg);
+}
+
+.ag-row.clickable {
+  cursor: pointer;
+}
+
+.ag-row-pinned {
+  background-color: var(--ims-subtle);
+  font-weight: 600;
+}
+
+.ag-cell.cell-strong {
+  font-weight: 500;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

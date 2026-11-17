@@ -1,35 +1,154 @@
-@if (auth.user(); as user) {
-  <mat-toolbar class="shell-toolbar">
-    <span class="app-name">Inventory</span>
-    <span class="tenant">{{ user.tenantName }}</span>
-    <nav class="nav">
-      <a mat-button routerLink="/stock" routerLinkActive="active">Stock</a>
-      <a mat-button routerLink="/documents/new/receipt" routerLinkActive="active">Receive stock</a>
-      <a mat-button routerLink="/documents/new/issue" routerLinkActive="active"
-        >Use or sell stock</a
-      >
-      <a mat-button routerLink="/documents/new/transfer" routerLinkActive="active">Move stock</a>
-      @if (auth.isAdmin()) {
-        <a mat-button routerLink="/documents/new/adjustment" routerLinkActive="active"
-          >Correct stock</a
-        >
+<div class="shell">
+  @if (auth.user(); as user) {
+    @if (isNarrow() && drawerOpen()) {
+      <button
+        type="button"
+        class="backdrop"
+        tabindex="-1"
+        aria-label="Close navigation"
+        (click)="closeDrawer()"
+      ></button>
+    }
+    @if (!isNarrow() || drawerOpen()) {
+      <aside class="sidebar" [class.drawer]="isNarrow()">
+        <div class="brand">
+          <div class="brand-tile"><mat-icon>inventory_2</mat-icon></div>
+          <div class="brand-text">
+            <span class="brand-name">Inventory</span>
+            <span class="brand-tenant">{{ user.tenantName }}</span>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Main">
+          <div class="group">
+            <span class="group-label">Inventory</span>
+            <a
+              class="nav-item"
+              routerLink="/stock"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+            >
+              <mat-icon>inventory_2</mat-icon><span>Stock</span>
+            </a>
+            <a
+              class="nav-item"
+              routerLink="/items"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+            >
+              <mat-icon>category</mat-icon><span>Items</span>
+            </a>
+            <a
+              class="nav-item"
+              routerLink="/locations"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+            >
+              <mat-icon>warehouse</mat-icon><span>Locations</span>
+            </a>
+            <a
+              class="nav-item"
+              routerLink="/documents"
+              [class.active]="documentsActive()"
+              [attr.aria-current]="documentsActive() ? 'page' : null"
+            >
+              <mat-icon>receipt_long</mat-icon><span>Documents</span>
+            </a>
+          </div>
+          <div class="group">
+            <span class="group-label">Post stock</span>
+            <a
+              class="nav-item"
+              routerLink="/documents/new/receipt"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+            >
+              <mat-icon>move_to_inbox</mat-icon><span>Receive stock</span>
+            </a>
+            <a
+              class="nav-item"
+              routerLink="/documents/new/issue"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+            >
+              <mat-icon>outbox</mat-icon><span>Use or sell stock</span>
+            </a>
+            <a
+              class="nav-item"
+              routerLink="/documents/new/transfer"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+            >
+              <mat-icon>swap_horiz</mat-icon><span>Move stock</span>
+            </a>
+            @if (auth.isAdmin()) {
+              <a
+                class="nav-item"
+                routerLink="/documents/new/adjustment"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+              >
+                <mat-icon>tune</mat-icon><span>Correct stock</span>
+              </a>
+            }
+          </div>
+          @if (auth.isAdmin()) {
+            <div class="group">
+              <span class="group-label">Admin</span>
+              <a
+                class="nav-item"
+                routerLink="/admin/ledger"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+              >
+                <mat-icon>monitor_heart</mat-icon><span>Ledger health</span>
+              </a>
+            </div>
+          }
+        </nav>
+        <div class="user-footer">
+          <div class="avatar" aria-hidden="true">{{ initials() }}</div>
+          <div class="user-text">
+            <span class="user-email">{{ user.email }}</span>
+            <span class="user-role">{{ user.role }}</span>
+          </div>
+          <button
+            mat-stroked-button
+            class="btn-icon"
+            type="button"
+            aria-label="Sign out"
+            (click)="signOut()"
+          >
+            <mat-icon>logout</mat-icon>
+          </button>
+        </div>
+      </aside>
+    }
+  }
+  <div class="content">
+    @if (auth.user(); as user) {
+      @if (isNarrow()) {
+        <header class="topbar">
+          <button
+            type="button"
+            class="menu-button"
+            aria-label="Open navigation"
+            [attr.aria-expanded]="drawerOpen()"
+            (click)="openDrawer()"
+          >
+            <mat-icon>menu</mat-icon>
+          </button>
+          <div class="topbar-text">
+            <span class="brand-name">Inventory</span>
+            <span class="brand-tenant">{{ user.tenantName }}</span>
+          </div>
+          <a mat-stroked-button class="btn-md" routerLink="/documents/new/receipt">
+            <mat-icon>add</mat-icon>Post
+          </a>
+        </header>
       }
-      <a
-        mat-button
-        routerLink="/documents"
-        routerLinkActive="active"
-        [routerLinkActiveOptions]="{ exact: true }"
-        >Documents</a
-      >
-      <a mat-button routerLink="/items" routerLinkActive="active">Items</a>
-      <a mat-button routerLink="/locations" routerLinkActive="active">Locations</a>
-      @if (auth.isAdmin()) {
-        <a mat-button routerLink="/admin/ledger" routerLinkActive="active">Ledger health</a>
-      }
-    </nav>
-    <span class="spacer"></span>
-    <span class="user">{{ user.email }} ({{ user.role }})</span>
-    <button mat-button type="button" (click)="signOut()">Sign out</button>
-  </mat-toolbar>
-}
-<router-outlet />
+    }
+    <main class="main">
+      <div class="main-inner"><router-outlet /></div>
+    </main>
+  </div>
+</div>
