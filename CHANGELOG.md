@@ -17,3 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 - Stock screens: `GET /stock` with totals, `GET /documents` and `GET /documents/{id}`, and Angular stock-on-hand, post-stock form, and documents list and detail screens (IMS-11).
 - Reversals: `POST /documents/{id}/reversal` (Admin, idempotent) with latest-only, already-reversed and cannot-reverse-reversal checks under the balance locks, `LastUnitCost` recomputed from the ledger, and a Reverse button on the document detail (IMS-13).
 - Platform: Data Protection keys persisted in `platform.DataProtectionKeys`, and a contained `inventory_app` user on Azure SQL with a guarded RCSI migration (IMS-20).
+
+### Fixed
+
+- Aspire packages bumped to 13.6.5 for GHSA-f7vh-h5g3-7jrh (IMS-19).

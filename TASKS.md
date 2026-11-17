@@ -120,4 +120,4 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - **Build:** restore needs `DOTNET_SYSTEM_NET_DISABLEIPV6=1` on this machine.
 
 ## Hotfixes
-- [~] IMS-19 — Bump Aspire packages to 13.6.5 (GHSA-f7vh-h5g3-7jrh) · Fixed · files: src/AppHost/AppHost.csproj, src/Modules/Inventory/Inventory/Inventory.csproj, src/Modules/Platform/Platform/Platform.csproj · depends: — · model: haiku
+- [x] IMS-19 — Bump Aspire packages to 13.6.5 (GHSA-f7vh-h5g3-7jrh) · Fixed · files: src/AppHost/AppHost.csproj, src/Modules/Inventory/Inventory/Inventory.csproj, src/Modules/Platform/Platform/Platform.csproj · depends: — · model: haiku (merged 2026-11-12)
