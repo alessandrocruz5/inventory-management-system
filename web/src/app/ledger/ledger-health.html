@@ -1,0 +1,132 @@
+<header class="head">
+  <h1>Ledger health</h1>
+  @if (health(); as h) {
+    <p class="checked">Checked {{ formatDate(h.checkedAt) }}</p>
+  }
+  <div class="actions">
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="loading() || rebuilding()"
+      (click)="check()"
+    >
+      Check again
+    </button>
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="loading() || rebuilding()"
+      (click)="confirmRebuild()"
+    >
+      Rebuild balances
+    </button>
+  </div>
+</header>
+
+@if (error(); as message) {
+  <p class="error" role="alert">{{ message }}</p>
+}
+
+@if (rebuild(); as r) {
+  <section class="rebuild" aria-label="Rebuild result">
+    @if (r.differences.length === 0) {
+      <p>Checked {{ r.balancesChecked }} balances. Nothing to fix.</p>
+    } @else {
+      <h2>Fixed {{ r.differences.length }} balances</h2>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Location</th>
+              <th class="num">On hand</th>
+              <th class="num">Value</th>
+              <th class="num">Last unit cost</th>
+              <th class="num">Last movement</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (d of r.differences; track d.itemId + d.locationId) {
+              <tr>
+                <td data-label="SKU">
+                  {{ d.sku }}
+                  @if (d.inserted) {
+                    <span class="note">(row was missing)</span>
+                  }
+                </td>
+                <td data-label="Location">{{ d.locationCode }}</td>
+                <td class="num" data-label="On hand">{{ beforeAfter(d, 'onHand') }}</td>
+                <td class="num" data-label="Value">{{ beforeAfter(d, 'stockValue') }}</td>
+                <td class="num" data-label="Last unit cost">
+                  {{ moneyOrDash(d.before?.lastUnitCost) }} →
+                  {{ moneyOrDash(d.after.lastUnitCost) }}
+                </td>
+                <td class="num" data-label="Last movement">
+                  {{ movementOrDash(d.before?.lastMovementId) }} →
+                  {{ movementOrDash(d.after.lastMovementId) }}
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+}
+
+@if (health(); as h) {
+  <p class="overall" [class.bad]="!h.healthy">
+    @if (h.healthy) {
+      All checks passed
+    } @else {
+      {{ failedCount(h) }} checks failed
+    }
+  </p>
+
+  @for (inv of h.invariants; track inv.id) {
+    <section class="invariant" [class.failed]="!inv.passed">
+      <h2>
+        {{ inv.id }} · {{ label(inv.id, inv.name) }}
+        <span class="marker" [class.fail]="!inv.passed" [class.pass]="inv.passed">
+          {{ inv.passed ? 'Passed' : 'Failed' }}
+        </span>
+      </h2>
+      @if (!inv.passed) {
+        <p>
+          {{ inv.failureCount }} problems
+          @if (inv.failureCount > inv.failures.length) {
+            <span>, showing the first 100</span>
+          }
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Location</th>
+                <th>Movement</th>
+                <th>Check</th>
+                <th class="num">Expected</th>
+                <th class="num">Actual</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (f of inv.failures; track $index) {
+                <tr>
+                  <td data-label="SKU">{{ f.sku ?? '—' }}</td>
+                  <td data-label="Location">{{ f.locationCode ?? '—' }}</td>
+                  <td data-label="Movement">{{ f.movementId ?? '—' }}</td>
+                  <td data-label="Check">{{ f.check }}</td>
+                  <td class="num" data-label="Expected">{{ amount(f, f.expected) }}</td>
+                  <td class="num" data-label="Actual">{{ amount(f, f.actual) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  }
+} @else if (loading()) {
+  <p>Checking the ledger…</p>
+}

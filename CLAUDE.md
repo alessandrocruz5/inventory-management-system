@@ -17,7 +17,7 @@ You are building a multi-tenant inventory system for Philippine small businesses
 
 **Banned packages.** Do not add MediatR, AutoMapper, MassTransit, PrimeNG or FluentAssertions 8+. Each moved to a commercial licence **\[Likely — verify FluentAssertions before relying on this\]**. Write handlers as plain classes and map by hand.
 
-**Allowed packages.** What the official templates add (Aspire's AppHost and ServiceDefaults, `ng new`), plus: `Aspire.Hosting.SqlServer`, the Aspire JavaScript hosting package current at scaffold time, `Aspire.Microsoft.EntityFrameworkCore.SqlServer`, `Microsoft.EntityFrameworkCore.SqlServer` and `.Design`, `Microsoft.AspNetCore.Identity.EntityFrameworkCore`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore`, `xunit.v3`, `Shouldly`, `Testcontainers.MsSql`, `Microsoft.AspNetCore.Mvc.Testing`, `Microsoft.Extensions.TimeProvider.Testing`, `NetArchTest.Rules`, `NSubstitute`; npm: `@angular/material`, `@angular/cdk`, `ag-grid-community`, `ag-grid-angular`, `angular-eslint` (it provides `ng lint`), `@playwright/test`. No Dapper.
+**Allowed packages.** What the official templates add (Aspire's AppHost and ServiceDefaults, `ng new`), plus: `Aspire.Hosting.SqlServer`, `Aspire.Hosting.Docker` (S13 compose publish), the Aspire JavaScript hosting package current at scaffold time, `Aspire.Microsoft.EntityFrameworkCore.SqlServer`, `Microsoft.EntityFrameworkCore.SqlServer` and `.Design`, `Microsoft.AspNetCore.Identity.EntityFrameworkCore`, `Microsoft.AspNetCore.DataProtection.EntityFrameworkCore`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore`, `xunit.v3`, `Shouldly`, `Testcontainers.MsSql`, `Microsoft.AspNetCore.Mvc.Testing`, `Microsoft.Extensions.TimeProvider.Testing`, `NetArchTest.Rules`, `NSubstitute`, and the dotnet tool `aspire.cli` (pinned in `.config/dotnet-tools.json` at the Aspire package version); npm: `@angular/material`, `@angular/cdk`, `ag-grid-community`, `ag-grid-angular`, `angular-eslint` (it provides `ng lint`), `@playwright/test`. No Dapper.
 
 **Ask before you:** add any NuGet or npm package not named in this spec; change anything in section 6 (the ledger contract); add a column to `StockMovements` or `StockDocuments`; disable a test.
 
@@ -36,7 +36,7 @@ You are building a multi-tenant inventory system for Philippine small businesses
 **Workflow**
 
 - One slice from section 12 per branch and pull request. Name each branch with its Jira key alone (`IMS-2`) and start PR titles with it. Tests for the slice land in the same PR.
-- `TASKS.md` (merge ledger) and `CHANGELOG.md` (Keep a Changelog) are bookkeeping: they're updated on `main` after each merge, never inside a slice's PR. Sprint 1 ends at version `0.1.0`.
+- `TASKS.md` (merge ledger) and `CHANGELOG.md` (Keep a Changelog) are bookkeeping: they're updated on `main` after each merge, never inside a slice's PR. The same goes for `docs/plans/**`. Sprint 1 ends at version `0.1.0`.
 - Request a code-guardian review on every slice that touches a High-stakes path: S2–S4, S5a–S5c, S6 and S9–S11.
 - Run every `## Commands` line below before declaring a slice done.
 
@@ -48,7 +48,7 @@ Multi-tenant inventory ledger for Philippine small businesses (portfolio). .NET 
 
 ## Workflow
 Delivery: pr
-Base branch: main
+Base branch: develop
 Shared code: src/Shared/Kernel/**, src/Modules/*/*.Contracts/**
 
 ## Commands
@@ -61,7 +61,7 @@ cd web && npm run lint && npm run build && npm test -- --watch=false
 - Money and quantities are decimal / decimal(19,4), never double or float; rounding is AwayFromZero to 4 dp.
 - No UPDATE or DELETE on StockDocuments or StockMovements; no hard deletes anywhere.
 - TenantId never comes from a request; IgnoreQueryFilters() without names is banned outside tests.
-- PostedAt comes only from TimeProvider; no request carries a date.
+- PostedAt comes only from TimeProvider; no write request carries a date (T10 allowlists read filters, IMS-11 D1).
 - The API connects as inventory_app, never as the server admin.
 - No banned packages, and no package outside the allowed list without asking.
 - Ask before changing section 6 or adding a column to StockMovements or StockDocuments.
@@ -81,3 +81,6 @@ src/Modules/Inventory/Inventory/Features/{Posting,Reversals,Ledger}/**
 - ProblemDetails slugs (section 9) match the Angular error interceptor's map.
 - The RequestHash canonical form (section 6, step 2) matches what the client sends.
 - The vector tables in section 7 match the CostingPolicy unit tests.
+- The AppHost's generated passwords (`inventory-app-password`, `seed-password`) set `Min*` on `GenerateParameterDefault`: Identity's policy and SQL `CHECK_POLICY` reject a value that misses a character class, and Aspire persists it.
+- `deploy/` is `aspire publish` output of `src/AppHost/AppHost.cs` (S13): a change to the AppHost's resources, parameters, ports or Aspire version re-runs the publish in the same PR. Compose takes passwords from `deploy/.env`, not `GenerateParameterDefault`, so the README's password rules apply there.
+- `deploy/azure/main.bicep` is hand-written (S14): it mirrors the API's run-mode args (`migrate`, `seed`), env keys (`ConnectionStrings__inventory`, `InventoryApp__Password`, `Seed__Password`), port 8080 and the nginx upstream `http://api`. Changing any of them, or `web/nginx.conf.template`, updates the Bicep in the same PR, and only the `migrate` job gets the SQL admin connection string.

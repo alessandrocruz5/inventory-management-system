@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-04-s1-skeleton]]"
 id: 06
 unit: IMS-2
-status: todo
+status: done
 model: haiku
 effort: low
 depends_on: [05]

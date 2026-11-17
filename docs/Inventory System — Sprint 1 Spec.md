@@ -182,6 +182,7 @@ inventory/
     Architecture.Tests/
     e2e/                      Playwright
   deploy/                     `aspire publish` output (stretch)
+  deploy/azure/               Bicep + deploy.sh (S14, stretch)
   CLAUDE.md  TASKS.md  CHANGELOG.md  Directory.Build.props  .editorconfig  .github/workflows/ci.yml
 ```
 
@@ -304,14 +305,14 @@ Every stock change is a document posted in one transaction. A posted document is
 
 **Posting steps** (inside `PostingEngine`, wrapped in EF's execution strategy so deadlock error 1205 retries up to 3 times)
 
-1. Validate the request: 1–100 lines; each item at most once per document; quantity > 0 and unit cost ≥ 0, each with at most 4 decimals and at most 999,999,999.9999; a transfer's from and to locations differ; items and locations exist, are active and have the right kind. Ids from another tenant behave exactly like ids that don't exist.
-2. Idempotency fast path: look up `(TenantId, IdempotencyKey)`. Same `RequestHash` → return the stored document with `200` and header `Idempotent-Replayed: true`. Different hash → `409 idempotency-key-reused`. The hash is SHA-256 over the HTTP method, the route and the validated request re-serialized canonically: fixed property order, decimals without trailing zeros, absent and null treated alike. Only a successful post consumes a key.
+1. Validate the request: 1–100 lines; each item at most once per document; quantity > 0 and unit cost ≥ 0, each with at most 4 decimals and at most 999,999,999.9999; a transfer's from and to locations differ; items and locations exist, are active and have the right kind. Ids from another tenant behave exactly like ids that don't exist. A line whose Round4(quantity × unitCost) exceeds 999,999,999,999,999.9999 (the decimal(19,4) maximum) fails on `lines[i].unitCost`. The checks that items and locations exist and are active run after step 2, so a replay of a successful post returns the original even if master data has changed since.
+2. Idempotency fast path: look up `(TenantId, IdempotencyKey)`. Same `RequestHash` → return the stored document with `200` and header `Idempotent-Replayed: true`. Different hash → `409 idempotency-key-reused`. The hash is SHA-256 over the HTTP method, the route and the validated request re-serialized canonically: fixed property order, decimals without trailing zeros, absent and null treated alike. Only a successful post consumes a key. The hash covers the validated request, so the lookup runs right after the pure checks of step 1.
 3. Begin the transaction (READ COMMITTED with snapshot reads on). Take the tenant's ledger lock: `sp_getapplock` on `ledger:<TenantId>` in `Shared` mode, owned by the transaction. Rebuild takes it in `Exclusive` mode.
 4. Insert the `StockDocuments` row, complete and final, because the trigger forbids a later UPDATE. This claims the key: a parallel duplicate blocks on the unique index until this transaction ends, then gets 2627/2601, rolls back and answers as a replay (step 2). If this transaction rolls back, the duplicate proceeds.
 5. Make sure every balance row the document touches exists: `INSERT … WHERE NOT EXISTS` in `(ItemId, LocationId)` order, copying `IsVirtual` and `AllowNegative` from `Locations`, and swallow unique-key errors 2627/2601 from a concurrent insert.
 6. Lock all touched balance rows in one statement, `WITH (UPDLOCK, ROWLOCK)`, seeking on the clustered key. The clustered key `(TenantId, ItemId, LocationId)`, not the `ORDER BY`, is what makes every transaction lock in the same order and keeps A→B and B→A transfers from deadlocking **\[Likely\]**. Add no index that changes this access path.
 7. Re-read the document's items and locations `WITH (READCOMMITTEDLOCK)`. Reject inactive ones (`422 inactive-item` / `inactive-location`), and take each balance's `IsVirtual` and `AllowNegative` from this read, not from the row. A reversal runs its checks here (below).
-8. Compute each line's cost, any revaluation and the new balances in C# with `PostingRules` and `CostingPolicy` (pure functions). Reject with `422 insufficient-stock` if a physical balance would go below zero at a location whose toggle is off.
+8. Compute each line's cost, any revaluation and the new balances in C# with `PostingRules` and `CostingPolicy` (pure functions). Reject with `422 insufficient-stock` if a physical balance would go below zero at a location whose toggle is off. Reject with 400 validation on `lines[i].quantity` if any new OnHand or StockValue would fall outside decimal(19,4).
 9. Take movement ids from `inventory.MovementIds`. Insert movements with their final `TotalCost`. Update balances, setting `AllowNegative` (from step 7), `LastMovementId` and `LastUnitCost`.
 10. Commit.
 
@@ -583,6 +584,7 @@ Successful posts return `201 Created` with the full document, its movements with
 | `idempotency-key-reused` | 409 | `originalDocumentId` |
 | `reversal-not-latest` | 409 | `itemId`, `locationId`, `blockingDocumentId` |
 | `already-reversed` | 409 | `reversalDocumentId` |
+| `cannot-reverse-reversal` | 422 | `reversesDocumentId` |
 | `concurrency-conflict` | 409 | — (after 3 retries, or a stale `version` on an edit) |
 | `insufficient-stock` | 422 | `itemId`, `locationId`, `available`, `requested` |
 | `inactive-item` / `inactive-location` | 422 | the id |
@@ -679,7 +681,7 @@ Seventeen slices, one pull request each, in this order. If the sprint runs long,
 | S11 Ledger health | Health (INV-1 to INV-5) and rebuild (exclusive ledger lock) endpoints, admin screen | T9 · code-guardian review | Should |
 | S12 End to end | Playwright suite, CI `e2e` job (added to `main`'s required checks), banned-package check | T14 | Should |
 | S13 Compose output | `aspire publish` to Docker Compose, committed under `deploy/`, verified running without Aspire | Manual smoke test | Stretch |
-| S14 Azure | Container Apps (scale to zero) + Azure SQL free offer + Static Web Apps | Manual smoke test | Stretch |
+| S14 Azure | Container Apps (scale to zero) for `api` (internal) and `web` (S13's nginx image, one origin) + Azure SQL free offer, from hand-written Bicep in `deploy/azure/`. Static Web Apps was dropped: linking a backend needs its Standard plan | Manual smoke test | Stretch |
 
 Tag `v0.1.0` when the sprint closes: section 13 is met, minus anything this section lets slip to sprint 2. Each slice is one Jira story in project IMS (epic IMS-1; S1–S14 are IMS-2 to IMS-18).
 
@@ -727,3 +729,5 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 
 - 2026-10-30: written.
 - 2026-11-04: audited ([[Inventory System — Sprint 1 Spec.audit]]), 18 fixes applied (3 BLOCK, 15 FIX). Three NOTE items folded in where the fixes needed them (lock order, `IX_Balances_Location`, foreign ids in bodies); the rest stay open in the audit. Status: audited.
+- 2026-11-09: S5c plan amended §6 steps 1, 2 and 8 (overflow guards; replay before the database checks of step 1).
+- 2026-11-17: S14 plan ([[2026-11-17-s14-azure]]) replaced Static Web Apps with nginx on Container Apps and added Data Protection keys in the database.

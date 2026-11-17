@@ -1,0 +1,26 @@
+.login-page {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 48px 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 8px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+}
+
+.login-error {
+  margin: 0;
+  color: var(--mat-sys-error);
+}

@@ -1,0 +1,47 @@
+<h1>Items</h1>
+
+<div class="filters">
+  <mat-form-field class="search">
+    <mat-label>Search SKU or name</mat-label>
+    <input matInput type="search" [formControl]="search" />
+  </mat-form-field>
+  <mat-slide-toggle [checked]="showInactive()" (change)="onShowInactive($event.checked)">
+    Show inactive
+  </mat-slide-toggle>
+  @if (auth.isAdmin()) {
+    <span class="spacer"></span>
+    <div class="actions">
+      <button mat-flat-button type="button" (click)="openDialog(null)">New item</button>
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="!selected()"
+        (click)="openDialog(selected())"
+      >
+        Edit
+      </button>
+      <button mat-stroked-button type="button" [disabled]="!canDeactivate()" (click)="deactivate()">
+        Deactivate
+      </button>
+    </div>
+  }
+</div>
+
+<ag-grid-angular
+  class="grid"
+  [theme]="theme"
+  [columnDefs]="columnDefs"
+  [rowData]="rows()"
+  [loading]="loading()"
+  [rowSelection]="rowSelection"
+  [pagination]="false"
+  (selectionChanged)="onSelectionChanged($event)"
+/>
+
+<mat-paginator
+  [length]="total()"
+  [pageIndex]="pageIndex()"
+  [pageSize]="pageSize()"
+  [pageSizeOptions]="pageSizeOptions"
+  (page)="onPage($event)"
+/>

@@ -1,0 +1,90 @@
+using Inventory.Contracts;
+using Inventory.Features.Documents;
+using Inventory.Features.Documents.GetDocument;
+using Inventory.Features.Documents.ListDocuments;
+using Inventory.Features.Items;
+using Inventory.Features.Items.CreateItem;
+using Inventory.Features.Items.DeactivateItem;
+using Inventory.Features.Items.GetItem;
+using Inventory.Features.Items.ListItemMovements;
+using Inventory.Features.Items.ListItems;
+using Inventory.Features.Items.UpdateItem;
+using Inventory.Features.Ledger;
+using Inventory.Features.Ledger.GetLedgerHealth;
+using Inventory.Features.Ledger.RebuildLedger;
+using Inventory.Features.Locations;
+using Inventory.Features.Locations.CreateLocation;
+using Inventory.Features.Locations.DeactivateLocation;
+using Inventory.Features.Locations.ListLocations;
+using Inventory.Features.Locations.UpdateLocation;
+using Inventory.Features.Posting;
+using Inventory.Features.Posting.PostAdjustment;
+using Inventory.Features.Posting.PostIssue;
+using Inventory.Features.Posting.PostReceipt;
+using Inventory.Features.Posting.PostTransfer;
+using Inventory.Features.Reversals.ReverseDocument;
+using Inventory.Features.Stock;
+using Inventory.Features.Stock.ListStock;
+using Inventory.Persistence;
+using Inventory.Seeding;
+
+using Kernel.Hosting;
+
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+namespace Inventory;
+
+public static class InventoryModuleExtensions
+{
+    public static IHostApplicationBuilder AddInventoryModule(this IHostApplicationBuilder builder)
+    {
+        // AddDbContext, never the pooled AddSqlServerDbContext: a pooled context keeps the first request's tenant (spec §8).
+        builder.Services.AddDbContext<InventoryDbContext>(o => o.UseSqlServer(
+            builder.Configuration.GetConnectionString("inventory"),
+            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "inventory").EnableRetryOnFailure(maxRetryCount: 3))
+            .AddInterceptors(TenantSessionInterceptor.Instance, TenantSaveChangesInterceptor.Instance));
+        // Spec §6: a deadlock (1205) retries up to 3 times. Aspire's own strategy (6 retries) must be off for this one to apply.
+        builder.EnrichSqlServerDbContext<InventoryDbContext>(settings => settings.DisableRetry = true);
+        builder.Services.AddScoped<IModuleMigrator, InventoryMigrator>();
+        builder.Services.AddScoped<IInventoryModule, InventoryModule>();
+        builder.Services.AddScoped<PostingEngine>();
+        builder.Services.AddScoped<IDataSeeder, InventorySeeder>();
+        builder.Services.AddScoped<ListItemsHandler>();
+        builder.Services.AddScoped<GetItemHandler>();
+        builder.Services.AddScoped<ListItemMovementsHandler>();
+        builder.Services.AddScoped<CreateItemHandler>();
+        builder.Services.AddScoped<UpdateItemHandler>();
+        builder.Services.AddScoped<DeactivateItemHandler>();
+        builder.Services.AddScoped<ListLocationsHandler>();
+        builder.Services.AddScoped<CreateLocationHandler>();
+        builder.Services.AddScoped<UpdateLocationHandler>();
+        builder.Services.AddScoped<DeactivateLocationHandler>();
+        builder.Services.AddScoped<DocumentPoster>();
+        builder.Services.AddScoped<PostReceiptHandler>();
+        builder.Services.AddScoped<PostIssueHandler>();
+        builder.Services.AddScoped<PostTransferHandler>();
+        builder.Services.AddScoped<PostAdjustmentHandler>();
+        builder.Services.AddScoped<ReverseDocumentHandler>();
+        builder.Services.AddScoped<ListStockHandler>();
+        builder.Services.AddScoped<ListDocumentsHandler>();
+        builder.Services.AddScoped<GetDocumentHandler>();
+        builder.Services.AddScoped<GetLedgerHealthHandler>();
+        builder.Services.AddScoped<RebuildLedgerHandler>();
+        return builder;
+    }
+
+    public static IEndpointRouteBuilder MapInventoryEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapItemEndpoints();
+        endpoints.MapLocationEndpoints();
+        endpoints.MapDocumentEndpoints();
+        endpoints.MapStockEndpoints();
+        endpoints.MapDocumentQueryEndpoints();
+        endpoints.MapLedgerEndpoints();
+        return endpoints;
+    }
+}
