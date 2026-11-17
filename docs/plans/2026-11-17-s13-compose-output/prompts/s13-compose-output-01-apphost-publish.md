@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-17-s13-compose-output]]"
 id: 01
 unit: IMS-17
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: []

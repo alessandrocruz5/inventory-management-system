@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -91,14 +91,15 @@ Three choices, each settled by the user on 2026-11-17.
 
 ## Decisions
 - **D1** Add `Aspire.Hosting.Docker` 13.6.5 to `src/AppHost/AppHost.csproj`, and pin the `aspire.cli` 13.6.5 tool in `.config/dotnet-tools.json`. CLAUDE.md's allowed list records both in this PR, so reviewers don't flag them under the "no package outside the allowed list" constraint. User-approved 2026-11-17 (CLAUDE.md, "Ask before you add any NuGet … package").
-- **D2** Serve `web` in compose through `PublishAsStaticWebsite("/api", api, o => { o.OutputPath = "dist/web/browser"; o.StripPrefix = false; })`. `StripPrefix = false` because every API route lives under `/api` (`Program.cs:56`). User-approved.
+- **D2 (superseded 2026-11-17, see D10)** Serve `web` in compose through `PublishAsStaticWebsite("/api", api, o => { o.OutputPath = "dist/web/browser"; o.StripPrefix = false; })`. `StripPrefix = false` because every API route lives under `/api` (`Program.cs:56`). User-approved.
+- **D10** Replaces D2. The Aspire-generated YARP image has no SPA fallback (`GET /stock` was 404), so `web` is built from a hand-written `web/Dockerfile` (node build, then `nginx:1.28-alpine` with `web/nginx.conf.template`: `try_files $uri /index.html`, `/api/` proxied to `services__api__http__0`, listening on `PORT`). The AppHost calls `.WithExternalHttpEndpoints()` and `.PublishAsDockerFile(c => c.WithEntrypoint("/docker-entrypoint.sh").WithArgs("nginx", "-g", "daemon off;"))`: Aspire's validator demands an explicit entrypoint, and compose resets the image's CMD once an entrypoint is set. User-approved 2026-11-17 (option 1: nginx).
 - **D3** Verify with a manual smoke test and the existing Playwright suite against the compose stack. Neither CI nor the e2e suite changes. User-approved.
 - **D4** The model moves from the provisional `haiku` to `sonnet` for both prompts. The work drives an unverified publish toolchain and Docker, and has documented contingencies to judge; a failed `haiku` run would cost more. TASKS.md says models are provisional until planning.
 - **D5** Add `web/.nvmrc` (`26`), so the Dockerfile that `AddJavaScriptApp` generates uses the same Node major as CI (`ci.yml` `node-version: '26'`) and the README. Without it, the generator falls back to its own default.
 - **D6** `deploy/.env` holds secrets and stays ignored through the existing `.env` rule. `deploy/.env.example` is the committed template.
 - **D7** One unit, IMS-17, with no high-stakes path. CLAUDE.md doesn't require a code-guardian review for S13.
 - **D8** `deploy/` is generated. A later change to the AppHost's resources, parameters or ports must re-run the publish in the same PR. This is recorded under CLAUDE.md `## Hidden coupling`.
-- **D9** Audit mitigation (Codex audit, 2026-11-17): the end-to-end block uses concrete commands. The publish runs as `dotnet aspire publish --project src/AppHost/AppHost.csproj --output-path deploy`, the documented Aspire 13 options. The seed password is read from `SEED_PASSWORD` in `deploy/.env` (Compose's name for the `seed-password` parameter) without echoing it. If `--help` or the generated `.env` shows different names, prompt 02 reports them, and the plan block and README use those names.
+- **D9** Audit mitigation (Codex audit, 2026-11-17): the end-to-end block uses concrete commands. The publish runs as `dotnet aspire publish --apphost src/AppHost/AppHost.csproj --output-path deploy`, the documented Aspire 13 options. The seed password is read from `SEED_PASSWORD` in `deploy/.env` (Compose's name for the `seed-password` parameter) without echoing it. If `--help` or the generated `.env` shows different names, prompt 02 reports them, and the plan block and README use those names.
 
 **Assumptions:**
 - The compose environment keeps its default Aspire dashboard container, so OpenTelemetry is visible without `dotnet run`. It is harmless for a local stack, and turning it off later is one call.
@@ -127,6 +128,7 @@ Three choices, each settled by the user on 2026-11-17.
 | `deploy/docker-compose.yaml` | C | `aspire publish` output, committed | R1, R2, R4 | 02 |
 | `deploy/.env.example` | C | Every key from the generated `.env`, with secret values blank and the password rules as comments | R2 | 02 |
 | `README.md` | M | New `## Docker Compose` section | R5, R7 | 02 |
+| `web/Dockerfile`, `web/nginx.conf.template`, `web/.dockerignore` | C | D10: nginx image with SPA fallback and `/api` proxy | R3 | 02 |
 
 Any other file `aspire publish` writes into `deploy/` is committed too (prompt 02 lists it), except `deploy/.env`.
 
@@ -167,7 +169,7 @@ Any other file `aspire publish` writes into `deploy/` is committed too (prompt 0
 | # | Title | Unit | Model | Effort | Depends | Group | Files |
 |---|---|---|---|---|---|---|---|
 | 01 | Compose environment, static web publish, CLI tool | IMS-17 | sonnet | medium | — | A | `src/AppHost/AppHost.csproj`, `src/AppHost/AppHost.cs`, `.config/dotnet-tools.json`, `web/.nvmrc`, `CLAUDE.md` |
-| 02 | Publish to `deploy/`, smoke test, README | IMS-17 | sonnet | high | 01 | B | `deploy/docker-compose.yaml`, `deploy/.env.example`, `README.md` (+ contingency edits to `src/AppHost/AppHost.cs`) |
+| 02 | Publish to `deploy/`, smoke test, README | IMS-17 | sonnet | high | 01 | B | `deploy/docker-compose.yaml`, `deploy/.env.example`, `README.md`, `web/Dockerfile`, `web/nginx.conf.template`, `web/.dockerignore`, `src/AppHost/AppHost.cs` (D10) |
 
 No `opus` prompts: neither prompt touches a high-stakes path or shared code.
 
@@ -183,7 +185,9 @@ bash .github/scripts/check-banned-packages.sh
 
 # R1/R2: reproducible publish, no secrets tracked
 dotnet tool restore
-dotnet aspire publish --project src/AppHost/AppHost.csproj --output-path deploy   # prompt 02 step 1 confirms these options against --help
+dotnet aspire publish --apphost src/AppHost/AppHost.csproj --output-path deploy
+dotnet aspire do build --apphost src/AppHost/AppHost.csproj --output-path deploy   # builds the images
+docker tag "$(docker image ls web -q | head -1)" web:latest
 git diff --exit-code -- deploy/          # a second publish changes nothing
 git check-ignore -q deploy/.env          # .env stays ignored
 git status --porcelain deploy/           # no deploy/.env listed
@@ -214,3 +218,13 @@ Revert the PR. No schema, data or API contract changes. Locally, `cd deploy && d
 ## Log
 - 2026-11-17: planned. Re-plans the legacy line IMS-17 (`spec: §12 S13`). The user chose D1 (package + local tool), D2 (YARP static site) and D3 (local e2e against compose).
 - 2026-11-17: applied Codex audit (1 applied, 0 disputed): concrete publish and seed-password commands in the end-to-end block and prompt 02. The older section was superseded (1 applied, 1 disputed: the replay path, withdrawn by Codex). Status `audited`. The ticket step rewrote the TASKS.md IMS-17 line.
+- 2026-11-17: build started on IMS-17; rollback point a70c7cef2f9403f3ba8444996b9a998f0f8f9e09.
+- 2026-11-17: 01 done (sonnet, 0 retries): added NoWarn ASPIREJAVASCRIPT001; `.config/dotnet-tools.json` already existed (dotnet-ef), so aspire.cli was added to it; installed Playwright chromium locally; build, format, 580 tests, web lint/build/test, banned-packages and run-mode e2e (4/4) green.
+- 2026-11-17: 02 BLOCKED at step 7 (sonnet): publish, image build and `compose up` work (migrate/seed exit 0, `/` 200, `/api/auth/me` 401, web on 4200 after adding `.WithExternalHttpEndpoints()` to `web` in AppHost.cs). `GET /stock` returns 404: the Aspire-generated YARP image (`PublishAsStaticWebsite`, D2) has no SPA fallback and no option to enable one. Prompt 02 stays `todo`. Findings for the plan: the CLI option is `--apphost` (not `--project`); images are built with `dotnet aspire do build --apphost … --output-path deploy` and tagged `api|migrate|seed:latest` and `web:<content hash>` (tag it `web:latest`); `publish` also writes `deploy/web.Dockerfile` and `deploy/.env` with empty image/port values (`API_PORT=8080`).
+- 2026-11-17: D10 applied: user chose nginx (option 1). 02 done (sonnet, 1 retry after the YARP blocker): web/Dockerfile + nginx template; `.WithExternalHttpEndpoints()`; `.PublishAsDockerFile(...)` with explicit entrypoint and args. Evidence: migrate/seed exit 0; `/` 200; `/stock`, `/admin/ledger`, `/documents/x` serve the shell; `/api/auth/me` 401; Playwright against compose 4/4; down/up replay clean; second publish diff-free; run-mode Playwright 4/4; secret check clean. Volume `deploy_apphost-feed4158f1-sql-data`; web publishes 4200->4200.
+- 2026-11-17: IMS-17 merged (PR #17); plan done.
+
+## Outcome
+**Shipped:** `deploy/` compose output, `web/Dockerfile` + nginx, `Aspire.Hosting.Docker` and `aspire.cli` 13.6.5, README section, CLAUDE.md updates. Smoke test and Playwright (compose and run mode) passed; CI green.
+**Deviations:** D2 (YARP static site) was replaced by nginx (D10) because the generated image has no SPA fallback. The CLI option is `--apphost`; images need a separate `dotnet aspire do build`; `web`'s tag is a content hash, so it is retagged `web:latest`.
+**Gotchas:** `PublishAsDockerFile` needs an explicit entrypoint, and compose then resets CMD, so args are restated. Publish does not overwrite an existing `deploy/.env`. The old generated `deploy/web.Dockerfile` is no longer produced.

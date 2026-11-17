@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-17-s13-compose-output]]"
 id: 02
 unit: IMS-17
-status: todo
+status: done
 model: sonnet
 effort: high
 depends_on: [01]
@@ -14,6 +14,9 @@ files:
     - deploy/.env.example
   modify:
     - README.md
+    - web/Dockerfile   # D10
+    - web/nginx.conf.template   # D10
+    - web/.dockerignore   # D10
     - src/AppHost/AppHost.cs   # contingency edits only, listed below
   delete: []
 ---
