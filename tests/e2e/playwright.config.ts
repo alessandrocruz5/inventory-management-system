@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const password = process.env['E2E_PASSWORD'];
+// With E2E_BASE_URL set, the suite runs against an already deployed stack (S14); CI never sets it.
+const baseURL = process.env['E2E_BASE_URL'];
 
 export default defineConfig({
   testDir: './specs',
@@ -12,12 +14,12 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: process.env['CI'] ? [['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
-    baseURL: 'http://localhost:4200',
+    baseURL: baseURL ?? 'http://localhost:4200',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
+  webServer: baseURL ? undefined : {
     // The same graph as `dotnet run --project src/AppHost`: sql → migrate → seed → api → web (:4200).
     command: 'dotnet run --project ../../src/AppHost --launch-profile http',
     url: 'http://localhost:4200/api/auth/me', // a 401 counts as ready: proxy and api are both up

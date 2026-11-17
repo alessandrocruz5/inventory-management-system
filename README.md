@@ -20,6 +20,8 @@ cd tests/e2e && npm ci && npx playwright install chromium && npx playwright test
 
 The suite reuses a running AppHost, or starts one (`--launch-profile http`).
 
+Set `E2E_BASE_URL` to run the suite against an already running stack (compose or Azure) without starting the AppHost.
+
 **Side effects on a reused database:** every run adds `E2E-…` locations holding `CANDLE-WHT` stock and rebuilds the ledger on the demo tenant. Nothing can be hard-deleted.
 
 **Coupling:** renaming the AppHost's `seed-password` parameter, the `web` port 4200, the seeded user emails, or a UI label the specs use will break the suite.
@@ -54,3 +56,54 @@ cd tests/e2e && npx playwright test
 **Stop:** `docker compose down`; add `-v` to drop the database volume.
 
 **Sessions:** Data Protection keys live in `platform.DataProtectionKeys`, so a sign-in survives recreating the `api` container.
+
+## Azure
+`deploy/azure/main.bicep` is hand-written (not `aspire publish` output) and describes what runs where (S14). `web` is the S13 nginx image on a Container App with HTTPS and scale to zero; it proxies `/api` to `api`, an internal-only Container App that also scales to zero. `migrate` (SQL admin) and `seed` (`inventory_app`) run as Container Apps Jobs, in that order, started by `deploy.sh`. Azure SQL uses the free offer and auto-pauses when its free monthly limit runs out.
+
+**Why not Static Web Apps:** linking a Container App as its backend needs the Standard plan (about US$9/month), and the auth cookie needs a single origin.
+
+**Prerequisites:**
+- The az CLI with Bicep, signed in with `az login`; Docker; and the .NET SDK, on an **x64** host.
+- A subscription whose free Azure SQL database is still unused.
+- `docker login ghcr.io`, for example `gh auth refresh -s write:packages` then `gh auth token | docker login ghcr.io -u <user> --password-stdin`.
+- After the first push, make the `inventory-api` and `inventory-web` packages **public** in GitHub's package settings.
+
+**Configure:** `cp deploy/azure/.env.example deploy/azure/.env`, then fill it. The file holds each rule and a command that generates a compliant value, and it is git-ignored.
+
+**Deploy:**
+
+```bash
+deploy/azure/deploy.sh               # builds and pushes the images, deploys, runs migrate then seed
+deploy/azure/deploy.sh --skip-build  # reuse images already pushed
+```
+
+It prints `WEB_URL`. A rerun is safe: `seed` is a replay.
+
+**Verify:**
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' "$WEB_URL/api/auth/me"   # 401 when signed out
+E2E_BASE_URL="$WEB_URL" E2E_PASSWORD=<SEED_PASSWORD> npx playwright test   # from tests/e2e
+```
+
+The suite posts stock to, and rebuilds the ledger of, the demo tenant.
+
+**Cold starts:** the first request after about 15 minutes idle can take up to a minute, while the `api` starts and the database resumes.
+
+**Cost:**
+
+| Service | Free allowance |
+| --- | --- |
+| Container Apps | Monthly free grant; scale to zero, max 1 replica |
+| Azure SQL free offer | 100,000 vCore-seconds and 32 GB per month; AutoPause when used up |
+| Log Analytics | 1 GB/day cap, 30-day retention |
+| GHCR | Free for public packages |
+
+Expect about US$0 at demo traffic. Set an Azure budget alert anyway.
+
+**Teardown:** `az group delete -n "$AZ_RESOURCE_GROUP" --yes`.
+
+**Limits:**
+- Demo data only. The SQL firewall allows Azure services (no private endpoint), and Data Protection keys sit unencrypted in the database.
+- A redeploy briefly runs the new `api` before `migrate`.
+- The region is `southeastasia`; real tenant data needs a Data Privacy Act (RA 10173) review first.

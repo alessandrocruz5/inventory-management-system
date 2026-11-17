@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-17-s14-azure]]"
 id: 03
 unit: IMS-18
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: []
