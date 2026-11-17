@@ -120,6 +120,7 @@ export class Stock {
     {
       field: 'locationCode',
       headerName: 'Location',
+      flex: 1,
       minWidth: 110,
       cellClass: 'mono secondary',
       cellStyle: { fontSize: '13px' },
@@ -127,6 +128,7 @@ export class Stock {
     {
       colId: 'status',
       headerName: 'Status',
+      flex: 1,
       minWidth: 140,
       sortable: false,
       valueGetter: (params) => (params.data ? stockStatus(params.data.onHand) : undefined),
@@ -135,16 +137,20 @@ export class Stock {
     {
       field: 'onHand',
       headerName: 'Qty',
+      flex: 1,
+      minWidth: 90,
       type: 'rightAligned',
       cellClass: 'cell-strong',
       cellClassRules: NEGATIVE_CELL,
       valueFormatter: (params) =>
         params.value === undefined || params.value === null ? '' : formatQuantity(params.value),
     },
-    { field: 'baseUnit', headerName: 'Unit', minWidth: 80, cellClass: 'muted' },
+    { field: 'baseUnit', headerName: 'Unit', flex: 1, minWidth: 80, cellClass: 'muted' },
     {
       field: 'averageCost',
       headerName: 'Avg cost',
+      flex: 1,
+      minWidth: 110,
       type: 'rightAligned',
       cellClass: 'secondary',
       valueFormatter: (params) =>
@@ -153,6 +159,8 @@ export class Stock {
     {
       field: 'stockValue',
       headerName: 'Value',
+      flex: 1,
+      minWidth: 120,
       type: 'rightAligned',
       cellClassRules: NEGATIVE_CELL,
       valueFormatter: (params) =>

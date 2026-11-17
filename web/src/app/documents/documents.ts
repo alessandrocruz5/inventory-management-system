@@ -116,6 +116,7 @@ export class Documents {
     {
       colId: 'posted',
       headerName: 'Posted',
+      flex: 1,
       minWidth: 170,
       cellClass: 'secondary tabular',
       valueGetter: (params) => (params.data ? formatManilaDateTime(params.data.postedAt) : ''),
@@ -123,6 +124,7 @@ export class Documents {
     {
       colId: 'type',
       headerName: 'Type',
+      flex: 1,
       minWidth: 150,
       valueGetter: (params) => (params.data ? documentTypeLabel(params.data.type) : ''),
       cellRenderer: DocumentTypeCell,
@@ -130,6 +132,8 @@ export class Documents {
     {
       field: 'reference',
       headerName: 'Reference',
+      flex: 1,
+      minWidth: 120,
       cellClass: 'mono',
       cellStyle: { fontSize: '13px' },
       valueFormatter: (params) => params.value || '—',
@@ -137,18 +141,23 @@ export class Documents {
     {
       colId: 'reason',
       headerName: 'Reason',
+      flex: 1,
+      minWidth: 120,
       valueGetter: (params) =>
         params.data?.reasonCode ? reasonLabel(params.data.reasonCode) : '—',
     },
-    { field: 'lineCount', headerName: 'Lines', type: 'rightAligned' },
+    { field: 'lineCount', headerName: 'Lines', flex: 1, minWidth: 80, type: 'rightAligned' },
     {
       colId: 'postedBy',
       headerName: 'Posted by',
+      flex: 1,
+      minWidth: 120,
       valueGetter: (params) => (params.data ? this.postedBy(params.data) : ''),
     },
     {
       colId: 'status',
       headerName: 'Status',
+      flex: 1,
       minWidth: 150,
       sortable: false,
       valueGetter: (params) => (params.data ? documentStatus(params.data) : undefined),
