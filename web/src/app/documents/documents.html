@@ -1,44 +1,117 @@
-<h1>Documents</h1>
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Documents</h1>
+    <p class="page-subtitle">
+      Every posting, newest first. Open one to see its lines or reverse it.
+    </p>
+  </div>
+</header>
 
-<div class="filters">
-  <mat-form-field class="filter">
-    <mat-label>Type</mat-label>
-    <mat-select [value]="type()" (selectionChange)="onType($event.value)">
-      <mat-option [value]="null">All types</mat-option>
-      @for (t of types; track t) {
-        <mat-option [value]="t">{{ typeLabel(t) }}</mat-option>
+<div class="card">
+  <div class="filter-bar filter-grid">
+    <div class="field">
+      <!-- eslint-disable-next-line @angular-eslint/template/label-has-associated-control -->
+      <label class="field-label" id="documents-type-label">Type</label>
+      <mat-form-field>
+        <mat-select
+          aria-labelledby="documents-type-label"
+          [value]="type()"
+          (selectionChange)="onType($event.value)"
+        >
+          <mat-option [value]="null">All types</mat-option>
+          @for (t of types; track t) {
+            <mat-option [value]="t">{{ typeLabel(t) }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+    <div class="field">
+      <label class="field-label" for="documents-from">From</label>
+      <mat-form-field>
+        <input
+          matInput
+          type="date"
+          id="documents-from"
+          [value]="from() ?? ''"
+          (change)="onFrom($any($event.target).value)"
+        />
+      </mat-form-field>
+    </div>
+    <div class="field">
+      <label class="field-label" for="documents-to">To</label>
+      <mat-form-field>
+        <input
+          matInput
+          type="date"
+          id="documents-to"
+          [value]="to() ?? ''"
+          (change)="onTo($any($event.target).value)"
+        />
+      </mat-form-field>
+    </div>
+  </div>
+
+  @if (isNarrow()) {
+    @if (loading() && rows().length === 0) {
+      @for (n of skeletonRows; track n) {
+        <div class="skeleton-row">
+          <span class="skeleton w-60"></span>
+          <span class="skeleton w-35"></span>
+        </div>
       }
-    </mat-select>
-  </mat-form-field>
-  <mat-form-field class="filter">
-    <mat-label>From</mat-label>
-    <input
-      matInput
-      type="date"
-      [value]="from() ?? ''"
-      (change)="onFrom($any($event.target).value)"
+    } @else if (rows().length === 0) {
+      <p class="empty-state">No documents to show.</p>
+    } @else {
+      <ul class="stacked-list">
+        @for (d of rows(); track d.id) {
+          <li>
+            <a class="stacked-row" [routerLink]="['/documents', d.id]">
+              <span class="row-tile" aria-hidden="true">
+                <mat-icon>{{ typeIcon(d.type) }}</mat-icon>
+              </span>
+              <span class="row-body">
+                <span class="row-head">
+                  <span class="strong">{{ typeLabel(d.type) }}</span>
+                  <app-status-pill
+                    [tone]="documentStatus(d).tone"
+                    [label]="documentStatus(d).label"
+                  />
+                </span>
+                <span class="row-meta">
+                  @if (d.reference) {
+                    <span class="mono">{{ d.reference }}</span> ·
+                  }
+                  {{ d.lineCount }} {{ d.lineCount === 1 ? 'line' : 'lines' }}
+                </span>
+                <span class="row-foot muted"
+                  >{{ formatPostedAt(d.postedAt) }} · {{ postedBy(d) }}</span
+                >
+              </span>
+            </a>
+          </li>
+        }
+      </ul>
+    }
+  } @else {
+    <ag-grid-angular
+      [theme]="theme"
+      [columnDefs]="columnDefs"
+      [rowData]="rows()"
+      [loading]="loading()"
+      [pagination]="false"
+      domLayout="autoHeight"
+      [rowClass]="'clickable'"
+      (rowClicked)="onRowClicked($event.data)"
     />
-  </mat-form-field>
-  <mat-form-field class="filter">
-    <mat-label>To</mat-label>
-    <input matInput type="date" [value]="to() ?? ''" (change)="onTo($any($event.target).value)" />
-  </mat-form-field>
+  }
+
+  <div class="card__footer">
+    <mat-paginator
+      [length]="total()"
+      [pageIndex]="pageIndex()"
+      [pageSize]="pageSize()"
+      [pageSizeOptions]="pageSizeOptions"
+      (page)="onPage($event)"
+    />
+  </div>
 </div>
-
-<ag-grid-angular
-  class="grid"
-  [theme]="theme"
-  [columnDefs]="columnDefs"
-  [rowData]="rows()"
-  [loading]="loading()"
-  [pagination]="false"
-  (rowClicked)="onRowClicked($event.data)"
-/>
-
-<mat-paginator
-  [length]="total()"
-  [pageIndex]="pageIndex()"
-  [pageSize]="pageSize()"
-  [pageSizeOptions]="pageSizeOptions"
-  (page)="onPage($event)"
-/>

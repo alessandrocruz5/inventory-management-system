@@ -1,66 +1,101 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { AllCommunityModule, ColDef, ModuleRegistry, themeQuartz } from 'ag-grid-community';
-import { AgGridAngular } from 'ag-grid-angular';
+import { AllCommunityModule, ColDef, ICellRendererParams, ModuleRegistry } from 'ag-grid-community';
+import { AgGridAngular, ICellRendererAngularComp } from 'ag-grid-angular';
 import { AuthService } from '../core/auth/auth.service';
 import { problemMessage } from '../core/problems/problem-messages';
 import {
   DocumentType,
+  documentStatus,
   documentTypeLabel,
   formatManilaDateTime,
   manilaDayRange,
   postedByLabel,
   reasonLabel,
 } from '../shared/format';
+import { appGridTheme } from '../shared/grid-theme';
+import { injectIsNarrow } from '../shared/layout';
+import { StatusPill } from '../shared/status-pill';
+import { StatusPillCell } from '../shared/status-pill-cell';
 import { DocumentSummary, DocumentsService } from './documents.service';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const TYPES: readonly DocumentType[] = ['Receipt', 'Issue', 'Transfer', 'Adjustment', 'Reversal'];
 
+const TYPE_ICONS: Record<DocumentType, string> = {
+  Receipt: 'south_west',
+  Issue: 'north_east',
+  Transfer: 'swap_horiz',
+  Adjustment: 'tune',
+  Reversal: 'undo',
+};
+
+/** Type cell: a muted 18 px icon beside the type label. Label comes from the typed enum, not user input. */
 @Component({
-  selector: 'app-documents',
-  imports: [AgGridAngular, MatFormFieldModule, MatInputModule, MatPaginatorModule, MatSelectModule],
-  templateUrl: './documents.html',
+  selector: 'app-document-type-cell',
+  imports: [MatIconModule],
+  template: `
+    @if (type(); as t) {
+      <mat-icon class="type-icon" aria-hidden="true">{{ icon(t) }}</mat-icon>
+      <span class="type-label">{{ label(t) }}</span>
+    }
+  `,
   styles: `
     :host {
       display: flex;
-      flex-direction: column;
-      gap: 16px;
-      padding: 16px;
+      align-items: center;
+      gap: 8px;
+      height: 100%;
     }
-    h1 {
-      margin: 0;
-      font: var(--mat-sys-headline-medium);
+    .type-icon {
+      width: 18px;
+      height: 18px;
+      font-size: 18px;
+      color: var(--ims-muted);
     }
-    .filters {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 16px;
-    }
-    .filter {
-      flex: 1 1 200px;
-      max-width: 260px;
-    }
-    @media (max-width: 599px) {
-      .filters {
-        flex-direction: column;
-      }
-      .filter {
-        max-width: none;
-      }
-    }
-    .grid {
-      height: 480px;
-      width: 100%;
+    .type-label {
+      font-weight: 500;
     }
   `,
+})
+class DocumentTypeCell implements ICellRendererAngularComp {
+  protected readonly type = signal<DocumentType | null>(null);
+  protected readonly icon = (t: DocumentType) => TYPE_ICONS[t];
+  protected readonly label = documentTypeLabel;
+
+  agInit(params: ICellRendererParams<DocumentSummary>): void {
+    this.type.set(params.data?.type ?? null);
+  }
+
+  refresh(params: ICellRendererParams<DocumentSummary>): boolean {
+    this.type.set(params.data?.type ?? null);
+    return true;
+  }
+}
+
+@Component({
+  selector: 'app-documents',
+  imports: [
+    AgGridAngular,
+    MatFormFieldModule,
+    MatIconModule,
+    MatInputModule,
+    MatPaginatorModule,
+    MatSelectModule,
+    RouterLink,
+    StatusPill,
+  ],
+  host: { class: 'page' },
+  templateUrl: './documents.html',
+  styleUrl: './documents.scss',
 })
 export class Documents {
   private readonly documentsService = inject(DocumentsService);
@@ -68,39 +103,56 @@ export class Documents {
   private readonly router = inject(Router);
   private readonly snackBar = inject(MatSnackBar);
 
-  protected readonly theme = themeQuartz;
+  protected readonly theme = appGridTheme;
+  protected readonly isNarrow = injectIsNarrow();
   protected readonly types = TYPES;
   protected readonly typeLabel = documentTypeLabel;
+  protected readonly typeIcon = (t: DocumentType) => TYPE_ICONS[t];
+  protected readonly formatPostedAt = formatManilaDateTime;
+  protected readonly documentStatus = documentStatus;
+  protected readonly skeletonRows = [1, 2, 3, 4, 5];
 
   protected readonly columnDefs: ColDef<DocumentSummary>[] = [
     {
+      colId: 'posted',
       headerName: 'Posted',
       minWidth: 170,
+      cellClass: 'secondary tabular',
       valueGetter: (params) => (params.data ? formatManilaDateTime(params.data.postedAt) : ''),
     },
     {
+      colId: 'type',
       headerName: 'Type',
+      minWidth: 150,
       valueGetter: (params) => (params.data ? documentTypeLabel(params.data.type) : ''),
+      cellRenderer: DocumentTypeCell,
     },
     {
-      headerName: 'Reason',
-      valueGetter: (params) => (params.data?.reasonCode ? reasonLabel(params.data.reasonCode) : ''),
+      field: 'reference',
+      headerName: 'Reference',
+      cellClass: 'mono',
+      cellStyle: { fontSize: '13px' },
+      valueFormatter: (params) => params.value || '—',
     },
-    { field: 'reference', headerName: 'Reference' },
+    {
+      colId: 'reason',
+      headerName: 'Reason',
+      valueGetter: (params) =>
+        params.data?.reasonCode ? reasonLabel(params.data.reasonCode) : '—',
+    },
     { field: 'lineCount', headerName: 'Lines', type: 'rightAligned' },
     {
+      colId: 'postedBy',
       headerName: 'Posted by',
-      valueGetter: (params) =>
-        params.data ? postedByLabel(params.data.postedBy, this.auth.user()?.id) : '',
+      valueGetter: (params) => (params.data ? this.postedBy(params.data) : ''),
     },
     {
+      colId: 'status',
       headerName: 'Status',
-      valueGetter: (params) =>
-        params.data?.reversedByDocumentId
-          ? 'Reversed'
-          : params.data?.reversesDocumentId
-            ? 'Reverses another'
-            : '',
+      minWidth: 150,
+      sortable: false,
+      valueGetter: (params) => (params.data ? documentStatus(params.data) : undefined),
+      cellRenderer: StatusPillCell,
     },
   ];
 
@@ -117,6 +169,10 @@ export class Documents {
 
   constructor() {
     void this.load();
+  }
+
+  protected postedBy(doc: DocumentSummary): string {
+    return postedByLabel(doc.postedBy, this.auth.user()?.id);
   }
 
   protected onType(type: DocumentType | null): void {
