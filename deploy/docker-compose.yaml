@@ -1,0 +1,111 @@
+services:
+  compose-dashboard:
+    image: "mcr.microsoft.com/dotnet/nightly/aspire-dashboard:13.6"
+    ports:
+      - "18888"
+    expose:
+      - "18889"
+      - "18890"
+    networks:
+      - "aspire"
+    restart: "always"
+  sql:
+    image: "mcr.microsoft.com/mssql/server:2025-latest"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${SQL_PASSWORD}"
+    expose:
+      - "1433"
+    volumes:
+      - type: "volume"
+        target: "/var/opt/mssql"
+        source: "apphost-feed4158f1-sql-data"
+        read_only: false
+    networks:
+      - "aspire"
+  migrate:
+    image: "${MIGRATE_IMAGE}"
+    command:
+      - "migrate"
+    environment:
+      OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY: "in_memory"
+      ConnectionStrings__inventory: "Server=sql,1433;User ID=sa;Password=${SQL_PASSWORD};TrustServerCertificate=true;Initial Catalog=inventory"
+      INVENTORY_HOST: "sql"
+      INVENTORY_PORT: "1433"
+      INVENTORY_USERNAME: "sa"
+      INVENTORY_PASSWORD: "${SQL_PASSWORD}"
+      INVENTORY_URI: "mssql://sa:${SQL_PASSWORD}@sql:1433/inventory"
+      INVENTORY_JDBCCONNECTIONSTRING: "jdbc:sqlserver://sql:1433;databaseName=inventory;trustServerCertificate=true"
+      INVENTORY_DATABASENAME: "inventory"
+      InventoryApp__Password: "${INVENTORY_APP_PASSWORD}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://compose-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_SERVICE_NAME: "migrate"
+    depends_on:
+      sql:
+        condition: "service_started"
+    networks:
+      - "aspire"
+  seed:
+    image: "${SEED_IMAGE}"
+    command:
+      - "seed"
+    environment:
+      OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY: "in_memory"
+      ConnectionStrings__inventory: "Server=sql,1433;Database=inventory;User ID=inventory_app;Password=${INVENTORY_APP_PASSWORD};TrustServerCertificate=true"
+      Seed__Password: "${SEED_PASSWORD}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://compose-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_SERVICE_NAME: "seed"
+    depends_on:
+      migrate:
+        condition: "service_completed_successfully"
+    networks:
+      - "aspire"
+  api:
+    image: "${API_IMAGE}"
+    environment:
+      OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY: "in_memory"
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      HTTP_PORTS: "${API_PORT}"
+      ConnectionStrings__inventory: "Server=sql,1433;Database=inventory;User ID=inventory_app;Password=${INVENTORY_APP_PASSWORD};TrustServerCertificate=true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://compose-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_SERVICE_NAME: "api"
+    expose:
+      - "${API_PORT}"
+    depends_on:
+      seed:
+        condition: "service_completed_successfully"
+    networks:
+      - "aspire"
+  web:
+    image: "${WEB_IMAGE}"
+    command:
+      - "nginx"
+      - "-g"
+      - "daemon off;"
+    entrypoint:
+      - "/docker-entrypoint.sh"
+    environment:
+      NODE_ENV: "production"
+      PORT: "4200"
+      API_HTTP: "http://api:${API_PORT}"
+      services__api__http__0: "http://api:${API_PORT}"
+      API_HTTPS: "https://api:${API_PORT}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://compose-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_SERVICE_NAME: "web"
+    ports:
+      - "4200:4200"
+    depends_on:
+      api:
+        condition: "service_started"
+    networks:
+      - "aspire"
+networks:
+  aspire:
+    driver: "bridge"
+volumes:
+  apphost-feed4158f1-sql-data:
+    driver: "local"

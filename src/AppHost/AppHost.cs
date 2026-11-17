@@ -1,5 +1,8 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+// `aspire publish` target (S13): writes deploy/docker-compose.yaml. Ignored by `dotnet run`.
+builder.AddDockerComposeEnvironment("compose");
+
 var sql = builder.AddSqlServer("sql")
     .WithImageTag("2025-latest")
     .WithDataVolume();
@@ -36,6 +39,9 @@ var api = builder.AddProject<Projects.Api>("api")
 builder.AddJavaScriptApp("web", "../../web", "start")
     .WithHttpEndpoint(port: 4200, env: "PORT")
     .WithReference(api)
-    .WaitFor(api);
+    .WaitFor(api)
+    .WithExternalHttpEndpoints()
+    // Publish only: web/Dockerfile serves the production build with nginx and proxies /api, so the browser keeps one origin (spec §8).
+    .PublishAsDockerFile(c => c.WithEntrypoint("/docker-entrypoint.sh").WithArgs("nginx", "-g", "daemon off;")); // the nginx image's own entrypoint and CMD, restated because compose resets CMD when entrypoint is set
 
 builder.Build().Run();
