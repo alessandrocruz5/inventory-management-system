@@ -1,35 +1,246 @@
-.shell-toolbar {
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  height: auto;
-  min-height: 64px;
-  padding-block: 8px;
+:host {
+  display: block;
 }
 
-.app-name {
-  font-weight: 500;
-}
-
-.tenant {
-  color: var(--mat-sys-on-surface-variant);
-}
-
-.nav {
+.shell {
   display: flex;
-  flex-wrap: wrap;
+  min-height: 100vh;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  flex: 1;
   min-width: 0;
 }
 
-.spacer {
-  flex: 1 1 auto;
+.main-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(20px, 3.4vw, 40px) clamp(16px, 3.4vw, 40px) 48px;
 }
 
-.user {
-  font: var(--mat-sys-body-medium);
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 248px;
+  height: 100vh;
+  background: var(--ims-surface);
+  border-right: 1px solid var(--ims-border);
 }
 
-@media (max-width: 479.98px) {
-  .user {
-    display: none;
+.sidebar.drawer {
+  position: fixed;
+  left: 0;
+  z-index: 20;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  padding: 0;
+  border: 0;
+  background: rgba(28, 27, 25, 0.32);
+  cursor: default;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 20px 16px;
+}
+
+.brand-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--ims-ink);
+  color: #fff;
+}
+
+.brand-tile .mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.brand-text,
+.topbar-text,
+.user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.brand-name {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.brand-tenant,
+.user-role {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ims-muted);
+}
+
+.brand-tenant,
+.user-email {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nav {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 4px 12px 16px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-label {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ims-faint);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ims-secondary);
+  text-decoration: none;
+}
+
+.nav-item .mat-icon {
+  flex: none;
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+  color: #8a857f;
+}
+
+.nav-item:hover {
+  background: var(--ims-chip);
+  color: var(--ims-ink);
+}
+
+.nav-item.active {
+  background: var(--ims-active);
+  color: var(--ims-ink);
+  font-weight: 500;
+}
+
+.nav-item.active .mat-icon {
+  color: var(--ims-ink);
+}
+
+.user-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--ims-border);
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ims-active);
+  color: var(--ims-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.user-text {
+  flex: 1;
+}
+
+.user-email {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 8px 0 4px;
+  background: var(--ims-surface);
+  border-bottom: 1px solid var(--ims-border);
+}
+
+.topbar-text {
+  flex: 1;
+}
+
+.topbar .brand-name {
+  line-height: 18px;
+}
+
+.menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ims-ink);
+  cursor: pointer;
+}
+
+.menu-button .mat-icon {
+  font-size: 24px;
+  width: 24px;
+  height: 24px;
+}
+
+@media (max-width: 759.98px) {
+  .nav-item {
+    height: 44px;
   }
 }
