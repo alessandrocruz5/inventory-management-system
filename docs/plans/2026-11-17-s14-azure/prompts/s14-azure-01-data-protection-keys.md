@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-17-s14-azure]]"
 id: 01
 unit: IMS-20
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: []

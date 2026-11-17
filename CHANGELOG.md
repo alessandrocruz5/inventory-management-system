@@ -16,3 +16,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 - Tenancy: `Locations` is tenant-owned, with route guard (T5), catalog (T6), isolation (T11) and rollback tests, plus a T12 rule against bare `IgnoreQueryFilters()` (IMS-4).
 - Stock screens: `GET /stock` with totals, `GET /documents` and `GET /documents/{id}`, and Angular stock-on-hand, post-stock form, and documents list and detail screens (IMS-11).
 - Reversals: `POST /documents/{id}/reversal` (Admin, idempotent) with latest-only, already-reversed and cannot-reverse-reversal checks under the balance locks, `LastUnitCost` recomputed from the ledger, and a Reverse button on the document detail (IMS-13).
+- Platform: Data Protection keys persisted in `platform.DataProtectionKeys`, and a contained `inventory_app` user on Azure SQL with a guarded RCSI migration (IMS-20).
