@@ -70,6 +70,68 @@ public sealed class SetupTests(DatabaseFixture db)
         await using var connection = new SqlConnection(db.AdminConnectionString);
         await connection.OpenAsync(ct);
 
+        (await ReadStrings(connection, ct, "SELECT authentication_type_desc FROM sys.database_principals WHERE name = N'inventory_app'"))
+            .ShouldBe(["INSTANCE"]);
+        await ShouldHaveExactlyTheAppGrants(connection, ct);
+    }
+
+    [Fact]
+    public async Task Contained_database_gets_a_contained_inventory_app_user()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var name = "contained_" + Guid.NewGuid().ToString("N")[..8];
+        await using (var master = new SqlConnection(new SqlConnectionStringBuilder(db.AdminConnectionString) { InitialCatalog = "master" }.ConnectionString))
+        {
+            await master.OpenAsync(ct);
+            await using var create = new SqlCommand(
+                $"EXEC sp_configure 'contained database authentication', 1; RECONFIGURE; CREATE DATABASE [{name}]; ALTER DATABASE [{name}] SET CONTAINMENT = PARTIAL;",
+                master);
+            await create.ExecuteNonQueryAsync(ct);
+        }
+
+        var adminConnectionString = new SqlConnectionStringBuilder(db.AdminConnectionString) { InitialCatalog = name }.ConnectionString;
+        var p1 = "App!Passw0rd-" + Guid.NewGuid().ToString("N")[..8];
+        await MigrateAsync(adminConnectionString, p1, ct);
+
+        await using (var connection = new SqlConnection(adminConnectionString))
+        {
+            await connection.OpenAsync(ct);
+            (await ReadStrings(connection, ct, "SELECT authentication_type_desc FROM sys.database_principals WHERE name = N'inventory_app'"))
+                .ShouldBe(["DATABASE"]);
+            await ShouldHaveExactlyTheAppGrants(connection, ct);
+
+            await using var rcsi = new SqlCommand("SELECT is_read_committed_snapshot_on FROM sys.databases WHERE database_id = DB_ID()", connection);
+            Convert.ToInt32(await rcsi.ExecuteScalarAsync(ct)).ShouldBe(1);
+        }
+
+        // The server login inventory_app exists too, with another password: naming the contained database authenticates the contained user.
+        (await UserNameAs(adminConnectionString, p1, ct)).ShouldBe("inventory_app");
+
+        var p2 = "App!Passw0rd-" + Guid.NewGuid().ToString("N")[..8];
+        await MigrateAsync(adminConnectionString, p2, ct);
+
+        (await UserNameAs(adminConnectionString, p2, ct)).ShouldBe("inventory_app");
+        await Should.ThrowAsync<SqlException>(() => UserNameAs(adminConnectionString, p1, ct));
+    }
+
+    private static async Task MigrateAsync(string adminConnectionString, string password, CancellationToken ct)
+    {
+        await using var admin = new ApiFactory(adminConnectionString, ("InventoryApp:Password", password));
+        await MigrateCommand.RunAsync(admin.Services, admin.Services.GetRequiredService<IConfiguration>(), ct);
+    }
+
+    private static async Task<string?> UserNameAs(string adminConnectionString, string password, CancellationToken ct)
+    {
+        // No pooling, so a connection opened with an old password can't be reused after the rotation.
+        var app = new SqlConnectionStringBuilder(adminConnectionString) { UserID = "inventory_app", Password = password, Pooling = false };
+        await using var connection = new SqlConnection(app.ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var command = new SqlCommand("SELECT USER_NAME()", connection);
+        return (string?)await command.ExecuteScalarAsync(ct);
+    }
+
+    private static async Task ShouldHaveExactlyTheAppGrants(SqlConnection connection, CancellationToken ct)
+    {
         var schemaGrants = await ReadStrings(connection, ct, """
             SELECT p.state_desc COLLATE DATABASE_DEFAULT + N':' + s.name COLLATE DATABASE_DEFAULT + N':' + p.permission_name COLLATE DATABASE_DEFAULT
             FROM sys.database_permissions p

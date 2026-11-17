@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,11 @@ internal static class IdentityRegistration
             .AddEntityFrameworkStores<PlatformDbContext>()
             .AddSignInManager()
             .AddClaimsPrincipalFactory<TenantClaimsPrincipalFactory>();
+
+        // Keys live in the database, so a cookie survives restarts, scale-to-zero and more than one host (S14).
+        builder.Services.AddDataProtection()
+            .SetApplicationName("inventory")
+            .PersistKeysToDbContext<PlatformDbContext>();
 
         builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
         builder.Services.ConfigureApplicationCookie(o =>
