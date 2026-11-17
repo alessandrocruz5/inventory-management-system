@@ -37,7 +37,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - [x] IMS-20 — Persistent sign-in keys and contained SQL user · Added · plan: [[2026-11-17-s14-azure]] prompts: 01, 02 · depends: IMS-17 · model: opus (merged 2026-11-17)
   - Result: Data Protection keys persist in `platform.DataProtectionKeys` (migration `20261117035843_AddDataProtectionKeys`, app name `inventory`), so sign-in survives restarts and replicas. `DatabasePrincipals` creates a contained `inventory_app` user on Azure SQL and partially contained databases; the RCSI migration `Up` is guarded (D14). README and CLAUDE.md updated.
   - Downstream: (IMS-18) the login-based path and grants are textually unchanged, so local and compose runs behave as before. The Azure deploy relies on the contained-user path and on the keys table; do not move either without re-checking prompts 03–05.
-- [ ] IMS-18 — S14 Azure (stretch) · Added · plan: [[2026-11-17-s14-azure]] prompts: 03, 04, 05 · depends: IMS-17, IMS-20 · model: opus
+- [~] IMS-18 — S14 Azure (stretch) · Added · plan: [[2026-11-17-s14-azure]] prompts: 03, 04, 05 · depends: IMS-17, IMS-20 · model: opus
 
 **Downstream (locked by IMS-2; plan [[2026-11-04-s1-skeleton]]):**
 - Every test project references `xunit.v3` only (no `Microsoft.NET.Test.Sdk` or `xunit.runner.visualstudio`), has `<OutputType>Exe</OutputType>`, and runs under MTP through `global.json`. Create each test project together with its first test.
