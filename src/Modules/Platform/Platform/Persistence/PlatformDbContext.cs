@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -8,9 +9,11 @@ using Platform.Tenants;
 namespace Platform.Persistence;
 
 internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
-    : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>(options)
+    : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>(options), IDataProtectionKeyContext
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
+
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +27,9 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             tenant.Property(t => t.Name).HasMaxLength(200).IsRequired();
             tenant.Property(t => t.CreatedAt).IsRequired();
         });
+
+        // Server-wide like identity.*, but in platform: inventory_app has only SELECT, INSERT there.
+        modelBuilder.Entity<DataProtectionKey>().ToTable("DataProtectionKeys", "platform");
 
         modelBuilder.Entity<AppUser>(user =>
         {

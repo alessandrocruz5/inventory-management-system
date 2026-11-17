@@ -53,4 +53,4 @@ cd tests/e2e && npx playwright test
 
 **Stop:** `docker compose down`; add `-v` to drop the database volume.
 
-**Known limits:** sign-in sessions don't survive recreating the `api` container (Data Protection keys aren't persisted).
+**Sessions:** Data Protection keys live in `platform.DataProtectionKeys`, so a sign-in survives recreating the `api` container.

@@ -3,11 +3,17 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 using Platform.Identity;
+using Platform.Persistence;
 
 using Shouldly;
 
@@ -171,6 +177,48 @@ public sealed class AuthTests(DatabaseFixture db)
 
         options.ExpireTimeSpan.ShouldBe(TimeSpan.FromHours(8));
         options.SlidingExpiration.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Sign_in_keys_persist_in_the_database()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var a = db.CreateApp();
+
+        // On Linux, hosts would otherwise share ~/.aspnet/DataProtection-Keys, so the cookie check alone proves nothing.
+        a.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value.XmlRepository
+            .ShouldBeOfType<EntityFrameworkCoreXmlRepository<PlatformDbContext>>();
+        a.Services.GetRequiredService<IOptions<DataProtectionOptions>>().Value.ApplicationDiscriminator
+            .ShouldBe("inventory");
+
+        var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(a, Roles.Staff);
+        using var client = a.NewClient();
+        var login = await Login(client, email, DatabaseFixture.UserPassword);
+        login.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var cookie = login.Headers.GetValues("Set-Cookie")
+            .Single(c => c.StartsWith(".AspNetCore.Identity.Application=", StringComparison.Ordinal))
+            .Split(';')[0];
+
+        await using (var connection = new SqlConnection(db.AdminConnectionString))
+        {
+            await connection.OpenAsync(ct);
+            await using var command = new SqlCommand("SELECT COUNT(*) FROM platform.DataProtectionKeys", connection);
+            Convert.ToInt32(await command.ExecuteScalarAsync(ct)).ShouldBeGreaterThanOrEqualTo(1);
+        }
+
+        await using var b = db.CreateApp();
+        using var other = b.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false,
+            HandleCookies = false,
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
+        request.Headers.Add("Cookie", cookie);
+
+        var me = await other.SendAsync(request, ct);
+
+        me.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     private static Task<HttpResponseMessage> Login(HttpClient client, string email, string password) =>
