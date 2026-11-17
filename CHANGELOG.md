@@ -32,6 +32,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 - Azure: hand-written Bicep and `deploy.sh` deploy `web`, an internal-only `api`, `migrate` and `seed` jobs and Azure SQL (free offer) to Container Apps, with nginx Host forwarding and a Playwright `E2E_BASE_URL` override (IMS-18).
 - Platform: Data Protection keys persisted in `platform.DataProtectionKeys`, and a contained `inventory_app` user on Azure SQL with a guarded RCSI migration (IMS-20).
 
+### Changed
+
+- UI: neutral design foundation (tokens, fonts, Material overrides, `appGridTheme`), shared `StatusPill` primitives, and a responsive app shell with sidebar, top bar and mobile drawer (IMS-22).
+
 ### Fixed
 
 - Shell navigation no longer overflows at 375 px (found by the first end-to-end CI run) (IMS-16).

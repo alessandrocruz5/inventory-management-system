@@ -123,7 +123,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 
 ## Sprint 2 — UI redesign (neutral, responsive)   (planned 2026-11-17)
 Epic: IMS-21 · Branch base: `develop` · Plan: [[2026-11-17-ui-redesign]]
-- [ ] IMS-22 — Design foundation and app shell · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 01, 02, 03 · depends: — · model: sonnet
+- [x] IMS-22 — Design foundation and app shell · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 01, 02, 03 · depends: — · model: sonnet (merged 2026-11-17)
 - [ ] IMS-23 — Stock and Documents lists · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 04, 05 · depends: IMS-22 · model: sonnet
 - [ ] IMS-24 — Items, Item detail and Locations · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 06, 07, 08 · depends: IMS-22 · model: sonnet
 - [ ] IMS-25 — Document detail and Ledger health · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 09, 10 · depends: IMS-22 · model: sonnet

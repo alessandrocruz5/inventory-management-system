@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: in-progress
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -228,3 +228,7 @@ Frontend-only, with no data or contract change. Revert the unit's merge commit o
 - 2026-11-17: planned
 - 2026-11-17: audited, 1 fix applied (R10 mobile touch targets, D19)
 - 2026-11-17: applied Codex audit (1 applied, 0 disputed)
+- 2026-11-17: build started on IMS-22; rollback point 09cdc2aabc6aefb770ff98a056fee9d7fc2a56be
+- 2026-11-17: 01 done (sonnet, 0 retries): tokens, fonts, Material overrides, global classes, appGridTheme; lint/build/183 tests green
+- 2026-11-17: 02 done (sonnet, 0 retries): stockStatus/documentStatus, StatusPill, StatusPillCell, injectIsNarrow; 193 tests green
+- 2026-11-17: 03 done (sonnet, 0 retries): sidebar/top bar/drawer shell, scroll-to-top, outline form-field default, Material Symbols default; 199 tests green. Deviation: backdrop is a <button aria-label="Close navigation"> (template lint). Note: initial bundle 410 -> 557 kB (>500 kB warning budget); MAT_FORM_FIELD_DEFAULT_OPTIONS in app.config.ts accounts for ~105 kB eager
