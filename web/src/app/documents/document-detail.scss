@@ -1,0 +1,72 @@
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.title-row .page-title {
+  margin: 0;
+}
+
+.ref {
+  font-size: 14px;
+  color: var(--ims-secondary);
+}
+
+.reverse-btn {
+  margin-left: auto;
+}
+
+.banner a {
+  margin-left: 4px;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 1px;
+  background: var(--ims-border);
+  border: 1px solid var(--ims-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cell {
+  background: var(--ims-surface);
+  padding: 14px 16px;
+}
+
+.cell--wide {
+  grid-column: 1 / -1;
+  white-space: pre-line;
+}
+
+.cell-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ims-muted);
+}
+
+.cell-value {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.lines-table {
+  min-width: 640px;
+}
+
+.item-name {
+  font-weight: 500;
+}
+
+.item-sku {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.route {
+  font-size: 13px;
+}

@@ -82,7 +82,8 @@ describe('DocumentDetail', () => {
     const el = await render();
     expect(el.querySelector('h1')?.textContent).toContain('Received');
     const text = el.textContent ?? '';
-    expect(text).toContain('SKU-1 · Widget');
+    expect(text).toContain('SKU-1');
+    expect(text).toContain('Widget');
     expect(text).toContain('10 pc');
     expect(text).toContain('₱100.00');
     expect(text).toContain('₱1,000.00');
@@ -99,8 +100,8 @@ describe('DocumentDetail', () => {
 
   it('renders no reversal links when null', async () => {
     const el = await render();
-    expect(el.textContent).not.toContain('Reversed by');
-    expect(el.textContent).not.toContain('Reverses');
+    expect(el.textContent).not.toContain('This posting was reversed');
+    expect(el.textContent).not.toContain('This reversal undoes');
   });
 
   it('shows the not-found message with a link back on 404', async () => {
@@ -110,6 +111,29 @@ describe('DocumentDetail', () => {
     const el = await render();
     expect(el.textContent).toContain("That record doesn't exist, or you can't see it.");
     expect(el.querySelector('a')?.getAttribute('href')).toBe('/documents');
+  });
+
+  it('shows the warn notice with an Open it link on a reversed document', async () => {
+    get.mockResolvedValue(doc({ reversedByDocumentId: 'r1' }));
+    const el = await render();
+    const notice = el.querySelector('.banner--warn');
+    expect(notice?.getAttribute('role')).toBe('status');
+    expect(notice?.textContent).toContain('This posting was reversed.');
+    expect(notice?.querySelector('a')?.getAttribute('href')).toBe('/documents/r1');
+  });
+
+  it('shows the summed lines total in the footer', async () => {
+    const extra = doc().lines[0];
+    get.mockResolvedValue(
+      doc({
+        lines: [
+          { ...extra, movementId: 1, totalCost: 1000 },
+          { ...extra, movementId: 2, totalCost: 250.5 },
+        ],
+      }),
+    );
+    const el = await render();
+    expect(el.querySelector('tfoot')?.textContent).toContain('₱1,250.50');
   });
 
   it('reloads when the id changes', async () => {
@@ -122,7 +146,7 @@ describe('DocumentDetail', () => {
   });
 
   const button = (el: HTMLElement) =>
-    Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Reverse');
+    Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.includes('Reverse'));
 
   async function click(fixture: ComponentFixture<DocumentDetail>) {
     button(fixture.nativeElement)?.click();
