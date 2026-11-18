@@ -1,0 +1,43 @@
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--ims-text-secondary, #57534e);
+
+  dt,
+  dd {
+    display: inline;
+    margin: 0;
+  }
+
+  dd {
+    margin-inline-start: 6px;
+    color: var(--ims-ink, #1c1b19);
+  }
+}
+
+.meta__item {
+  display: flex;
+}
+
+.posted {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-table {
+  min-width: 520px;
+}
+
+.history-table {
+  min-width: 960px;
+}

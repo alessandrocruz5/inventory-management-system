@@ -1,44 +1,39 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import {
-  AllCommunityModule,
-  ColDef,
-  GridOptions,
-  ModuleRegistry,
-  SelectionChangedEvent,
-  themeQuartz,
-} from 'ag-grid-community';
-import { AgGridAngular } from 'ag-grid-angular';
+import { RouterLink } from '@angular/router';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
 import { problemMessage } from '../core/problems/problem-messages';
 import { ConfirmDialog } from '../shared/confirm-dialog';
+import { StatusPill } from '../shared/status-pill';
 import { ItemDialog } from './item-dialog';
 import { Item, ItemsService } from './items.service';
-
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 @Component({
   selector: 'app-items',
   imports: [
     ReactiveFormsModule,
-    AgGridAngular,
+    RouterLink,
     MatButtonModule,
     MatFormFieldModule,
+    MatIconModule,
     MatInputModule,
     MatPaginatorModule,
     MatSlideToggleModule,
+    StatusPill,
   ],
   templateUrl: './items.html',
+  host: { class: 'page' },
   styleUrl: './items.scss',
 })
 export class Items {
@@ -47,34 +42,14 @@ export class Items {
   private readonly snackBar = inject(MatSnackBar);
   protected readonly auth = inject(AuthService);
 
-  protected readonly theme = themeQuartz;
-  protected readonly rowSelection: GridOptions<Item>['rowSelection'] = {
-    mode: 'singleRow',
-    checkboxes: false,
-    enableClickSelection: true,
-  };
-  protected readonly columnDefs: ColDef<Item>[] = [
-    { field: 'sku', headerName: 'SKU', flex: 1, minWidth: 140 },
-    { field: 'name', headerName: 'Name', flex: 2, minWidth: 200 },
-    { field: 'baseUnit', headerName: 'Unit', flex: 1, minWidth: 100 },
-    {
-      headerName: 'Status',
-      flex: 1,
-      minWidth: 110,
-      valueGetter: (params) => (params.data?.isActive ? 'Active' : 'Inactive'),
-    },
-  ];
-
   protected readonly pageSizeOptions = [25, 50, 100];
 
   protected readonly rows = signal<Item[]>([]);
   protected readonly total = signal(0);
   protected readonly loading = signal(false);
-  protected readonly selected = signal<Item | null>(null);
   protected readonly pageIndex = signal(0);
   protected readonly pageSize = signal(25);
   protected readonly showInactive = signal(false);
-  protected readonly canDeactivate = computed(() => this.selected()?.isActive === true);
 
   protected readonly search = new FormControl('', { nonNullable: true });
 
@@ -86,10 +61,6 @@ export class Items {
         void this.load();
       });
     void this.load();
-  }
-
-  protected onSelectionChanged(event: SelectionChangedEvent<Item>): void {
-    this.selected.set(event.api.getSelectedRows()[0] ?? null);
   }
 
   protected onShowInactive(checked: boolean): void {
@@ -116,11 +87,7 @@ export class Items {
       });
   }
 
-  protected deactivate(): void {
-    const item = this.selected();
-    if (!item) {
-      return;
-    }
+  protected deactivate(item: Item): void {
     this.dialog
       .open<ConfirmDialog, { title: string; message: string; confirm: string }, boolean>(
         ConfirmDialog,
@@ -165,7 +132,6 @@ export class Items {
       });
       this.rows.set(result.items);
       this.total.set(result.total);
-      this.selected.set(null);
     } catch (err) {
       this.snackBar.open(
         problemMessage(err instanceof HttpErrorResponse ? err.error : null),

@@ -1,92 +1,124 @@
+<a class="back-link" routerLink="/stock"><mat-icon>arrow_back</mat-icon>Stock</a>
+
 @if (error(); as message) {
-  <p role="alert">{{ message }}</p>
-  <a routerLink="/stock">Back to stock</a>
+  <p class="banner banner--bad" role="alert"><mat-icon>error</mat-icon>{{ message }}</p>
+}
+
+@if (loading() && !item() && !error()) {
+  <div class="card">
+    @for (n of [1, 2, 3, 4]; track n) {
+      <div class="skeleton skeleton-row"></div>
+    }
+  </div>
 }
 
 @if (item(); as it) {
-  <h1>{{ it.sku }} · {{ it.name }}</h1>
+  <div class="title-row">
+    <h1 class="page-title">{{ it.name }}</h1>
+    <app-status-pill
+      [tone]="it.isActive ? 'good' : 'neutral'"
+      [label]="it.isActive ? 'Active' : 'Inactive'"
+    />
+  </div>
 
-  <dl>
-    <dt>Unit</dt>
-    <dd>{{ it.baseUnit }}</dd>
-    @if (!it.isActive) {
-      <dt>Status</dt>
-      <dd>Inactive</dd>
-    }
+  <dl class="meta">
+    <div class="meta__item">
+      <dt>SKU</dt>
+      <dd class="mono">{{ it.sku }}</dd>
+    </div>
+    <div class="meta__item">
+      <dt>Unit</dt>
+      <dd>{{ it.baseUnit }}</dd>
+    </div>
+    <div class="meta__item">
+      <dt>On hand</dt>
+      <dd>{{ formatQuantity(totalOnHand()) }} {{ it.baseUnit }}</dd>
+    </div>
   </dl>
 
-  <h2>Stock by location</h2>
-  @if (it.balances.length === 0) {
-    <p>No stock at any location yet.</p>
-  } @else {
-    <table>
-      <thead>
-        <tr>
-          <th>Location</th>
-          <th class="num">Qty</th>
-          <th class="num">Avg cost</th>
-          <th class="num">Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (b of it.balances; track b.locationId) {
-          <tr>
-            <td data-label="Location">{{ b.locationCode }} · {{ b.locationName }}</td>
-            <td class="num" data-label="Qty">{{ formatQuantity(b.onHand) }} {{ it.baseUnit }}</td>
-            <td class="num" data-label="Avg cost">
-              {{ b.averageCost === null ? '—' : formatMoney(b.averageCost) }}
-            </td>
-            <td class="num" data-label="Value">{{ formatMoney(b.stockValue) }}</td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  }
+  <h2 class="section-title">Stock by location</h2>
+  <div class="card">
+    @if (it.balances.length === 0) {
+      <p class="empty-state">No stock at any location yet.</p>
+    } @else {
+      <div class="table-scroll">
+        <table class="data-table stock-table">
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th class="num">Qty</th>
+              <th class="num">Avg cost</th>
+              <th class="num">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (b of it.balances; track b.locationId) {
+              <tr>
+                <td>
+                  <span class="mono">{{ b.locationCode }}</span
+                  ><span class="muted"> · {{ b.locationName }}</span>
+                </td>
+                <td class="num">{{ formatQuantity(b.onHand) }} {{ it.baseUnit }}</td>
+                <td class="num">
+                  {{ b.averageCost === null ? '—' : formatMoney(b.averageCost) }}
+                </td>
+                <td class="num">{{ formatMoney(b.stockValue) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
 
-  <h2>History</h2>
-  @if (movements().length === 0) {
-    <p>No movements yet.</p>
-  } @else {
-    <table>
-      <thead>
-        <tr>
-          <th>Posted</th>
-          <th>Document</th>
-          <th>Location</th>
-          <th>From / to</th>
-          <th class="num">Qty</th>
-          <th class="num">Value</th>
-          <th class="num">Balance</th>
-          <th class="num">Balance value</th>
-          <th>Posted by</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (m of movements(); track m.movementId + m.direction) {
-          <tr>
-            <td data-label="Posted">{{ formatDate(m.postedAt) }}</td>
-            <td data-label="Document">
-              <a [routerLink]="['/documents', m.documentId]">{{ typeLabel(m.documentType) }}</a>
-            </td>
-            <td data-label="Location" [title]="m.locationName">{{ m.locationCode }}</td>
-            <td data-label="From / to" [title]="m.counterpartLocationName">
-              {{ counterpart(m) }}
-            </td>
-            <td class="num" data-label="Qty">{{ signedQuantity(m.quantityChange) }}</td>
-            <td class="num" data-label="Value">{{ signedMoney(m.valueChange) }}</td>
-            <td class="num" data-label="Balance">{{ formatQuantity(m.runningOnHand) }}</td>
-            <td class="num" data-label="Balance value">{{ formatMoney(m.runningValue) }}</td>
-            <td data-label="Posted by">{{ postedBy(m) }}</td>
-          </tr>
-        }
-      </tbody>
-    </table>
-    <mat-paginator
-      [length]="total()"
-      [pageIndex]="pageIndex()"
-      [pageSize]="pageSize()"
-      [pageSizeOptions]="pageSizeOptions"
-      (page)="onPage($event)"
-    />
-  }
+  <h2 class="section-title">History</h2>
+  <div class="card">
+    @if (movements().length === 0) {
+      <p class="empty-state">No movements yet.</p>
+    } @else {
+      <div class="table-scroll">
+        <table class="data-table history-table">
+          <thead>
+            <tr>
+              <th>Posted</th>
+              <th>Document</th>
+              <th>Location</th>
+              <th>From / to</th>
+              <th class="num">Qty</th>
+              <th class="num">Value</th>
+              <th class="num">Balance</th>
+              <th class="num">Balance value</th>
+              <th>Posted by</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (m of movements(); track m.movementId + m.direction) {
+              <tr>
+                <td class="secondary posted">{{ formatDate(m.postedAt) }}</td>
+                <td>
+                  <a [routerLink]="['/documents', m.documentId]">{{ typeLabel(m.documentType) }}</a>
+                </td>
+                <td class="mono" [title]="m.locationName">{{ m.locationCode }}</td>
+                <td [title]="m.counterpartLocationName">{{ counterpart(m) }}</td>
+                <td class="num">{{ signedQuantity(m.quantityChange) }}</td>
+                <td class="num">{{ signedMoney(m.valueChange) }}</td>
+                <td class="num">{{ formatQuantity(m.runningOnHand) }}</td>
+                <td class="num">{{ formatMoney(m.runningValue) }}</td>
+                <td>{{ postedBy(m) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="card__footer">
+        <mat-paginator
+          [length]="total()"
+          [pageIndex]="pageIndex()"
+          [pageSize]="pageSize()"
+          [pageSizeOptions]="pageSizeOptions"
+          (page)="onPage($event)"
+        />
+      </div>
+    }
+  </div>
 }
