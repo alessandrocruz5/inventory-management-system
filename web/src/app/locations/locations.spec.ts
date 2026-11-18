@@ -63,7 +63,7 @@ describe('Locations', () => {
     const fixture = TestBed.createComponent(Locations);
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
-    const rows = Array.from(el.querySelectorAll<HTMLElement>('mat-list-item'));
+    const rows = Array.from(el.querySelectorAll<HTMLElement>('.location-row'));
     const row = (code: string) => rows.find((r) => r.textContent?.includes(code))!;
     const buttons = (root: HTMLElement) =>
       Array.from(root.querySelectorAll('button:not([role="switch"])')).map(
@@ -78,15 +78,15 @@ describe('Locations', () => {
     expect(list).toHaveBeenCalledWith({ page: 1, pageSize: 25 });
   });
 
-  it('shows a System chip on the system row only', async () => {
+  it('shows a System pill on the system row only', async () => {
     const { row } = await render();
-    expect(row('SUP').querySelector('mat-chip')?.textContent).toContain('System');
-    expect(row('QC').querySelector('mat-chip')).toBeNull();
+    expect(row('SUP').querySelector('app-status-pill')?.textContent).toContain('System');
+    expect(row('QC').querySelector('app-status-pill')).toBeNull();
   });
 
   it('hides New, Edit and Deactivate from Staff', async () => {
     const { el, buttons } = await render();
-    expect(buttons(el)).not.toContain('New location');
+    expect(buttons(el)).not.toContain('addNew location');
     expect(buttons(el)).not.toContain('Edit');
     expect(buttons(el)).not.toContain('Deactivate');
   });
@@ -94,12 +94,12 @@ describe('Locations', () => {
   it('shows Admin New location, and Edit and Deactivate on the physical row only', async () => {
     isAdmin.set(true);
     const { el, row, buttons } = await render();
-    expect(buttons(el)).toContain('New location');
+    expect(buttons(el)).toContain('addNew location');
     expect(buttons(row('QC'))).toEqual(['Edit', 'Deactivate']);
     expect(buttons(row('SUP'))).toEqual([]);
   });
 
-  it('shows an Inactive chip and no Deactivate on an inactive physical row', async () => {
+  it('shows an Inactive pill and no Deactivate on an inactive physical row', async () => {
     isAdmin.set(true);
     list.mockResolvedValue({
       items: [{ ...qc, isActive: false }],
@@ -108,7 +108,7 @@ describe('Locations', () => {
       total: 1,
     });
     const { row, buttons } = await render();
-    expect(row('QC').querySelector('mat-chip')?.textContent).toContain('Inactive');
+    expect(row('QC').querySelector('app-status-pill')?.textContent).toContain('Inactive');
     expect(buttons(row('QC'))).toEqual(['Edit']);
   });
 
@@ -129,7 +129,7 @@ describe('Locations', () => {
     expect(row('OLD').querySelector('mat-slide-toggle')).toBeNull();
   });
 
-  it('shows Staff a Negative stock allowed chip and no switch', async () => {
+  it('shows Staff a Negative stock allowed pill and no switch', async () => {
     list.mockResolvedValue({
       items: [{ ...qc, allowNegativeStock: true }],
       page: 1,
@@ -137,7 +137,9 @@ describe('Locations', () => {
       total: 1,
     });
     const { el, row } = await render();
-    expect(row('QC').textContent).toContain('Negative stock allowed');
+    const pill = row('QC').querySelector('app-status-pill')!;
+    expect(pill.textContent).toContain('Negative stock allowed');
+    expect(pill.getAttribute('data-tone')).toBe('warn');
     expect(el.querySelector('mat-slide-toggle')).toBeNull();
   });
 

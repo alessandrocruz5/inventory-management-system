@@ -1,78 +1,92 @@
-<div class="header">
-  <h1>Locations</h1>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Locations</h1>
+    <p class="page-subtitle">
+      Where stock is kept. System locations record stock entering and leaving.
+    </p>
+  </div>
   @if (auth.isAdmin()) {
-    <button mat-flat-button type="button" (click)="openDialog(null)">New location</button>
+    <div class="page-actions">
+      <button mat-flat-button type="button" (click)="openDialog(null)">
+        <mat-icon>add</mat-icon>New location
+      </button>
+    </div>
   }
 </div>
 
-<mat-list>
+<div class="card">
   @for (location of rows(); track location.id) {
-    <mat-list-item class="row">
-      <div class="row-content">
-        <div class="identity">
-          <span class="code">{{ location.code }}</span>
-          <span class="name">{{ location.name }}</span>
-          @let showNegative =
-            location.allowNegativeStock &&
-            !location.isSystem &&
-            !(auth.isAdmin() && location.isActive);
-          @if (location.isSystem || !location.isActive || showNegative) {
-            <mat-chip-set aria-label="Status">
-              @if (location.isSystem) {
-                <mat-chip>System</mat-chip>
-              }
-              @if (!location.isActive) {
-                <mat-chip>Inactive</mat-chip>
-              }
-              @if (showNegative) {
-                <mat-chip>Negative stock allowed</mat-chip>
-              }
-            </mat-chip-set>
-          }
-        </div>
-        @if (auth.isAdmin() && !location.isSystem) {
-          <div class="actions">
-            @if (location.isActive) {
-              <mat-slide-toggle
-                [checked]="location.allowNegativeStock"
-                [disabled]="busyId() === location.id"
-                (change)="toggleNegative(location, $event)"
-                >Allow negative stock</mat-slide-toggle
-              >
-            }
-            <button
-              mat-stroked-button
-              type="button"
-              [attr.aria-label]="'Edit ' + location.code"
-              (click)="openDialog(location)"
-            >
-              Edit
-            </button>
-            @if (location.isActive) {
-              <button
-                mat-stroked-button
-                type="button"
-                [attr.aria-label]="'Deactivate ' + location.code"
-                (click)="deactivate(location)"
-              >
-                Deactivate
-              </button>
-            }
-          </div>
+    <div class="location-row">
+      <div class="identity">
+        <span class="code-badge mono" [class.code-badge--inactive]="!location.isActive">{{
+          location.code
+        }}</span>
+        <span class="name" [class.muted]="!location.isActive">{{ location.name }}</span>
+        @let showNegative =
+          location.allowNegativeStock &&
+          !location.isSystem &&
+          !(auth.isAdmin() && location.isActive);
+        @if (location.isSystem) {
+          <app-status-pill tone="neutral" label="System" />
+        }
+        @if (!location.isActive) {
+          <app-status-pill tone="neutral" label="Inactive" />
+        }
+        @if (showNegative) {
+          <app-status-pill tone="warn" label="Negative stock allowed" />
         }
       </div>
-    </mat-list-item>
+      @if (auth.isAdmin() && !location.isSystem) {
+        <div class="actions">
+          @if (location.isActive) {
+            <mat-slide-toggle
+              class="negative-toggle"
+              [checked]="location.allowNegativeStock"
+              [disabled]="busyId() === location.id"
+              (change)="toggleNegative(location, $event)"
+              >Allow negative stock</mat-slide-toggle
+            >
+          }
+          <button
+            mat-stroked-button
+            class="btn-md"
+            type="button"
+            [attr.aria-label]="'Edit ' + location.code"
+            (click)="openDialog(location)"
+          >
+            Edit
+          </button>
+          @if (location.isActive) {
+            <button
+              mat-stroked-button
+              class="btn-md"
+              type="button"
+              [attr.aria-label]="'Deactivate ' + location.code"
+              (click)="deactivate(location)"
+            >
+              Deactivate
+            </button>
+          }
+        </div>
+      }
+    </div>
   } @empty {
-    @if (!loading()) {
-      <p class="empty">No locations.</p>
+    @if (loading()) {
+      @for (n of [1, 2, 3, 4]; track n) {
+        <div class="skeleton skeleton-row"></div>
+      }
+    } @else {
+      <p class="empty-state">No locations.</p>
     }
   }
-</mat-list>
 
-<mat-paginator
-  [length]="total()"
-  [pageIndex]="pageIndex()"
-  [pageSize]="pageSize()"
-  [pageSizeOptions]="pageSizeOptions"
-  (page)="onPage($event)"
-/>
+  <div class="card__footer">
+    <mat-paginator
+      [length]="total()"
+      [pageIndex]="pageIndex()"
+      [pageSize]="pageSize()"
+      [pageSizeOptions]="pageSizeOptions"
+      (page)="onPage($event)"
+    />
+  </div>
+</div>

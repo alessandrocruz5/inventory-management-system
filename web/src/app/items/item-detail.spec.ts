@@ -106,7 +106,8 @@ describe('ItemDetail', () => {
     const { el } = await render();
     const text = el.textContent ?? '';
     for (const expected of [
-      'SKU-1 · Widget',
+      'SKU-1',
+      'Widget',
       '₱123.00',
       '₱1,230.00',
       'Received',
@@ -177,5 +178,27 @@ describe('ItemDetail', () => {
     await fixture.whenStable();
     expect(get).toHaveBeenLastCalledWith('i2');
     expect(movements).toHaveBeenLastCalledWith('i2', 1, 25);
+  });
+
+  it('shows the name as the title and the summed on-hand in the meta line', async () => {
+    get.mockResolvedValue(
+      item({
+        balances: [
+          { ...item().balances[0], onHand: 0.1 },
+          { ...item().balances[0], locationId: 'l2', locationCode: 'B', onHand: 0.2 },
+        ],
+      }),
+    );
+    const { el } = await render();
+    expect(el.querySelector('h1')?.textContent?.trim()).toBe('Widget');
+    const meta = el.querySelector('.meta')?.textContent ?? '';
+    expect(meta).toContain('On hand');
+    expect(meta).toContain('0.3');
+    expect(meta).not.toContain('0.30000');
+  });
+
+  it('keeps the back link to /stock in the loaded state', async () => {
+    const { el } = await render();
+    expect(el.querySelector('a')?.getAttribute('href')).toBe('/stock');
   });
 });
