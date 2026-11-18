@@ -245,3 +245,6 @@ Frontend-only, with no data or contract change. Revert the unit's merge commit o
 - 2026-11-18: 09 done (sonnet, 0 retries): Document detail restyled (back link, title pill, notices, meta grid, Lines footer total); lint/214 tests green
 - 2026-11-18: 10 done (sonnet, 0 retries): Ledger health restyled (overall banner, invariant list with pills, nested failure tables, rebuild card); dotnet/lint/build/214 tests green. Note: used --ims-secondary/--ims-muted tokens
 - 2026-11-18: IMS-25 merged
+- 2026-11-18: build started on IMS-26; rollback point 7b5b28307707b66741dfe9065f4138910c11950c
+- 2026-11-18: 11 done (sonnet, 0 retries): POSTING_SUBTITLES, postingTotal/postingTotalLabel, StockService.balance; lint/build/223 tests green
+- 2026-11-18: 12 done (sonnet, 0 retries): Post stock restyled (header, banner, Details/Lines cards, line hints, sticky total bar); dotnet 582/lint/build/227 tests green. Fixed by lead: host 'page page--narrow' + page-header wrapper (agent missed). Not run locally: Playwright e2e and screenshot comparison (CI e2e covers e2e)

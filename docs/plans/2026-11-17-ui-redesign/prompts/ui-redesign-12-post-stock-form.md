@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-17-ui-redesign]]"
 id: 12
 unit: IMS-26
-status: todo
+status: done
 model: sonnet
 effort: high
 depends_on: [11]
