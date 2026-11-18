@@ -1,77 +1,135 @@
+<a class="back-link" routerLink="/documents"><mat-icon>arrow_back</mat-icon>Documents</a>
+
 @if (error(); as message) {
-  <p role="alert">{{ message }}</p>
-  <a routerLink="/documents">Back to documents</a>
+  <p class="banner banner--bad" role="alert"><mat-icon>error</mat-icon>{{ message }}</p>
+}
+
+@if (loading() && !document() && !error()) {
+  <div class="card">
+    <div class="skeleton-row"></div>
+    <div class="skeleton-row"></div>
+    <div class="skeleton-row"></div>
+    <div class="skeleton-row"></div>
+  </div>
 }
 
 @if (document(); as doc) {
-  <h1>{{ typeLabel(doc.type) }}</h1>
-
-  <dl>
-    <dt>Posted</dt>
-    <dd>{{ formatDate(doc.postedAt) }}</dd>
-    <dt>Posted by</dt>
-    <dd>{{ postedBy(doc) }}</dd>
-    @if (doc.reasonCode) {
-      <dt>Reason</dt>
-      <dd>{{ reasonLabel(doc.reasonCode) }}</dd>
-    }
+  <div class="title-row">
+    <h1 class="page-title">{{ typeLabel(doc.type) }}</h1>
     @if (doc.reference) {
-      <dt>Reference</dt>
-      <dd>{{ doc.reference }}</dd>
+      <span class="mono ref">{{ doc.reference }}</span>
     }
-    @if (doc.notes) {
-      <dt>Notes</dt>
-      <dd>{{ doc.notes }}</dd>
+    <app-status-pill [tone]="status(doc).tone" [label]="status(doc).label" />
+    @if (canReverse()) {
+      <button
+        class="reverse-btn"
+        mat-stroked-button
+        type="button"
+        data-testid="reverse"
+        (click)="reverse()"
+        [disabled]="reversing()"
+      >
+        <mat-icon>undo</mat-icon>Reverse
+      </button>
     }
-  </dl>
+  </div>
 
-  @if (doc.reversedByDocumentId) {
-    <p>Reversed by <a [routerLink]="['/documents', doc.reversedByDocumentId]">this reversal</a></p>
-  }
-  @if (doc.reversesDocumentId) {
-    <p>Reverses <a [routerLink]="['/documents', doc.reversesDocumentId]">this document</a></p>
-  }
-
-  @if (canReverse()) {
-    <button mat-flat-button type="button" (click)="reverse()" [disabled]="reversing()">
-      Reverse
-    </button>
-  }
   @if (reverseError(); as e) {
-    <p role="alert">
-      {{ e.message }}
-      @if (e.linkId) {
-        <a [routerLink]="['/documents', e.linkId]">{{ e.linkLabel }}</a>
-      }
+    <p class="banner banner--bad" role="alert">
+      <mat-icon>error</mat-icon
+      ><span
+        >{{ e.message }}
+        @if (e.linkId) {
+          <a [routerLink]="['/documents', e.linkId]">{{ e.linkLabel }}</a>
+        }</span
+      >
     </p>
   }
 
-  <table>
-    <thead>
-      <tr>
-        <th>Item</th>
-        <th>From → To</th>
-        <th class="num">Qty</th>
-        <th class="num">Unit cost</th>
-        <th class="num">Total cost</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (line of doc.lines; track line.movementId) {
-        <tr>
-          <td data-label="Item">{{ line.sku }} · {{ line.itemName }}</td>
-          <td data-label="From → To" [title]="line.fromLocationName + ' → ' + line.toLocationName">
-            {{ line.fromLocationCode }} → {{ line.toLocationCode }}
-          </td>
-          <td class="num" data-label="Qty">
-            {{ formatQuantity(line.quantity) }} {{ line.baseUnit }}
-          </td>
-          <td class="num" data-label="Unit cost">
-            {{ line.unitCost === null ? '—' : formatMoney(line.unitCost) }}
-          </td>
-          <td class="num" data-label="Total cost">{{ formatMoney(line.totalCost) }}</td>
-        </tr>
-      }
-    </tbody>
-  </table>
+  @if (doc.reversedByDocumentId) {
+    <p class="banner banner--warn" role="status">
+      <mat-icon>info</mat-icon
+      ><span
+        >This posting was reversed.
+        <a [routerLink]="['/documents', doc.reversedByDocumentId]">Open it</a></span
+      >
+    </p>
+  }
+  @if (doc.reversesDocumentId) {
+    <p class="banner banner--neutral" role="status">
+      <mat-icon>info</mat-icon
+      ><span
+        >This reversal undoes an earlier posting.
+        <a [routerLink]="['/documents', doc.reversesDocumentId]">Open it</a></span
+      >
+    </p>
+  }
+
+  <div class="meta">
+    <div class="cell">
+      <div class="cell-label">Posted</div>
+      <div class="cell-value">{{ formatDate(doc.postedAt) }}</div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">Posted by</div>
+      <div class="cell-value">{{ postedBy(doc) }}</div>
+    </div>
+    @if (doc.reasonCode) {
+      <div class="cell">
+        <div class="cell-label">Reason</div>
+        <div class="cell-value">{{ reasonLabel(doc.reasonCode) }}</div>
+      </div>
+    }
+    @if (doc.reference) {
+      <div class="cell">
+        <div class="cell-label">Reference</div>
+        <div class="cell-value mono">{{ doc.reference }}</div>
+      </div>
+    }
+    @if (doc.notes) {
+      <div class="cell cell--wide">
+        <div class="cell-label">Notes</div>
+        <div class="cell-value">{{ doc.notes }}</div>
+      </div>
+    }
+  </div>
+
+  <h2 class="section-title">Lines</h2>
+  <div class="card">
+    <div class="table-scroll">
+      <table class="data-table lines-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>From → To</th>
+            <th class="num">Qty</th>
+            <th class="num">Unit cost</th>
+            <th class="num">Total cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (line of doc.lines; track line.movementId) {
+            <tr>
+              <td>
+                <div class="item-name">{{ line.itemName }}</div>
+                <div class="item-sku mono muted">{{ line.sku }}</div>
+              </td>
+              <td class="mono route" [title]="line.fromLocationName + ' → ' + line.toLocationName">
+                {{ line.fromLocationCode }} → {{ line.toLocationCode }}
+              </td>
+              <td class="num">{{ formatQuantity(line.quantity) }} {{ line.baseUnit }}</td>
+              <td class="num">{{ line.unitCost === null ? '—' : formatMoney(line.unitCost) }}</td>
+              <td class="num">{{ formatMoney(line.totalCost) }}</td>
+            </tr>
+          }
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" class="strong">Total</td>
+            <td class="num strong" data-testid="lines-total">{{ formatMoney(linesTotal()) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
 }

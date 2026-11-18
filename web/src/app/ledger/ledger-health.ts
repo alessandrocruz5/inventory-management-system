@@ -2,9 +2,11 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
+import { MatIconModule } from '@angular/material/icon';
 import { problemMessage } from '../core/problems/problem-messages';
 import { ConfirmDialog, ConfirmDialogData } from '../shared/confirm-dialog';
 import { formatManilaDateTime, formatMoney, formatQuantity } from '../shared/format';
+import { StatusPill } from '../shared/status-pill';
 import {
   BalanceDifference,
   InvariantFailure,
@@ -26,7 +28,8 @@ const QUANTITY_CHECKS: ReadonlySet<string> = new Set(['OnHand', 'OnHandSum', 'Qu
 
 @Component({
   selector: 'app-ledger-health',
-  imports: [MatButtonModule],
+  imports: [MatButtonModule, MatIconModule, StatusPill],
+  host: { class: 'page' },
   templateUrl: './ledger-health.html',
   styleUrl: './ledger-health.scss',
 })
@@ -54,6 +57,11 @@ export class LedgerHealth {
 
   protected failedCount(h: LedgerHealthData): number {
     return h.invariants.filter((i) => !i.passed).length;
+  }
+
+  protected failedTitle(h: LedgerHealthData): string {
+    const n = this.failedCount(h);
+    return n === 1 ? '1 check failed' : `${n} checks failed`;
   }
 
   protected amount(f: InvariantFailure, value: number | null): string {
