@@ -1,32 +1,101 @@
-<h1>Stock on hand</h1>
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Stock on hand</h1>
+    <p class="page-subtitle">{{ subtitle() }}</p>
+  </div>
+  @if (!isNarrow()) {
+    <div class="page-actions">
+      <a mat-flat-button routerLink="/documents/new/receipt"
+        ><mat-icon>add</mat-icon>Receive stock</a
+      >
+    </div>
+  }
+</header>
 
-<div class="filters">
-  <mat-form-field class="location">
-    <mat-label>Location</mat-label>
-    <mat-select [value]="locationId()" (selectionChange)="onLocation($event.value)">
-      <mat-option [value]="null">All locations</mat-option>
-      @for (location of locations(); track location.id) {
-        <mat-option [value]="location.id">{{ location.code }} · {{ location.name }}</mat-option>
+<div class="card">
+  <div class="filter-bar">
+    <div class="field location-field">
+      <!-- eslint-disable-next-line @angular-eslint/template/label-has-associated-control -->
+      <label class="field-label" id="stock-location-label">Location</label>
+      <mat-form-field>
+        <mat-select
+          aria-labelledby="stock-location-label"
+          [value]="locationId()"
+          (selectionChange)="onLocation($event.value)"
+        >
+          <mat-option [value]="null">All locations</mat-option>
+          @for (location of locations(); track location.id) {
+            <mat-option [value]="location.id">{{ location.code }} · {{ location.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+    <div class="total">
+      <div class="total-label">Total value</div>
+      <div class="total-value">{{ formatMoney(stockValue()) }}</div>
+    </div>
+  </div>
+
+  @if (isNarrow()) {
+    @if (loading() && rows().length === 0) {
+      @for (n of skeletonRows; track n) {
+        <div class="skeleton-row">
+          <span class="skeleton w-60"></span>
+          <span class="skeleton w-35"></span>
+        </div>
       }
-    </mat-select>
-  </mat-form-field>
+    } @else if (rows().length === 0) {
+      <p class="empty-state">No stock to show.</p>
+    } @else {
+      <ul class="stacked-list">
+        @for (r of rows(); track r.itemId + r.locationId) {
+          <li>
+            <a class="stacked-row" [routerLink]="['/items', r.itemId]">
+              <div class="row-main">
+                <span class="row-name">{{ r.itemName }}</span>
+                <span class="row-sub mono muted">{{ r.sku }} · {{ r.locationCode }}</span>
+                <span class="row-value" [class.tone-bad]="r.stockValue < 0">{{
+                  formatMoney(r.stockValue)
+                }}</span>
+              </div>
+              <div class="row-side">
+                <span class="row-qty" [class.tone-bad]="r.onHand < 0"
+                  >{{ formatQuantity(r.onHand)
+                  }}<span class="row-unit muted">{{ r.baseUnit }}</span></span
+                >
+                <app-status-pill
+                  [tone]="stockStatus(r.onHand).tone"
+                  [label]="stockStatus(r.onHand).label"
+                />
+              </div>
+            </a>
+          </li>
+        }
+      </ul>
+    }
+  } @else {
+    <ag-grid-angular
+      [theme]="theme"
+      [columnDefs]="columnDefs"
+      [rowData]="rows()"
+      [pinnedBottomRowData]="totalsRow()"
+      [loading]="loading()"
+      [pagination]="false"
+      domLayout="autoHeight"
+      [suppressColumnVirtualisation]="true"
+      [rowHeight]="64"
+      [rowClass]="'clickable'"
+      (rowClicked)="onRowClicked($event.data)"
+    />
+  }
+
+  <div class="card__footer">
+    <mat-paginator
+      [length]="total()"
+      [pageIndex]="pageIndex()"
+      [pageSize]="pageSize()"
+      [pageSizeOptions]="pageSizeOptions"
+      (page)="onPage($event)"
+    />
+  </div>
 </div>
-
-<ag-grid-angular
-  class="grid"
-  [theme]="theme"
-  [columnDefs]="columnDefs"
-  [rowData]="rows()"
-  [pinnedBottomRowData]="totalsRow()"
-  [loading]="loading()"
-  [pagination]="false"
-  (rowClicked)="onRowClicked($event.data)"
-/>
-
-<mat-paginator
-  [length]="total()"
-  [pageIndex]="pageIndex()"
-  [pageSize]="pageSize()"
-  [pageSizeOptions]="pageSizeOptions"
-  (page)="onPage($event)"
-/>

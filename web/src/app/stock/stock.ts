@@ -1,15 +1,21 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { AllCommunityModule, ColDef, ModuleRegistry, themeQuartz } from 'ag-grid-community';
-import { AgGridAngular } from 'ag-grid-angular';
+import { AllCommunityModule, ColDef, ICellRendererParams, ModuleRegistry } from 'ag-grid-community';
+import { AgGridAngular, ICellRendererAngularComp } from 'ag-grid-angular';
 import { problemMessage } from '../core/problems/problem-messages';
 import { Location, LocationsService } from '../locations/locations.service';
-import { formatMoney, formatQuantity } from '../shared/format';
+import { formatMoney, formatQuantity, stockStatus } from '../shared/format';
+import { appGridTheme } from '../shared/grid-theme';
+import { injectIsNarrow } from '../shared/layout';
+import { StatusPill } from '../shared/status-pill';
+import { StatusPillCell } from '../shared/status-pill-cell';
 import { StockRow, StockService } from './stock.service';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -19,9 +25,73 @@ const NEGATIVE_CELL: ColDef<StockRow>['cellClassRules'] = {
   'stock-negative': (params) => typeof params.value === 'number' && params.value < 0,
 };
 
+/** Two-line Item cell: name above SKU. Data is user input, so it is rendered by interpolation only. */
+@Component({
+  selector: 'app-stock-item-cell',
+  template: `
+    @if (pinned()) {
+      Total
+    } @else {
+      <span class="name">{{ name() }}</span>
+      <span class="sku mono">{{ sku() }}</span>
+    }
+  `,
+  styles: `
+    :host {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      min-width: 0;
+    }
+    .name {
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sku {
+      font-size: 12px;
+      line-height: 16px;
+      color: var(--ims-muted);
+    }
+  `,
+})
+class StockItemCell implements ICellRendererAngularComp {
+  protected readonly pinned = signal(false);
+  protected readonly name = signal('');
+  protected readonly sku = signal('');
+
+  agInit(params: ICellRendererParams<StockRow>): void {
+    this.set(params);
+  }
+
+  refresh(params: ICellRendererParams<StockRow>): boolean {
+    this.set(params);
+    return true;
+  }
+
+  private set(params: ICellRendererParams<StockRow>): void {
+    this.pinned.set(!!params.node?.rowPinned);
+    this.name.set(params.data?.itemName ?? '');
+    this.sku.set(params.data?.sku ?? '');
+  }
+}
+
 @Component({
   selector: 'app-stock',
-  imports: [AgGridAngular, MatFormFieldModule, MatPaginatorModule, MatSelectModule],
+  imports: [
+    AgGridAngular,
+    MatButtonModule,
+    MatFormFieldModule,
+    MatIconModule,
+    MatPaginatorModule,
+    MatSelectModule,
+    RouterLink,
+    StatusPill,
+  ],
+  host: { class: 'page' },
   templateUrl: './stock.html',
   styleUrl: './stock.scss',
 })
@@ -31,35 +101,66 @@ export class Stock {
   private readonly snackBar = inject(MatSnackBar);
   private readonly router = inject(Router);
 
-  protected readonly theme = themeQuartz;
+  protected readonly theme = appGridTheme;
+  protected readonly isNarrow = injectIsNarrow();
+  protected readonly formatMoney = formatMoney;
+  protected readonly formatQuantity = formatQuantity;
+  protected readonly stockStatus = stockStatus;
+  protected readonly skeletonRows = [1, 2, 3, 4, 5];
   protected readonly columnDefs: ColDef<StockRow>[] = [
     {
+      colId: 'item',
       headerName: 'Item',
       flex: 2,
-      minWidth: 200,
+      minWidth: 220,
       valueGetter: (params) =>
         params.node?.rowPinned ? 'Total' : `${params.data?.sku} · ${params.data?.itemName}`,
+      cellRenderer: StockItemCell,
     },
-    { field: 'locationCode', headerName: 'Location', minWidth: 110 },
+    {
+      field: 'locationCode',
+      headerName: 'Location',
+      flex: 1,
+      minWidth: 110,
+      cellClass: 'mono secondary',
+      cellStyle: { fontSize: '13px' },
+    },
+    {
+      colId: 'status',
+      headerName: 'Status',
+      flex: 1,
+      minWidth: 140,
+      sortable: false,
+      valueGetter: (params) => (params.data ? stockStatus(params.data.onHand) : undefined),
+      cellRenderer: StatusPillCell,
+    },
     {
       field: 'onHand',
       headerName: 'Qty',
+      flex: 1,
+      minWidth: 90,
       type: 'rightAligned',
+      cellClass: 'cell-strong',
       cellClassRules: NEGATIVE_CELL,
       valueFormatter: (params) =>
         params.value === undefined || params.value === null ? '' : formatQuantity(params.value),
     },
-    { field: 'baseUnit', headerName: 'Unit', minWidth: 80 },
+    { field: 'baseUnit', headerName: 'Unit', flex: 1, minWidth: 80, cellClass: 'muted' },
     {
       field: 'averageCost',
       headerName: 'Avg cost',
+      flex: 1,
+      minWidth: 110,
       type: 'rightAligned',
+      cellClass: 'secondary',
       valueFormatter: (params) =>
         params.value === undefined ? '' : params.value === null ? '—' : formatMoney(params.value),
     },
     {
       field: 'stockValue',
       headerName: 'Value',
+      flex: 1,
+      minWidth: 120,
       type: 'rightAligned',
       cellClassRules: NEGATIVE_CELL,
       valueFormatter: (params) =>
@@ -81,6 +182,12 @@ export class Stock {
   protected readonly totalsRow = computed<Partial<StockRow>[]>(() => [
     { stockValue: this.stockValue() },
   ]);
+
+  protected readonly subtitle = computed(() => {
+    const n = this.total();
+    const m = this.locations().length;
+    return `${n} ${n === 1 ? 'balance' : 'balances'} across ${m} ${m === 1 ? 'location' : 'locations'}`;
+  });
 
   constructor() {
     void this.loadLocations();
