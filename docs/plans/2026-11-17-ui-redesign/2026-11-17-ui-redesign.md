@@ -241,3 +241,7 @@ Frontend-only, with no data or contract change. Revert the unit's merge commit o
 - 2026-11-18: 07 done (sonnet, 0 retries): Item detail restyled (back link, title pill, meta line, scrolling table cards); lint/build/212 tests green
 - 2026-11-18: 08 done (sonnet, 0 retries): Locations card list with badge, pills, Admin actions; lint/build/212 tests green
 - 2026-11-18: IMS-24 merged
+- 2026-11-18: build started on IMS-25; rollback point e1f1864e3c0e00e96a99a076b08b3e147d658526
+- 2026-11-18: 09 done (sonnet, 0 retries): Document detail restyled (back link, title pill, notices, meta grid, Lines footer total); lint/214 tests green
+- 2026-11-18: 10 done (sonnet, 0 retries): Ledger health restyled (overall banner, invariant list with pills, nested failure tables, rebuild card); dotnet/lint/build/214 tests green. Note: used --ims-secondary/--ims-muted tokens
+- 2026-11-18: IMS-25 merged
