@@ -232,3 +232,7 @@ Frontend-only, with no data or contract change. Revert the unit's merge commit o
 - 2026-11-17: 01 done (sonnet, 0 retries): tokens, fonts, Material overrides, global classes, appGridTheme; lint/build/183 tests green
 - 2026-11-17: 02 done (sonnet, 0 retries): stockStatus/documentStatus, StatusPill, StatusPillCell, injectIsNarrow; 193 tests green
 - 2026-11-17: 03 done (sonnet, 0 retries): sidebar/top bar/drawer shell, scroll-to-top, outline form-field default, Material Symbols default; 199 tests green. Deviation: backdrop is a <button aria-label="Close navigation"> (template lint). Note: initial bundle 410 -> 557 kB (>500 kB warning budget); MAT_FORM_FIELD_DEFAULT_OPTIONS in app.config.ts accounts for ~105 kB eager
+- 2026-11-18: build started on IMS-23; rollback point 04534f0d0f98e55beee56fad665d777d5e264860
+- 2026-11-18: 04 done (sonnet, 0 retries): Stock restyled (header, card, themed grid, mobile list, status pill); 204 tests green. Deviations: Item column keeps SKU · Name valueGetter alongside the renderer; one eslint-disable on the label-has-associated-control rule (label-above pattern)
+- 2026-11-18: 05 done (sonnet, 0 retries): Documents restyled (filter grid, type icons, status pill, mobile rows); 208 tests green
+- 2026-11-18: IMS-23 merged; fix commit for e2e column virtualisation (flex columns, suppressColumnVirtualisation on Stock)
