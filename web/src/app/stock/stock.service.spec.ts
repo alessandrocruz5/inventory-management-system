@@ -77,4 +77,23 @@ describe('StockService', () => {
       .flush({ items: [], page: 1, pageSize: 1, total: 0, totals: { stockValue: 0 } });
     expect(await promise).toBe(0);
   });
+
+  it('balance returns onHand and averageCost from the first row', async () => {
+    const promise = service.balance('i1', 'l1');
+    const req = httpMock.expectOne((r) => r.url === '/api/stock');
+    expect(req.request.params.get('itemId')).toBe('i1');
+    expect(req.request.params.get('locationId')).toBe('l1');
+    expect(req.request.params.get('page')).toBe('1');
+    expect(req.request.params.get('pageSize')).toBe('1');
+    req.flush({ items: [row], page: 1, pageSize: 1, total: 1, totals: { stockValue: 500 } });
+    expect(await promise).toEqual({ onHand: 12.5, averageCost: 40 });
+  });
+
+  it('balance returns zero and null for an empty page', async () => {
+    const promise = service.balance('i1', 'l1');
+    httpMock
+      .expectOne((r) => r.url === '/api/stock')
+      .flush({ items: [], page: 1, pageSize: 1, total: 0, totals: { stockValue: 0 } });
+    expect(await promise).toEqual({ onHand: 0, averageCost: null });
+  });
 });

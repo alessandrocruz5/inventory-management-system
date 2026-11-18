@@ -1,0 +1,49 @@
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 220px));
+  gap: 12px 16px;
+}
+
+.row-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--ims-chip);
+}
+
+.row-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.row-meta {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.row-foot {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.w-60 {
+  width: 60%;
+}
+
+.w-35 {
+  width: 35%;
+}

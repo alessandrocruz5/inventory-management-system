@@ -599,7 +599,7 @@ Eight screens, written for a shop owner who is not technical: plain verbs, peso 
 | --- | --- | --- | --- |
 | `/login` | Sign in | public | Email, password, lockout message |
 | `/stock` | Stock on hand | any | AG Grid: item, location, qty, unit, avg cost, value; filter by location; totals row from the API's totals; negative balances in red; row click opens the item |
-| `/items` | Items | any (edit: Admin) | Grid with search; create/edit dialog; deactivate with the `stock-not-zero` message when blocked |
+| `/items` | Items | any (edit: Admin) | List with search; per-row edit and deactivate; create/edit dialog; deactivate with the `stock-not-zero` message when blocked |
 | `/items/:id` | Item detail | any | Balance per location; movement history with running balance; link to each document |
 | `/locations` | Locations | any (edit: Admin) | Physical list with create/edit/deactivate and an Allow negative stock switch (Admin, with a warning); virtual ones read-only with a "System" chip |
 | `/documents/new/:type` | Post stock | Staff, Admin (adjust: Admin) | One form component for all four types (below) |
@@ -731,3 +731,4 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-04: audited ([[Inventory System — Sprint 1 Spec.audit]]), 18 fixes applied (3 BLOCK, 15 FIX). Three NOTE items folded in where the fixes needed them (lock order, `IX_Balances_Location`, foreign ids in bodies); the rest stay open in the audit. Status: audited.
 - 2026-11-09: S5c plan amended §6 steps 1, 2 and 8 (overflow guards; replay before the database checks of step 1).
 - 2026-11-17: S14 plan ([[2026-11-17-s14-azure]]) replaced Static Web Apps with nginx on Container Apps and added Data Protection keys in the database.
+- 2026-11-17: Sprint 2 UI redesign ([[2026-11-17-ui-redesign]]) shows /items as a list with per-row actions instead of an AG Grid (D1).

@@ -35,6 +35,13 @@ export const POSTING_TITLES: Record<PostingType, string> = {
   adjustment: 'Correct stock',
 };
 
+export const POSTING_SUBTITLES: Record<PostingType, string> = {
+  receipt: 'Record stock arriving from a supplier.',
+  issue: 'Record stock that was sold or used up.',
+  transfer: 'Move stock between two of your locations.',
+  adjustment: 'Fix a count, or write off damaged or lost stock.',
+};
+
 export const MAX_LINES = 100;
 
 // Mirrors PostingValidation.MaxAmount on the server
@@ -290,4 +297,28 @@ export function postingErrors(
       result.message = problemMessage(body);
   }
   return result;
+}
+
+/** "Total cost" for types with a cost field (receipt, adjustment); else "Value at average cost". */
+export function postingTotalLabel(type: PostingType): 'Total cost' | 'Value at average cost' {
+  return type === 'receipt' || type === 'adjustment' ? 'Total cost' : 'Value at average cost';
+}
+
+/**
+ * The sticky-bar total (display only; the server costs the posting). Per line:
+ * usesUnitCost -> quantity x (unitCost ?? 0); otherwise quantity x (averageCosts[i] ?? 0).
+ * Lines with a null or non-finite quantity count as 0. Rounded to 4 dp, AwayFromZero.
+ */
+export function postingTotal(
+  type: PostingType,
+  lines: readonly PostingLine[],
+  averageCosts: readonly (number | null)[],
+): number {
+  let total = 0;
+  lines.forEach((line, i) => {
+    const quantity = line.quantity !== null && Number.isFinite(line.quantity) ? line.quantity : 0;
+    const cost = usesUnitCost(type, line) ? (line.unitCost ?? 0) : (averageCosts[i] ?? 0);
+    total += quantity * cost;
+  });
+  return (Math.sign(total) * Math.round(Math.abs(total) * 10000)) / 10000;
 }

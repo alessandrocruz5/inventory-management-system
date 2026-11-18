@@ -1,6 +1,7 @@
 import { FormControl } from '@angular/forms';
 import {
   IdempotencyKey,
+  POSTING_SUBTITLES,
   PostingHeader,
   PostingLine,
   amountValidator,
@@ -9,6 +10,8 @@ import {
   isOutflow,
   linesOverOnHand,
   postingErrors,
+  postingTotal,
+  postingTotalLabel,
   sourceLocationId,
   unitCostRequired,
   usesUnitCost,
@@ -308,5 +311,52 @@ describe('amounts', () => {
   it('limits the range', () => {
     expect(check(positive, 999_999_999.9999)).toBeNull();
     expect(check(positive, 1_000_000_000)).toEqual({ amount: 'Must be at most 999,999,999.9999.' });
+  });
+});
+
+describe('postingTotal', () => {
+  it('sums quantity x unit cost for a receipt', () => {
+    const lines = [line({ quantity: 10, unitCost: 85.5 }), line({ quantity: 2, unitCost: 142 })];
+    expect(postingTotal('receipt', lines, [null, null])).toBe(1139);
+  });
+
+  it('uses average costs for an issue', () => {
+    const lines = [line({ quantity: 3 }), line({ quantity: 2 })];
+    expect(postingTotal('issue', lines, [85.5, null])).toBe(256.5);
+  });
+
+  it('counts adjustment Add lines at unit cost and Remove lines at average cost', () => {
+    const lines = [
+      line({ quantity: 2, unitCost: 10, direction: 'add' }),
+      line({ quantity: 1, unitCost: 99, direction: 'remove' }),
+    ];
+    expect(postingTotal('adjustment', lines, [null, 7])).toBe(27);
+  });
+
+  it('ignores a null quantity', () => {
+    const lines = [line({ quantity: null, unitCost: 50 }), line({ quantity: 2, unitCost: 5 })];
+    expect(postingTotal('receipt', lines, [null, null])).toBe(10);
+  });
+
+  it('rounds to 4 decimal places', () => {
+    expect(postingTotal('receipt', [line({ quantity: 3, unitCost: 0.1 })], [null])).toBe(0.3);
+  });
+});
+
+describe('postingTotalLabel', () => {
+  it('labels each posting type', () => {
+    expect(postingTotalLabel('receipt')).toBe('Total cost');
+    expect(postingTotalLabel('adjustment')).toBe('Total cost');
+    expect(postingTotalLabel('issue')).toBe('Value at average cost');
+    expect(postingTotalLabel('transfer')).toBe('Value at average cost');
+  });
+});
+
+describe('POSTING_SUBTITLES', () => {
+  it('has a subtitle for every posting type', () => {
+    const types: PostingType[] = ['receipt', 'issue', 'transfer', 'adjustment'];
+    for (const type of types) {
+      expect(POSTING_SUBTITLES[type].length).toBeGreaterThan(0);
+    }
   });
 });

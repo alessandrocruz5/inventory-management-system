@@ -121,5 +121,13 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - **S11:** INV-5's windowed SQL must return what `CostingPolicy.LastUnitCost` returns. T9 can compare the two.
 - **Build:** restore needs `DOTNET_SYSTEM_NET_DISABLEIPV6=1` on this machine.
 
+## Sprint 2 — UI redesign (neutral, responsive)   (planned 2026-11-17)
+Epic: IMS-21 · Branch base: `develop` · Plan: [[2026-11-17-ui-redesign]]
+- [x] IMS-22 — Design foundation and app shell · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 01, 02, 03 · depends: — · model: sonnet (merged 2026-11-17)
+- [x] IMS-23 — Stock and Documents lists · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 04, 05 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Stock and Documents restyled (themed AG Grid, status pills, stacked rows below 760 px). Downstream: all grid columns use flex with minWidths and Stock disables column virtualisation, so e2e col-ids stay in the DOM beside the 248 px sidebar.
+- [x] IMS-24 — Items, Item detail and Locations · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 06, 07, 08 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Items is a row list with per-row Admin actions (no AG Grid; spec §10/§15 amended), Item detail and Locations restyled. Downstream: none — IMS-25/26 touch disjoint files.
+- [x] IMS-25 — Document detail and Ledger health · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 09, 10 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Document detail (back link, title pill, notices, meta grid, Lines total) and Ledger health (overall banner, invariant pills, nested failure tables) restyled. Downstream: none — IMS-26 touches disjoint files.
+- [x] IMS-26 — Post stock form · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 11, 12 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Post stock form restyled; verified by CI only (local Commands not run). Downstream: none.
+
 ## Hotfixes
 - [x] IMS-19 — Bump Aspire packages to 13.6.5 (GHSA-f7vh-h5g3-7jrh) · Fixed · files: src/AppHost/AppHost.csproj, src/Modules/Inventory/Inventory/Inventory.csproj, src/Modules/Platform/Platform/Platform.csproj · depends: — · model: haiku (merged 2026-11-12)

@@ -1,27 +1,22 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
-import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSlideToggleChange, MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { AuthService } from '../core/auth/auth.service';
 import { problemMessage } from '../core/problems/problem-messages';
 import { ConfirmDialog } from '../shared/confirm-dialog';
+import { StatusPill } from '../shared/status-pill';
 import { LocationDialog } from './location-dialog';
 import { Location, LocationsService } from './locations.service';
 
 @Component({
   selector: 'app-locations',
-  imports: [
-    MatButtonModule,
-    MatChipsModule,
-    MatListModule,
-    MatPaginatorModule,
-    MatSlideToggleModule,
-  ],
+  imports: [MatButtonModule, MatIconModule, MatPaginatorModule, MatSlideToggleModule, StatusPill],
+  host: { class: 'page' },
   templateUrl: './locations.html',
   styleUrl: './locations.scss',
 })

@@ -1,41 +1,99 @@
-:host {
-  display: block;
-  max-width: 960px;
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.header,
-.line {
+.banner,
+.card {
+  margin: 0;
+}
+.banner a {
+  margin-left: 6px;
+  color: inherit;
+  font-weight: 500;
+}
+.details {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0 16px;
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+  margin-top: 16px;
 }
-.line {
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: 12px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-.line .item {
+.details .notes {
   grid-column: 1 / -1;
 }
-.on-hand,
-.dup {
-  font-size: 0.875rem;
-  margin: 0 0 8px;
+.lines-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px clamp(16px, 2.4vw, 24px);
 }
-.dup,
-.banner {
-  color: var(--mat-sys-error);
+.line-count {
+  font-size: 13px;
 }
-.actions {
+.line {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
+  align-items: flex-end;
+  gap: 12px 16px;
+  padding: 16px clamp(16px, 2.4vw, 24px);
+  border-top: 1px solid var(--ims-border);
 }
-@media (max-width: 599px) {
-  .header,
-  .line {
-    grid-template-columns: 1fr;
-  }
+.line .item {
+  flex: 3 1 240px;
+}
+.line .qty {
+  flex: 1 1 120px;
+}
+.hint {
+  display: flex;
+  align-items: center;
+  flex-basis: 100%;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+.hint mat-icon {
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+}
+.lines-foot {
+  padding: 16px clamp(16px, 2.4vw, 24px);
+  border-top: 1px solid var(--ims-border);
+}
+.post-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px clamp(16px, 2.4vw, 24px);
+  background-color: var(--ims-surface);
+  border: 1px solid var(--ims-border);
+  border-radius: 12px;
+  box-shadow: 0 -4px 16px rgba(28, 27, 25, 0.04);
+}
+.post-total {
+  display: flex;
+  flex-direction: column;
+}
+.post-total__label {
+  font-size: 12px;
+  line-height: 16px;
+}
+.post-total__value {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.post-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

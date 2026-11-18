@@ -32,6 +32,11 @@ export interface StockQuery {
   pageSize: number;
 }
 
+export interface StockBalance {
+  onHand: number;
+  averageCost: number | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class StockService {
   private readonly http = inject(HttpClient);
@@ -48,8 +53,13 @@ export class StockService {
     return firstValueFrom(this.http.get<StockPage>('/api/stock', { params }));
   }
 
-  async onHand(itemId: string, locationId: string): Promise<number> {
+  async balance(itemId: string, locationId: string): Promise<StockBalance> {
     const page = await this.list({ itemId, locationId, page: 1, pageSize: 1 });
-    return page.items[0]?.onHand ?? 0;
+    const row = page.items[0];
+    return { onHand: row?.onHand ?? 0, averageCost: row?.averageCost ?? null };
+  }
+
+  async onHand(itemId: string, locationId: string): Promise<number> {
+    return (await this.balance(itemId, locationId)).onHand;
   }
 }

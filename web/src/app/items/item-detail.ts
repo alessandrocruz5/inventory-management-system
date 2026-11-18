@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth/auth.service';
@@ -12,75 +13,15 @@ import {
   formatQuantity,
   postedByLabel,
 } from '../shared/format';
+import { StatusPill } from '../shared/status-pill';
 import { ItemDetail as ItemDetailData, ItemMovement, ItemsService } from './items.service';
 
 @Component({
   selector: 'app-item-detail',
-  imports: [RouterLink, MatPaginatorModule],
+  imports: [RouterLink, MatIconModule, MatPaginatorModule, StatusPill],
   templateUrl: './item-detail.html',
-  styles: `
-    :host {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      padding: 16px;
-    }
-    h1 {
-      margin: 0;
-      font: var(--mat-sys-headline-medium);
-    }
-    h2 {
-      margin: 0;
-      font: var(--mat-sys-title-medium);
-    }
-    dl {
-      display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: 4px 16px;
-      margin: 0;
-    }
-    dt {
-      color: var(--mat-sys-on-surface-variant);
-    }
-    dd {
-      margin: 0;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-    }
-    th,
-    td {
-      padding: 8px;
-      text-align: left;
-      border-bottom: 1px solid var(--mat-sys-outline-variant);
-    }
-    .num {
-      text-align: right;
-    }
-    @media (max-width: 599px) {
-      thead {
-        display: none;
-      }
-      tr,
-      td {
-        display: block;
-      }
-      tr {
-        padding: 8px 0;
-        border-bottom: 1px solid var(--mat-sys-outline-variant);
-      }
-      td {
-        border: 0;
-        padding: 2px 0;
-        text-align: left;
-      }
-      td[data-label]::before {
-        content: attr(data-label) ': ';
-        color: var(--mat-sys-on-surface-variant);
-      }
-    }
-  `,
+  styleUrl: './item-detail.scss',
+  host: { class: 'page' },
 })
 export class ItemDetail {
   private readonly itemsService = inject(ItemsService);
@@ -100,6 +41,11 @@ export class ItemDetail {
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly pageSizeOptions = [25, 50, 100];
+
+  protected readonly totalOnHand = computed(() => {
+    const sum = (this.item()?.balances ?? []).reduce((acc, b) => acc + b.onHand, 0);
+    return Math.round(sum * 10000) / 10000;
+  });
 
   private requestedId: string | null = null;
 

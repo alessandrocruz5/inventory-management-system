@@ -1,47 +1,93 @@
-<h1>Items</h1>
-
-<div class="filters">
-  <mat-form-field class="search">
-    <mat-label>Search SKU or name</mat-label>
-    <input matInput type="search" [formControl]="search" />
-  </mat-form-field>
-  <mat-slide-toggle [checked]="showInactive()" (change)="onShowInactive($event.checked)">
-    Show inactive
-  </mat-slide-toggle>
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Items</h1>
+    <p class="page-subtitle">
+      @if (showInactive()) {
+        {{ total() }} {{ total() === 1 ? 'item' : 'items' }}
+      } @else {
+        {{ total() }} active {{ total() === 1 ? 'item' : 'items' }}
+      }
+    </p>
+  </div>
   @if (auth.isAdmin()) {
-    <span class="spacer"></span>
-    <div class="actions">
-      <button mat-flat-button type="button" (click)="openDialog(null)">New item</button>
-      <button
-        mat-stroked-button
-        type="button"
-        [disabled]="!selected()"
-        (click)="openDialog(selected())"
-      >
-        Edit
-      </button>
-      <button mat-stroked-button type="button" [disabled]="!canDeactivate()" (click)="deactivate()">
-        Deactivate
+    <div class="page-actions">
+      <button mat-flat-button type="button" (click)="openDialog(null)">
+        <mat-icon>add</mat-icon>New item
       </button>
     </div>
   }
-</div>
+</header>
 
-<ag-grid-angular
-  class="grid"
-  [theme]="theme"
-  [columnDefs]="columnDefs"
-  [rowData]="rows()"
-  [loading]="loading()"
-  [rowSelection]="rowSelection"
-  [pagination]="false"
-  (selectionChanged)="onSelectionChanged($event)"
-/>
+<section class="card">
+  <div class="filter-bar">
+    <mat-form-field class="search" appearance="outline" subscriptSizing="dynamic">
+      <mat-icon matPrefix>search</mat-icon>
+      <input
+        matInput
+        type="search"
+        [formControl]="search"
+        placeholder="Search SKU or name"
+        aria-label="Search SKU or name"
+      />
+    </mat-form-field>
+    <mat-slide-toggle [checked]="showInactive()" (change)="onShowInactive($event.checked)">
+      Show inactive
+    </mat-slide-toggle>
+  </div>
 
-<mat-paginator
-  [length]="total()"
-  [pageIndex]="pageIndex()"
-  [pageSize]="pageSize()"
-  [pageSizeOptions]="pageSizeOptions"
-  (page)="onPage($event)"
-/>
+  @for (item of rows(); track item.id) {
+    <div class="item-row">
+      <a class="item-main" [routerLink]="['/items', item.id]">
+        <span class="item-sku mono">{{ item.sku }}</span>
+        <span class="item-name">{{ item.name }}</span>
+      </a>
+      <div class="item-side">
+        <span class="item-unit muted">{{ item.baseUnit }}</span>
+        <app-status-pill
+          [tone]="item.isActive ? 'good' : 'neutral'"
+          [label]="item.isActive ? 'Active' : 'Inactive'"
+        />
+        @if (auth.isAdmin()) {
+          <button
+            mat-stroked-button
+            class="btn-sm"
+            type="button"
+            [attr.aria-label]="'Edit ' + item.sku"
+            (click)="openDialog(item)"
+          >
+            Edit
+          </button>
+          @if (item.isActive) {
+            <button
+              mat-stroked-button
+              class="btn-icon"
+              type="button"
+              [attr.aria-label]="'Deactivate ' + item.sku"
+              (click)="deactivate(item)"
+            >
+              <mat-icon>block</mat-icon>
+            </button>
+          }
+        }
+      </div>
+    </div>
+  } @empty {
+    @if (loading()) {
+      @for (n of [1, 2, 3, 4, 5]; track n) {
+        <div class="skeleton skeleton-row"></div>
+      }
+    } @else {
+      <p class="empty-state">No items match.</p>
+    }
+  }
+
+  <div class="card__footer">
+    <mat-paginator
+      [length]="total()"
+      [pageIndex]="pageIndex()"
+      [pageSize]="pageSize()"
+      [pageSizeOptions]="pageSizeOptions"
+      (page)="onPage($event)"
+    />
+  </div>
+</section>

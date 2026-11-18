@@ -1,7 +1,9 @@
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { HttpErrorResponse } from '@angular/common/http';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
+import { of } from 'rxjs';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { AgGridAngular } from 'ag-grid-angular';
 import { ColDef } from 'ag-grid-community';
@@ -16,6 +18,7 @@ interface StockInternals {
   totalsRow(): unknown;
   locations(): { id: string }[];
   columnDefs: ColDef<StockRow>[];
+  subtitle(): string;
 }
 
 describe('Stock', () => {
@@ -23,6 +26,7 @@ describe('Stock', () => {
   const listLocations = vi.fn();
   const open = vi.fn();
   const navigate = vi.fn();
+  let narrow = false;
 
   const row = (onHand: number) => ({
     itemId: 'i',
@@ -51,6 +55,7 @@ describe('Stock', () => {
     listLocations.mockReset();
     open.mockReset();
     navigate.mockReset();
+    narrow = false;
     list.mockResolvedValue({
       items: [row(10), row(20)],
       page: 1,
@@ -74,9 +79,17 @@ describe('Stock', () => {
         { provide: StockService, useValue: { list } },
         { provide: LocationsService, useValue: { list: listLocations } },
         { provide: MatSnackBar, useValue: { open } },
-        { provide: Router, useValue: { navigate } },
+        provideRouter([]),
+        {
+          provide: BreakpointObserver,
+          useFactory: () => ({
+            observe: () => of({ matches: narrow, breakpoints: {} }),
+            isMatched: () => narrow,
+          }),
+        },
       ],
     }).compileComponents();
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(navigate);
   });
 
   it('loads page 1 with pageSize 25 and no location', async () => {
@@ -127,11 +140,11 @@ describe('Stock', () => {
     const defs = component(fixture).columnDefs;
     const fmt = (i: number, value: unknown) =>
       (defs[i].valueFormatter as (p: unknown) => string)({ value });
-    expect(fmt(2, 10)).toBe('10');
-    expect(fmt(2, undefined)).toBe('');
+    expect(fmt(3, 10)).toBe('10');
+    expect(fmt(3, undefined)).toBe('');
+    expect(fmt(6, 1234.5)).toBe('₱1,234.50');
+    expect(fmt(5, null)).toBe('—');
     expect(fmt(5, 1234.5)).toBe('₱1,234.50');
-    expect(fmt(4, null)).toBe('—');
-    expect(fmt(4, 1234.5)).toBe('₱1,234.50');
   });
 
   it('marks negative quantity and value cells', async () => {
@@ -169,6 +182,60 @@ describe('Stock', () => {
     component(fixture).onRowClicked({ stockValue: 100 });
     component(fixture).onRowClicked(undefined);
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('reads "2 balances across 1 location" in the subtitle', async () => {
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    expect(component(fixture).subtitle()).toBe('2 balances across 1 location');
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.page-subtitle')?.textContent?.trim()).toBe(
+      '2 balances across 1 location',
+    );
+  });
+
+  it('derives the Status column from on-hand quantity', async () => {
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    const status = component(fixture).columnDefs.find((d) => d.colId === 'status');
+    const getter = status?.valueGetter as (p: unknown) => { label: string } | undefined;
+    expect(getter({ data: row(5) })?.label).toBe('In stock');
+    expect(getter({ data: row(0) })?.label).toBe('Out of stock');
+    expect(getter({ data: row(-1) })?.label).toBe('Negative');
+    expect(getter({ data: undefined })).toBeUndefined();
+    expect(status?.sortable).toBe(false);
+  });
+
+  it('renders the stacked list instead of the grid when narrow', async () => {
+    narrow = true;
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('a.stacked-row'));
+    expect(links).toHaveLength(2);
+    expect(links[0].getAttribute('href')).toBe('/items/i');
+    expect(el.querySelector('ag-grid-angular')).toBeNull();
+    expect(el.querySelector('.page-actions')).toBeNull();
+  });
+
+  it('renders the grid and the Receive stock action on desktop', async () => {
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('ag-grid-angular')).not.toBeNull();
+    expect(el.querySelector('a.stacked-row')).toBeNull();
+    expect(el.querySelector('.page-actions a')?.getAttribute('href')).toBe(
+      '/documents/new/receipt',
+    );
+  });
+
+  it('labels the location select with the visible Location label', async () => {
+    const fixture = TestBed.createComponent(Stock);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const select = el.querySelector('mat-select');
+    expect(select?.getAttribute('aria-labelledby')?.trim()).toBe('stock-location-label');
+    expect(el.querySelector('#stock-location-label')?.textContent?.trim()).toBe('Location');
   });
 
   function component(fixture: { componentInstance: Stock }) {

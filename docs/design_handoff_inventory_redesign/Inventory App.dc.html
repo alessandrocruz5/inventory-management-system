@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,300..400,0,0" rel="stylesheet">
+<style>
+html,body{margin:0;background:#f7f7f5;color:#1c1b19;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#1c1b19;text-decoration:underline;text-underline-offset:2px}
+a:hover{color:#57534e}
+.material-symbols-outlined{font-variation-settings:'opsz' 20,'wght' 350;line-height:1}
+input,select,textarea,button{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:20px;color:#1c1b19;background:#f7f7f5">
+
+<sc-if value="{{ drawerBackdrop }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeDrawer }}" style="position:fixed;inset:0;background:rgba(28,27,25,.32);z-index:19"></div>
+</sc-if>
+
+<sc-if value="{{ showSidebar }}" hint-placeholder-val="{{ true }}">
+  <aside style="position:{{ sbPos }};top:0;left:0;z-index:20;height:100vh;width:248px;flex:none;display:flex;flex-direction:column;background:#fff;border-right:1px solid #e7e5e2;box-shadow:{{ sbShadow }}">
+    <div style="display:flex;align-items:center;gap:10px;padding:20px 20px 16px">
+      <div style="width:32px;height:32px;border-radius:8px;background:#1c1b19;color:#fff;display:flex;align-items:center;justify-content:center"><span class="material-symbols-outlined" style="font-size:18px">inventory_2</span></div>
+      <div style="display:flex;flex-direction:column;min-width:0">
+        <span style="font-weight:600;font-size:15px;line-height:20px">Inventory</span>
+        <span style="font-size:12px;line-height:16px;color:#78716c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Lumen Candle Co.</span>
+      </div>
+    </div>
+    <nav style="flex:1;overflow-y:auto;padding:4px 12px 16px;display:flex;flex-direction:column;gap:20px">
+      <sc-for list="{{ navGroups }}" as="g" hint-placeholder-count="3">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="padding:0 10px 6px;font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:#a8a29e">{{ g.title }}</span>
+          <sc-for list="{{ g.items }}" as="n" hint-placeholder-count="4">
+            <button type="button" onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border:0;border-radius:8px;background:{{ n.bg }};color:{{ n.fg }};font-size:14px;font-weight:{{ n.fw }};text-align:left;cursor:pointer" style-hover="background:#f2f1ef;color:#1c1b19">
+              <span class="material-symbols-outlined" style="font-size:20px;color:{{ n.ic }}">{{ n.icon }}</span>{{ n.label }}
+            </button>
+          </sc-for>
+        </div>
+      </sc-for>
+    </nav>
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid #e7e5e2">
+      <div style="width:32px;height:32px;border-radius:50%;background:#ecebe8;color:#57534e;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none">AR</div>
+      <div style="display:flex;flex-direction:column;min-width:0;flex:1">
+        <span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ana@lumencandle.ph</span>
+        <span style="font-size:12px;line-height:16px;color:#78716c">{{ role }}</span>
+      </div>
+      <button type="button" title="Sign out" style="width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:#78716c;display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="background:#f2f1ef;color:#1c1b19"><span class="material-symbols-outlined" style="font-size:20px">logout</span></button>
+    </div>
+  </aside>
+</sc-if>
+
+<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+    <header style="position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;height:56px;padding:0 8px 0 4px;background:#fff;border-bottom:1px solid #e7e5e2">
+      <button type="button" onClick="{{ openDrawer }}" aria-label="Menu" style="width:44px;height:44px;border:0;background:transparent;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#1c1b19;cursor:pointer"><span class="material-symbols-outlined" style="font-size:24px">menu</span></button>
+      <div style="display:flex;flex-direction:column;flex:1;min-width:0">
+        <span style="font-weight:600;font-size:15px;line-height:18px">Inventory</span>
+        <span style="font-size:12px;line-height:16px;color:#78716c">Lumen Candle Co.</span>
+      </div>
+      <button type="button" onClick="{{ goReceive }}" style="height:36px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:#1c1b19;cursor:pointer"><span class="material-symbols-outlined" style="font-size:18px">add</span>Post</button>
+    </header>
+  </sc-if>
+
+  <main style="width:100%;max-width:1240px;margin:0 auto;padding:clamp(20px,3.4vw,40px) clamp(16px,3.4vw,40px) 48px;display:flex;flex-direction:column;gap:24px">
+
+    <!-- STOCK -->
+    <sc-if value="{{ is.stock }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">Stock on hand</h1>
+          <p style="margin:0;color:#78716c">{{ stockSubtitle }}</p>
+        </div>
+        <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+          <button type="button" onClick="{{ goReceive }}" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:8px;background:#1c1b19;color:#fff;border:0;font-size:14px;font-weight:500;cursor:pointer" style-hover="background:#3a3835"><span class="material-symbols-outlined" style="font-size:20px">add</span>Receive stock</button>
+        </sc-if>
+      </div>
+      <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow:hidden">
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding:16px;border-bottom:1px solid #e7e5e2">
+          <label style="display:flex;flex-direction:column;gap:6px;flex:1 1 220px;max-width:320px">
+            <span style="font-size:12px;font-weight:500;color:#57534e">Location</span>
+            <span style="position:relative;display:block">
+              <select value="{{ loc }}" onChange="{{ onLoc }}" style="appearance:none;-webkit-appearance:none;width:100%;height:40px;padding:0 36px 0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19">
+                <option value="all">All locations</option>
+                <sc-for list="{{ activeLocs }}" as="l"><option value="{{ l.code }}">{{ l.code }} · {{ l.name }}</option></sc-for>
+              </select>
+              <span class="material-symbols-outlined" style="position:absolute;right:10px;top:10px;font-size:20px;color:#78716c;pointer-events:none">expand_more</span>
+            </span>
+          </label>
+          <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end;margin-left:auto">
+            <span style="font-size:12px;font-weight:500;color:#78716c">Total value</span>
+            <span style="font-size:20px;line-height:28px;font-weight:600;font-variant-numeric:tabular-nums">{{ stockTotal }}</span>
+          </div>
+        </div>
+        <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;min-width:720px">
+              <thead><tr>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Item</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Location</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Status</th>
+                <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Qty</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Unit</th>
+                <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Avg cost</th>
+                <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Value</th>
+              </tr></thead>
+              <tbody>
+                <sc-for list="{{ stockRows }}" as="r" hint-placeholder-count="8">
+                  <tr onClick="{{ r.open }}" style="cursor:pointer" style-hover="background:#fafaf9">
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed"><div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">{{ r.name }}</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:16px;color:#78716c">{{ r.sku }}</span></div></td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#57534e">{{ r.loc }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed"><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ r.st.bg }};color:{{ r.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ r.st.dot }}"></span>{{ r.st.label }}</span></td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;font-weight:500;color:{{ r.qtyColor }}">{{ r.qtyText }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;color:#78716c">{{ r.unit }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;color:#57534e">{{ r.avgText }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;color:{{ r.qtyColor }}">{{ r.valText }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+              <tfoot><tr>
+                <td colspan="6" style="padding:12px 16px;font-weight:600;background:#fafaf9">Total</td>
+                <td style="padding:12px 16px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;background:#fafaf9">{{ stockTotal }}</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </sc-if>
+        <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column">
+            <sc-for list="{{ stockRows }}" as="r" hint-placeholder-count="6">
+              <div onClick="{{ r.open }}" style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #f0efed;cursor:pointer">
+                <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                  <span style="font-weight:500">{{ r.name }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:16px;color:#78716c">{{ r.sku }} · {{ r.loc }}</span>
+                  <span style="font-size:12px;line-height:16px;color:#78716c;font-variant-numeric:tabular-nums">{{ r.valText }}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none">
+                  <span style="font-variant-numeric:tabular-nums;font-weight:600;color:{{ r.qtyColor }}">{{ r.qtyText }} <span style="font-weight:400;color:#78716c">{{ r.unit }}</span></span>
+                  <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ r.st.bg }};color:{{ r.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ r.st.dot }}"></span>{{ r.st.label }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 20px;padding:10px 16px;font-size:13px;color:#57534e">
+          <span>Rows per page <strong style="font-weight:500;color:#1c1b19">25</strong></span>
+          <span style="font-variant-numeric:tabular-nums">{{ stockRange }}</span>
+          <div style="display:flex;gap:4px">
+            <button type="button" disabled="" style="width:32px;height:32px;border:1px solid #e7e5e2;border-radius:8px;background:#fff;color:#c4c0bb;display:flex;align-items:center;justify-content:center"><span class="material-symbols-outlined" style="font-size:18px">chevron_left</span></button>
+            <button type="button" disabled="" style="width:32px;height:32px;border:1px solid #e7e5e2;border-radius:8px;background:#fff;color:#c4c0bb;display:flex;align-items:center;justify-content:center"><span class="material-symbols-outlined" style="font-size:18px">chevron_right</span></button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ITEMS -->
+    <sc-if value="{{ is.items }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">Items</h1>
+          <p style="margin:0;color:#78716c">{{ itemsSubtitle }}</p>
+        </div>
+        <sc-if value="{{ admin }}" hint-placeholder-val="{{ true }}">
+          <button type="button" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:8px;background:#1c1b19;color:#fff;border:0;font-size:14px;font-weight:500;cursor:pointer" style-hover="background:#3a3835"><span class="material-symbols-outlined" style="font-size:20px">add</span>New item</button>
+        </sc-if>
+      </div>
+      <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow:hidden">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:16px;border-bottom:1px solid #e7e5e2">
+          <span style="position:relative;display:block;flex:1 1 240px;max-width:360px">
+            <span class="material-symbols-outlined" style="position:absolute;left:10px;top:10px;font-size:20px;color:#a8a29e;pointer-events:none">search</span>
+            <input type="search" placeholder="Search SKU or name" value="{{ search }}" onChange="{{ onSearch }}" style="width:100%;height:40px;padding:0 12px 0 38px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19"></input>
+          </span>
+          <button type="button" onClick="{{ toggleInactive }}" style="display:inline-flex;align-items:center;gap:10px;height:40px;padding:0;border:0;background:transparent;font-size:14px;color:#1c1b19;cursor:pointer">
+            <span style="width:34px;height:20px;border-radius:999px;background:{{ inactiveTrack }};position:relative;transition:background .15s"><span style="position:absolute;top:2px;left:{{ inactiveKnob }};width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .15s"></span></span>
+            Show inactive
+          </button>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <sc-for list="{{ itemRows }}" as="it" hint-placeholder-count="8">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 16px;border-bottom:1px solid #f0efed" style-hover="background:#fafaf9">
+              <div onClick="{{ it.open }}" style="display:flex;align-items:center;gap:16px;flex:1 1 260px;min-width:0;cursor:pointer">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#57534e;width:112px;flex:none">{{ it.sku }}</span>
+                <span style="font-weight:500;min-width:0">{{ it.name }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:16px;flex:none">
+                <span style="color:#78716c;width:32px">{{ it.unit }}</span>
+                <span style="width:88px"><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ it.st.bg }};color:{{ it.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ it.st.dot }}"></span>{{ it.st.label }}</span></span>
+                <sc-if value="{{ admin }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;gap:4px">
+                    <button type="button" style="height:32px;padding:0 10px;border:1px solid #e7e5e2;border-radius:8px;background:#fff;font-size:13px;font-weight:500;color:#1c1b19;cursor:pointer" style-hover="border-color:#c4c0bb">Edit</button>
+                    <button type="button" title="Deactivate" style="width:32px;height:32px;border:1px solid #e7e5e2;border-radius:8px;background:#fff;color:#57534e;display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="border-color:#c4c0bb"><span class="material-symbols-outlined" style="font-size:18px">block</span></button>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;justify-content:flex-end;padding:10px 16px;font-size:13px;color:#57534e;font-variant-numeric:tabular-nums">{{ itemsRange }}</div>
+      </div>
+    </sc-if>
+
+    <!-- ITEM DETAIL -->
+    <sc-if value="{{ is.item }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button type="button" onClick="{{ goStock }}" style="align-self:flex-start;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px 0 2px;border:0;border-radius:6px;background:transparent;font-size:13px;color:#57534e;cursor:pointer" style-hover="background:#ecebe8"><span class="material-symbols-outlined" style="font-size:18px">arrow_back</span>Stock</button>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px">
+          <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">{{ item.name }}</h1>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ item.st.bg }};color:{{ item.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ item.st.dot }}"></span>{{ item.st.label }}</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px 24px;color:#57534e">
+          <span>SKU <span style="font-family:'IBM Plex Mono',monospace;color:#1c1b19">{{ item.sku }}</span></span>
+          <span>Unit <span style="color:#1c1b19">{{ item.unit }}</span></span>
+          <span>On hand <span style="color:#1c1b19;font-variant-numeric:tabular-nums">{{ item.onHand }}</span></span>
+        </div>
+      </div>
+      <section style="display:flex;flex-direction:column;gap:12px">
+        <h2 style="margin:0;font-size:16px;line-height:24px;font-weight:600">Stock by location</h2>
+        <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;min-width:520px">
+            <thead><tr>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Location</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Qty</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Avg cost</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Value</th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{ item.balances }}" as="b" hint-placeholder-count="3">
+                <tr>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed"><span style="font-family:'IBM Plex Mono',monospace;font-size:13px">{{ b.code }}</span> <span style="color:#78716c">· {{ b.name }}</span></td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;font-weight:500;color:{{ b.color }}">{{ b.qty }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;color:#57534e">{{ b.avg }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;color:{{ b.color }}">{{ b.val }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:12px">
+        <h2 style="margin:0;font-size:16px;line-height:24px;font-weight:600">History</h2>
+        <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;min-width:960px">
+            <thead><tr>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Posted</th>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Document</th>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Location</th>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">From / to</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Qty</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Value</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Balance</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Balance value</th>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Posted by</th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{ history }}" as="m" hint-placeholder-count="6">
+                <tr>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;white-space:nowrap;color:#57534e">{{ m.posted }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;white-space:nowrap"><a href="#" onClick="{{ m.open }}">{{ m.doc }}</a></td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;font-family:'IBM Plex Mono',monospace;font-size:13px">{{ m.loc }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;white-space:nowrap;color:#57534e">{{ m.cp }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;font-weight:500">{{ m.qty }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;color:#57534e">{{ m.val }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums">{{ m.bal }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;color:#57534e">{{ m.balVal }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;white-space:nowrap;color:#57534e">{{ m.by }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </sc-if>
+
+    <!-- LOCATIONS -->
+    <sc-if value="{{ is.locations }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">Locations</h1>
+          <p style="margin:0;color:#78716c">Where stock is kept. System locations record stock entering and leaving.</p>
+        </div>
+        <sc-if value="{{ admin }}" hint-placeholder-val="{{ true }}">
+          <button type="button" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:8px;background:#1c1b19;color:#fff;border:0;font-size:14px;font-weight:500;cursor:pointer" style-hover="background:#3a3835"><span class="material-symbols-outlined" style="font-size:20px">add</span>New location</button>
+        </sc-if>
+      </div>
+      <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow:hidden">
+        <sc-for list="{{ locRows }}" as="l" hint-placeholder-count="6">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding:16px;border-bottom:1px solid #f0efed">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-width:0;flex:1 1 260px">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;padding:2px 8px;border-radius:6px;background:#f2f1ef;color:{{ l.codeColor }}">{{ l.code }}</span>
+              <span style="font-weight:500;color:{{ l.nameColor }}">{{ l.name }}</span>
+              <sc-for list="{{ l.chips }}" as="c">
+                <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ c.bg }};color:{{ c.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ c.dot }}"></span>{{ c.label }}</span>
+              </sc-for>
+            </div>
+            <sc-if value="{{ l.editable }}">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px">
+                <sc-if value="{{ l.active }}">
+                  <button type="button" onClick="{{ l.toggleNeg }}" style="display:inline-flex;align-items:center;gap:10px;height:36px;padding:0;border:0;background:transparent;font-size:13px;color:#57534e;cursor:pointer">
+                    <span style="width:34px;height:20px;border-radius:999px;background:{{ l.track }};position:relative;transition:background .15s"><span style="position:absolute;top:2px;left:{{ l.knob }};width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .15s"></span></span>
+                    Allow negative stock
+                  </button>
+                </sc-if>
+                <div style="display:flex;gap:8px">
+                  <button type="button" style="height:36px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:13px;font-weight:500;color:#1c1b19;cursor:pointer" style-hover="border-color:#a8a29e">Edit</button>
+                  <sc-if value="{{ l.active }}">
+                    <button type="button" style="height:36px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:13px;font-weight:500;color:#1c1b19;cursor:pointer" style-hover="border-color:#a8a29e">Deactivate</button>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- DOCUMENTS -->
+    <sc-if value="{{ is.documents }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">Documents</h1>
+        <p style="margin:0;color:#78716c">Every posting, newest first. Open one to see its lines or reverse it.</p>
+      </div>
+      <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),220px));gap:12px 16px;padding:16px;border-bottom:1px solid #e7e5e2">
+          <label style="display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:12px;font-weight:500;color:#57534e">Type</span>
+            <span style="position:relative;display:block">
+              <select value="{{ docType }}" onChange="{{ onDocType }}" style="appearance:none;-webkit-appearance:none;width:100%;height:40px;padding:0 36px 0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19">
+                <option value="all">All types</option>
+                <sc-for list="{{ docTypes }}" as="t"><option value="{{ t.value }}">{{ t.label }}</option></sc-for>
+              </select>
+              <span class="material-symbols-outlined" style="position:absolute;right:10px;top:10px;font-size:20px;color:#78716c;pointer-events:none">expand_more</span>
+            </span>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:12px;font-weight:500;color:#57534e">From</span>
+            <input type="date" style="width:100%;height:40px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19"></input>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:12px;font-weight:500;color:#57534e">To</span>
+            <input type="date" style="width:100%;height:40px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19"></input>
+          </label>
+        </div>
+        <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;min-width:820px">
+              <thead><tr>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Posted</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Type</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Reference</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Reason</th>
+                <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Lines</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Posted by</th>
+                <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Status</th>
+              </tr></thead>
+              <tbody>
+                <sc-for list="{{ docRows }}" as="d" hint-placeholder-count="8">
+                  <tr onClick="{{ d.open }}" style="cursor:pointer" style-hover="background:#fafaf9">
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;white-space:nowrap;color:#57534e;font-variant-numeric:tabular-nums">{{ d.posted }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:8px;font-weight:500"><span class="material-symbols-outlined" style="font-size:18px;color:#78716c">{{ d.icon }}</span>{{ d.typeLabel }}</span></td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;font-family:'IBM Plex Mono',monospace;font-size:13px">{{ d.ref }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;color:#57534e">{{ d.reason }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums">{{ d.lines }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed;color:#57534e">{{ d.by }}</td>
+                    <td style="padding:12px 16px;border-bottom:1px solid #f0efed"><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ d.st.bg }};color:{{ d.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ d.st.dot }}"></span>{{ d.st.label }}</span></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </sc-if>
+        <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column">
+            <sc-for list="{{ docRows }}" as="d" hint-placeholder-count="6">
+              <div onClick="{{ d.open }}" style="display:flex;gap:12px;padding:14px 16px;border-bottom:1px solid #f0efed;cursor:pointer">
+                <span style="width:36px;height:36px;border-radius:8px;background:#f2f1ef;display:flex;align-items:center;justify-content:center;flex:none"><span class="material-symbols-outlined" style="font-size:20px;color:#57534e">{{ d.icon }}</span></span>
+                <div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
+                  <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+                    <span style="font-weight:500">{{ d.typeLabel }}</span>
+                    <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ d.st.bg }};color:{{ d.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ d.st.dot }}"></span>{{ d.st.label }}</span>
+                  </div>
+                  <span style="font-size:13px;color:#57534e"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#1c1b19">{{ d.ref }}</span> · {{ d.linesText }}</span>
+                  <span style="font-size:12px;line-height:16px;color:#78716c">{{ d.posted }} · {{ d.by }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div style="display:flex;justify-content:flex-end;padding:10px 16px;font-size:13px;color:#57534e;font-variant-numeric:tabular-nums">{{ docsRange }}</div>
+      </div>
+    </sc-if>
+
+    <!-- DOCUMENT DETAIL -->
+    <sc-if value="{{ is.document }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button type="button" onClick="{{ goDocs }}" style="align-self:flex-start;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px 0 2px;border:0;border-radius:6px;background:transparent;font-size:13px;color:#57534e;cursor:pointer" style-hover="background:#ecebe8"><span class="material-symbols-outlined" style="font-size:18px">arrow_back</span>Documents</button>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px">
+            <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">{{ doc.typeLabel }}</h1>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:#57534e">{{ doc.ref }}</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ doc.st.bg }};color:{{ doc.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ doc.st.dot }}"></span>{{ doc.st.label }}</span>
+          </div>
+          <sc-if value="{{ doc.canReverse }}">
+            <button type="button" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:8px;background:#fff;color:#1c1b19;border:1px solid #d6d3cf;font-size:14px;font-weight:500;cursor:pointer" style-hover="border-color:#a8a29e"><span class="material-symbols-outlined" style="font-size:20px">undo</span>Reverse</button>
+          </sc-if>
+        </div>
+      </div>
+      <sc-if value="{{ doc.note }}">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:{{ doc.noteBg }};color:{{ doc.noteFg }};font-size:14px"><span class="material-symbols-outlined" style="font-size:20px">info</span><span>{{ doc.note }} <a href="#" style="color:inherit">Open it</a></span></div>
+      </sc-if>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:1px;background:#e7e5e2;border:1px solid #e7e5e2;border-radius:12px;overflow:hidden">
+        <sc-for list="{{ doc.meta }}" as="k" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:4px;padding:14px 16px;background:#fff">
+            <span style="font-size:12px;font-weight:500;color:#78716c">{{ k.k }}</span>
+            <span>{{ k.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <section style="display:flex;flex-direction:column;gap:12px">
+        <h2 style="margin:0;font-size:16px;line-height:24px;font-weight:600">Lines</h2>
+        <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;min-width:680px">
+            <thead><tr>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Item</th>
+              <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">From → To</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Qty</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Unit cost</th>
+              <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Total cost</th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{ doc.lns }}" as="ln" hint-placeholder-count="3">
+                <tr>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed"><div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">{{ ln.name }}</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:16px;color:#78716c">{{ ln.sku }}</span></div></td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;font-family:'IBM Plex Mono',monospace;font-size:13px;white-space:nowrap;color:#57534e">{{ ln.from }} → {{ ln.to }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;font-weight:500">{{ ln.qty }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;color:#57534e">{{ ln.cost }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums">{{ ln.total }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+            <tfoot><tr>
+              <td colspan="4" style="padding:12px 16px;font-weight:600;background:#fafaf9">Total</td>
+              <td style="padding:12px 16px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;background:#fafaf9">{{ doc.total }}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </section>
+    </sc-if>
+
+    <!-- POST STOCK -->
+    <sc-if value="{{ is.post }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:4px;max-width:880px">
+        <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">{{ post.title }}</h1>
+        <p style="margin:0;color:#78716c">{{ post.desc }}</p>
+      </div>
+      <form onSubmit="{{ noSubmit }}" style="display:flex;flex-direction:column;gap:20px;max-width:880px">
+        <section style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;padding:clamp(16px,2.4vw,24px);display:flex;flex-direction:column;gap:16px">
+          <h2 style="margin:0;font-size:15px;line-height:22px;font-weight:600">Details</h2>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px">
+            <sc-for list="{{ post.locFields }}" as="f" hint-placeholder-count="1">
+              <label style="display:flex;flex-direction:column;gap:6px">
+                <span style="font-size:12px;font-weight:500;color:#57534e">{{ f.label }}</span>
+                <span style="position:relative;display:block">
+                  <select value="{{ f.value }}" onChange="{{ f.onChange }}" style="appearance:none;-webkit-appearance:none;width:100%;height:42px;padding:0 36px 0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19">
+                    <sc-for list="{{ f.opts }}" as="l"><option value="{{ l.code }}" selected="{{ l.sel }}">{{ l.code }} · {{ l.name }}</option></sc-for>
+                  </select>
+                  <span class="material-symbols-outlined" style="position:absolute;right:10px;top:11px;font-size:20px;color:#78716c;pointer-events:none">expand_more</span>
+                </span>
+              </label>
+            </sc-for>
+            <sc-if value="{{ post.isAdjust }}">
+              <label style="display:flex;flex-direction:column;gap:6px">
+                <span style="font-size:12px;font-weight:500;color:#57534e">Reason</span>
+                <span style="position:relative;display:block">
+                  <select style="appearance:none;-webkit-appearance:none;width:100%;height:42px;padding:0 36px 0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19">
+                    <option>Count correction</option><option>Damaged</option><option>Lost</option><option>Found</option><option>Other</option>
+                  </select>
+                  <span class="material-symbols-outlined" style="position:absolute;right:10px;top:11px;font-size:20px;color:#78716c;pointer-events:none">expand_more</span>
+                </span>
+              </label>
+            </sc-if>
+            <label style="display:flex;flex-direction:column;gap:6px">
+              <span style="font-size:12px;font-weight:500;color:#57534e">Reference</span>
+              <input value="{{ post.ref }}" placeholder="e.g. PO-1183" style="width:100%;height:42px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19" readOnly=""></input>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:6px;grid-column:1 / -1">
+              <span style="font-size:12px;font-weight:500;color:#57534e">Notes <span style="font-weight:400;color:#a8a29e">· optional</span></span>
+              <textarea rows="2" placeholder="Anything the next person should know" style="width:100%;padding:10px 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;line-height:20px;color:#1c1b19;resize:vertical"></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:clamp(16px,2.4vw,24px) clamp(16px,2.4vw,24px) 12px">
+            <h2 style="margin:0;font-size:15px;line-height:22px;font-weight:600">Lines</h2>
+            <span style="font-size:13px;color:#78716c">{{ post.lineCount }}</span>
+          </div>
+          <sc-for list="{{ post.lines }}" as="ln" hint-placeholder-count="2">
+            <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px;padding:16px clamp(16px,2.4vw,24px);border-top:1px solid #f0efed">
+              <label style="display:flex;flex-direction:column;gap:6px;flex:3 1 240px;min-width:0">
+                <span style="font-size:12px;font-weight:500;color:#57534e">Item</span>
+                <span style="position:relative;display:block">
+                  <select value="{{ ln.sku }}" onChange="{{ ln.onSku }}" style="appearance:none;-webkit-appearance:none;width:100%;height:42px;padding:0 36px 0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19">
+                    <sc-for list="{{ itemOptions }}" as="o"><option value="{{ o.sku }}">{{ o.sku }} · {{ o.name }}</option></sc-for>
+                  </select>
+                  <span class="material-symbols-outlined" style="position:absolute;right:10px;top:11px;font-size:20px;color:#78716c;pointer-events:none">expand_more</span>
+                </span>
+              </label>
+              <sc-if value="{{ post.isAdjust }}">
+                <div style="display:flex;flex-direction:column;gap:6px;flex:none">
+                  <span style="font-size:12px;font-weight:500;color:#57534e">Direction</span>
+                  <div style="display:flex;height:42px;padding:3px;border-radius:8px;background:#f2f1ef;gap:2px">
+                    <button type="button" onClick="{{ ln.setAdd }}" style="padding:0 12px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:{{ ln.addBg }};color:{{ ln.addFg }};box-shadow:{{ ln.addSh }}">Add</button>
+                    <button type="button" onClick="{{ ln.setRemove }}" style="padding:0 12px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:{{ ln.remBg }};color:{{ ln.remFg }};box-shadow:{{ ln.remSh }}">Remove</button>
+                  </div>
+                </div>
+              </sc-if>
+              <label style="display:flex;flex-direction:column;gap:6px;flex:1 1 120px;min-width:0">
+                <span style="font-size:12px;font-weight:500;color:#57534e">Quantity <span style="font-weight:400;color:#a8a29e">· {{ ln.unit }}</span></span>
+                <input type="number" value="{{ ln.qty }}" onChange="{{ ln.onQty }}" style="width:100%;height:42px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19;text-align:right;font-variant-numeric:tabular-nums"></input>
+              </label>
+              <sc-if value="{{ ln.showCost }}">
+                <label style="display:flex;flex-direction:column;gap:6px;flex:1 1 120px;min-width:0">
+                  <span style="font-size:12px;font-weight:500;color:#57534e">Unit cost <span style="font-weight:400;color:#a8a29e">· ₱</span></span>
+                  <input type="number" value="{{ ln.cost }}" onChange="{{ ln.onCost }}" style="width:100%;height:42px;padding:0 12px;border:1px solid #d6d3cf;border-radius:8px;background:#fff;font-size:14px;color:#1c1b19;text-align:right;font-variant-numeric:tabular-nums"></input>
+                </label>
+              </sc-if>
+              <button type="button" onClick="{{ ln.remove }}" disabled="{{ ln.cantRemove }}" aria-label="Remove line" style="width:42px;height:42px;flex:none;border:1px solid #e7e5e2;border-radius:8px;background:#fff;color:{{ ln.rmColor }};display:flex;align-items:center;justify-content:center;cursor:pointer"><span class="material-symbols-outlined" style="font-size:20px">delete</span></button>
+              <div style="flex:1 0 100%;display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;color:{{ ln.hintColor }}"><span class="material-symbols-outlined" style="font-size:16px">{{ ln.hintIcon }}</span>{{ ln.onHand }}</div>
+            </div>
+          </sc-for>
+          <div style="padding:12px clamp(16px,2.4vw,24px);border-top:1px solid #f0efed">
+            <button type="button" onClick="{{ addLine }}" style="display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px 0 8px;border:1px dashed #c4c0bb;border-radius:8px;background:transparent;font-size:13px;font-weight:500;color:#1c1b19;cursor:pointer" style-hover="background:#fafaf9"><span class="material-symbols-outlined" style="font-size:18px">add</span>Add line</button>
+          </div>
+        </section>
+
+        <div style="position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px;padding:14px clamp(16px,2.4vw,24px);background:#fff;border:1px solid #e7e5e2;border-radius:12px;box-shadow:0 -4px 16px rgba(28,27,25,.04)">
+          <div style="display:flex;flex-direction:column">
+            <span style="font-size:12px;color:#78716c">{{ post.totalLabel }}</span>
+            <span style="font-size:18px;line-height:26px;font-weight:600;font-variant-numeric:tabular-nums">{{ post.total }}</span>
+          </div>
+          <div style="display:flex;gap:8px;flex:1 1 auto;justify-content:flex-end">
+            <button type="button" onClick="{{ goStock }}" style="height:42px;padding:0 16px;border-radius:8px;background:#fff;color:#1c1b19;border:1px solid #d6d3cf;font-size:14px;font-weight:500;cursor:pointer">Cancel</button>
+            <button type="submit" style="height:42px;padding:0 20px;border-radius:8px;background:#1c1b19;color:#fff;border:0;font-size:14px;font-weight:500;cursor:pointer" style-hover="background:#3a3835">Post</button>
+          </div>
+        </div>
+      </form>
+    </sc-if>
+
+    <!-- LEDGER HEALTH -->
+    <sc-if value="{{ is.ledger }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.01em">Ledger health</h1>
+          <p style="margin:0;color:#78716c">Checked 17 Nov 2026, 9:50 AM</p>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <button type="button" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:8px;background:#fff;color:#1c1b19;border:1px solid #d6d3cf;font-size:14px;font-weight:500;cursor:pointer" style-hover="border-color:#a8a29e"><span class="material-symbols-outlined" style="font-size:20px">refresh</span>Check again</button>
+          <button type="button" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:8px;background:#1c1b19;color:#fff;border:0;font-size:14px;font-weight:500;cursor:pointer" style-hover="background:#3a3835">Rebuild balances</button>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:12px;border:1px solid {{ ledger.border }};background:{{ ledger.bg }}">
+        <span style="width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;color:{{ ledger.fg }}"><span class="material-symbols-outlined" style="font-size:22px">{{ ledger.icon }}</span></span>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:16px;line-height:24px;font-weight:600;color:{{ ledger.fg }}">{{ ledger.title }}</span>
+          <span style="font-size:13px;color:#57534e">{{ ledger.sub }}</span>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #e7e5e2;border-radius:12px;overflow:hidden">
+        <sc-for list="{{ ledger.invs }}" as="v" hint-placeholder-count="5">
+          <div style="border-bottom:1px solid #f0efed">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:14px 16px">
+              <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#78716c;width:24px">{{ v.id }}</span>
+                <span style="font-weight:500">{{ v.name }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:13px;color:#78716c">{{ v.count }}</span>
+                <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 7px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;background:{{ v.st.bg }};color:{{ v.st.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ v.st.dot }}"></span>{{ v.st.label }}</span>
+              </div>
+            </div>
+            <sc-if value="{{ v.failed }}">
+              <div style="margin:0 16px 16px;border:1px solid #e7e5e2;border-radius:8px;overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;min-width:600px">
+                  <thead><tr>
+                    <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">SKU</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Location</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Movement</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Check</th>
+                    <th style="padding:8px 12px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Expected</th>
+                    <th style="padding:8px 12px;text-align:right;font-size:12px;font-weight:500;color:#78716c;background:#fafaf9;border-bottom:1px solid #e7e5e2">Actual</th>
+                  </tr></thead>
+                  <tbody>
+                    <sc-for list="{{ v.failures }}" as="f">
+                      <tr>
+                        <td style="padding:10px 12px;border-bottom:1px solid #f0efed;font-family:'IBM Plex Mono',monospace;font-size:13px">{{ f.sku }}</td>
+                        <td style="padding:10px 12px;border-bottom:1px solid #f0efed;font-family:'IBM Plex Mono',monospace;font-size:13px">{{ f.loc }}</td>
+                        <td style="padding:10px 12px;border-bottom:1px solid #f0efed;color:#a8a29e">{{ f.mv }}</td>
+                        <td style="padding:10px 12px;border-bottom:1px solid #f0efed">{{ f.check }}</td>
+                        <td style="padding:10px 12px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums">{{ f.exp }}</td>
+                        <td style="padding:10px 12px;border-bottom:1px solid #f0efed;text-align:right;font-variant-numeric:tabular-nums;font-weight:500;color:oklch(0.48 0.15 27)">{{ f.act }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Admin&quot;,&quot;Staff&quot;],&quot;default&quot;:&quot;Admin&quot;,&quot;tsType&quot;:&quot;'Admin'|'Staff'&quot;},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;stock&quot;,&quot;items&quot;,&quot;item&quot;,&quot;locations&quot;,&quot;documents&quot;,&quot;document&quot;,&quot;post&quot;,&quot;ledger&quot;],&quot;default&quot;:&quot;stock&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;ledgerHealthy&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const TONES = {
+  neutral: { bg: '#f2f1ef', fg: '#57534e', dot: '#a8a29e' },
+  good: { bg: 'oklch(0.965 0.022 155)', fg: 'oklch(0.40 0.07 155)', dot: 'oklch(0.62 0.12 155)' },
+  warn: { bg: 'oklch(0.965 0.035 85)', fg: 'oklch(0.44 0.08 65)', dot: 'oklch(0.74 0.14 75)' },
+  bad: { bg: 'oklch(0.96 0.022 25)', fg: 'oklch(0.48 0.15 27)', dot: 'oklch(0.60 0.18 27)' },
+};
+const chip = (label, tone) => ({ label, ...TONES[tone] });
+const money = (v) => (v < 0 ? '-₱' : '₱') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const qtyf = (v) => v.toLocaleString('en-US', { maximumFractionDigits: 4 });
+
+const LOCS = [
+  { code: 'MAIN', name: 'Main warehouse', active: true, system: false, neg: false },
+  { code: 'STORE', name: 'Retail store — Makati', active: true, system: false, neg: true },
+  { code: 'VAN', name: 'Delivery van', active: true, system: false, neg: false },
+  { code: 'OLD-WH', name: 'Old warehouse — Pasig', active: false, system: false, neg: false },
+  { code: 'SUPPLIER', name: 'Suppliers', active: true, system: true, neg: true },
+  { code: 'CUSTOMER', name: 'Customers', active: true, system: true, neg: true },
+  { code: 'ADJUST', name: 'Adjustments', active: true, system: true, neg: true },
+];
+const ITEMS = [
+  { sku: 'CANDLE-WHT', name: 'White pillar candle', unit: 'pc', active: true },
+  { sku: 'CANDLE-LAV', name: 'Lavender jar candle', unit: 'pc', active: true },
+  { sku: 'WAX-SOY', name: 'Soy wax flakes', unit: 'kg', active: true },
+  { sku: 'WICK-CTN', name: 'Cotton wick, 15 cm', unit: 'pc', active: true },
+  { sku: 'JAR-200', name: 'Amber jar, 200 ml', unit: 'pc', active: true },
+  { sku: 'OIL-LAV', name: 'Lavender fragrance oil', unit: 'L', active: true },
+  { sku: 'LID-TIN', name: 'Tin lid, 70 mm', unit: 'pc', active: true },
+  { sku: 'GIFT-SET', name: 'Gift set — 3 candles', unit: 'set', active: true },
+  { sku: 'CANDLE-TPR', name: 'Classic taper candle', unit: 'pc', active: false },
+];
+const BAL = [
+  ['CANDLE-WHT', 'MAIN', 240, 85.5], ['CANDLE-WHT', 'STORE', 36, 85.5], ['CANDLE-WHT', 'VAN', 12, 85.5],
+  ['CANDLE-LAV', 'MAIN', 128, 142], ['WAX-SOY', 'MAIN', 46.5, 310], ['WICK-CTN', 'MAIN', 1800, 2.4],
+  ['JAR-200', 'MAIN', 410, 38.75], ['JAR-200', 'STORE', -4, 38.75], ['OIL-LAV', 'MAIN', 3.25, 1850],
+  ['LID-TIN', 'MAIN', 0, null], ['GIFT-SET', 'STORE', 18, 395],
+];
+const TYPE = {
+  Receipt: { label: 'Received', icon: 'south_west' },
+  Issue: { label: 'Used or sold', icon: 'north_east' },
+  Transfer: { label: 'Moved', icon: 'swap_horiz' },
+  Adjustment: { label: 'Corrected', icon: 'tune' },
+  Reversal: { label: 'Reversal', icon: 'undo' },
+};
+const DOCS = [
+  { id: 'd1', posted: '17 Nov 2026, 9:42 AM', type: 'Receipt', ref: 'PO-1182', by: 'You', notes: 'Delivery from Cebu Wax Supply',
+    lns: [['WAX-SOY', 'SUPPLIER', 'MAIN', 20, 305], ['WICK-CTN', 'SUPPLIER', 'MAIN', 1000, 2.35], ['JAR-200', 'SUPPLIER', 'MAIN', 240, 38.5]] },
+  { id: 'd2', posted: '17 Nov 2026, 8:15 AM', type: 'Issue', ref: 'SO-5531', by: 'Another user',
+    lns: [['CANDLE-WHT', 'STORE', 'CUSTOMER', 6, 85.5], ['GIFT-SET', 'STORE', 'CUSTOMER', 2, 395]] },
+  { id: 'd3', posted: '16 Nov 2026, 4:50 PM', type: 'Transfer', ref: 'TR-0094', by: 'You',
+    lns: [['CANDLE-WHT', 'MAIN', 'STORE', 24, 85.5], ['CANDLE-WHT', 'MAIN', 'VAN', 12, 85.5], ['GIFT-SET', 'MAIN', 'STORE', 10, 395], ['JAR-200', 'MAIN', 'STORE', 20, 38.75]] },
+  { id: 'd4', posted: '16 Nov 2026, 2:03 PM', type: 'Adjustment', reason: 'Damaged', ref: 'ADJ-0031', by: 'You', lns: [['JAR-200', 'STORE', 'ADJUST', 24, 38.75]] },
+  { id: 'd5', posted: '16 Nov 2026, 11:20 AM', type: 'Reversal', ref: 'SO-5528', by: 'You', reverses: true, lns: [['CANDLE-LAV', 'CUSTOMER', 'MAIN', 4, 142]] },
+  { id: 'd6', posted: '15 Nov 2026, 3:30 PM', type: 'Issue', ref: 'SO-5528', by: 'Another user', reversed: true, lns: [['CANDLE-LAV', 'MAIN', 'CUSTOMER', 4, 142]] },
+  { id: 'd7', posted: '15 Nov 2026, 10:05 AM', type: 'Receipt', ref: 'PO-1179', by: 'Another user',
+    lns: [['CANDLE-WHT', 'SUPPLIER', 'MAIN', 120, 84], ['CANDLE-LAV', 'SUPPLIER', 'MAIN', 60, 140], ['OIL-LAV', 'SUPPLIER', 'MAIN', 2, 1850], ['LID-TIN', 'SUPPLIER', 'MAIN', 200, 12], ['GIFT-SET', 'SUPPLIER', 'MAIN', 30, 395]] },
+  { id: 'd8', posted: '14 Nov 2026, 5:40 PM', type: 'Adjustment', reason: 'Count correction', ref: 'CC-NOV-1', by: 'You', lns: [['WICK-CTN', 'ADJUST', 'MAIN', 50, 2.4]] },
+  { id: 'd9', posted: '1 Nov 2026, 12:00 AM', type: 'Receipt', ref: 'OPENING', by: 'System', lns: [['CANDLE-WHT', 'SUPPLIER', 'MAIN', 180, 86.5]] },
+];
+const HISTORY = [
+  ['17 Nov 2026, 8:15 AM', 'd2', 'STORE', 'to CUSTOMER', -6, -513, 36, 3078, 'Another user'],
+  ['16 Nov 2026, 4:50 PM', 'd3', 'STORE', 'from MAIN', 24, 2052, 42, 3591, 'You'],
+  ['16 Nov 2026, 4:50 PM', 'd3', 'VAN', 'from MAIN', 12, 1026, 12, 1026, 'You'],
+  ['16 Nov 2026, 4:50 PM', 'd3', 'MAIN', 'to STORE, VAN', -36, -3078, 240, 20520, 'You'],
+  ['15 Nov 2026, 10:05 AM', 'd7', 'MAIN', 'from SUPPLIER', 120, 10080, 276, 23598, 'Another user'],
+  ['1 Nov 2026, 12:00 AM', 'd9', 'MAIN', 'from SUPPLIER', 180, 15570, 180, 15570, 'System'],
+];
+const POST = {
+  receipt: { title: 'Receive stock', desc: 'Record stock arriving from a supplier.', cost: true, ref: 'PO-1183' },
+  issue: { title: 'Use or sell stock', desc: 'Record stock that was sold or used up.', cost: false, ref: 'SO-5532' },
+  transfer: { title: 'Move stock', desc: 'Move stock between two of your locations.', cost: false, ref: 'TR-0095' },
+  adjustment: { title: 'Correct stock', desc: 'Fix a count, or write off damaged or lost stock.', cost: true, ref: 'ADJ-0032' },
+};
+
+class Component extends DCLogic {
+  state = {
+    w: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    screen: null, postType: 'receipt', role: null, loc: 'all', docType: 'all', search: '',
+    showInactive: false, itemSku: 'CANDLE-WHT', docId: 'd1', drawer: false, neg: {},
+    postLoc: 'MAIN', fromLoc: 'MAIN', toLoc: 'STORE',
+    lines: [{ id: 1, sku: 'WAX-SOY', qty: '20', cost: '305', dir: 'add' }, { id: 2, sku: 'WICK-CTN', qty: '1000', cost: '2.35', dir: 'add' }],
+    nextId: 3,
+  };
+  componentDidMount() {
+    this.onResize = () => this.setState({ w: window.innerWidth });
+    window.addEventListener('resize', this.onResize);
+    const q = new URLSearchParams(window.location.search);
+    const s = { w: window.innerWidth };
+    ['screen', 'role', 'loc'].forEach((k) => q.get(k) && (s[k] = q.get(k)));
+    if (q.get('type')) s.postType = q.get('type');
+    if (q.get('doc')) s.docId = q.get('doc');
+    if (q.get('item')) s.itemSku = q.get('item');
+    if (q.get('drawer')) s.drawer = true;
+    const vw = parseInt(q.get('vw'), 10);
+    if (vw) { s.w = vw; this.onResize = () => {}; document.body.style.width = vw + 'px'; document.body.style.overflowX = 'hidden'; }
+    this.setState(s);
+  }
+  componentWillUnmount() { window.removeEventListener('resize', this.onResize); }
+  go(screen, extra = {}) { this.setState({ screen, drawer: false, ...extra }); window.scrollTo(0, 0); }
+  updLine(id, patch) { this.setState((s) => ({ lines: s.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) })); }
+
+  renderVals() {
+    const st = this.state, p = this.props;
+    const role = String(st.role || p.role || 'Admin').toLowerCase() === 'staff' ? 'Staff' : 'Admin';
+    const admin = role === 'Admin';
+    let screen = st.screen || p.startScreen || 'stock';
+    if (!admin && (screen === 'ledger' || (screen === 'post' && st.postType === 'adjustment'))) screen = 'stock';
+    const narrow = st.w < 760;
+    const itemBy = Object.fromEntries(ITEMS.map((i) => [i.sku, i]));
+    const locBy = Object.fromEntries(LOCS.map((l) => [l.code, l]));
+
+    const mk = (label, icon, key, type) => {
+      const on = key === 'post' ? screen === 'post' && st.postType === type
+        : screen === key || (key === 'items' && screen === 'item') || (key === 'documents' && screen === 'document');
+      return { label, icon, onClick: () => this.go(key, type ? { postType: type } : {}),
+        bg: on ? '#ecebe8' : 'transparent', fg: on ? '#1c1b19' : '#57534e', fw: on ? '500' : '400', ic: on ? '#1c1b19' : '#8a857f' };
+    };
+    const navGroups = [
+      { title: 'Inventory', items: [mk('Stock', 'inventory_2', 'stock'), mk('Items', 'category', 'items'), mk('Locations', 'warehouse', 'locations'), mk('Documents', 'receipt_long', 'documents')] },
+      { title: 'Post stock', items: [mk('Receive stock', 'move_to_inbox', 'post', 'receipt'), mk('Use or sell stock', 'outbox', 'post', 'issue'), mk('Move stock', 'swap_horiz', 'post', 'transfer'), ...(admin ? [mk('Correct stock', 'tune', 'post', 'adjustment')] : [])] },
+      ...(admin ? [{ title: 'Admin', items: [mk('Ledger health', 'monitor_heart', 'ledger')] }] : []),
+    ];
+
+    const activeLocs = LOCS.filter((l) => l.active && !l.system);
+    const negColor = TONES.bad.fg;
+
+    // Stock
+    const stockRows = BAL.filter((b) => st.loc === 'all' || b[1] === st.loc).map(([sku, loc, q, avg]) => {
+      const it = itemBy[sku]; const val = avg == null ? 0 : q * avg;
+      return { sku, name: it.name, loc, unit: it.unit, val, qtyText: qtyf(q), qtyColor: q < 0 ? negColor : '#1c1b19',
+        avgText: avg == null ? '—' : money(avg), valText: money(val),
+        st: q < 0 ? chip('Negative', 'bad') : q === 0 ? chip('Out of stock', 'neutral') : chip('In stock', 'good'),
+        open: () => this.go('item', { itemSku: sku }) };
+    });
+    const nLocs = new Set(stockRows.map((r) => r.loc)).size;
+
+    // Items
+    const s = st.search.trim().toLowerCase();
+    const itemRows = ITEMS.filter((i) => (st.showInactive || i.active) && (!s || i.sku.toLowerCase().includes(s) || i.name.toLowerCase().includes(s)))
+      .map((i) => ({ ...i, st: i.active ? chip('Active', 'good') : chip('Inactive', 'neutral'), open: () => this.go('item', { itemSku: i.sku }) }));
+
+    // Item detail
+    const it = itemBy[st.itemSku] || ITEMS[0];
+    const bals = BAL.filter((b) => b[0] === it.sku);
+    const onHand = bals.reduce((a, b) => a + b[2], 0);
+    const item = { ...it, onHand: `${qtyf(onHand)} ${it.unit}`, st: it.active ? chip('Active', 'good') : chip('Inactive', 'neutral'),
+      balances: bals.map(([, code, q, avg]) => ({ code, name: locBy[code].name, qty: `${qtyf(q)} ${it.unit}`, avg: avg == null ? '—' : money(avg), val: money(avg == null ? 0 : q * avg), color: q < 0 ? negColor : '#1c1b19' })) };
+    const docBy = Object.fromEntries(DOCS.map((d) => [d.id, d]));
+    const history = HISTORY.map(([posted, did, loc, cp, q, v, bal, bv, by]) => ({ posted, loc, cp, by,
+      doc: `${TYPE[docBy[did].type].label} · ${docBy[did].ref}`, qty: (q > 0 ? '+' : '') + qtyf(q), val: (v > 0 ? '+' : '') + money(v),
+      bal: qtyf(bal), balVal: money(bv), open: (e) => { e.preventDefault(); this.go('document', { docId: did }); } }));
+
+    // Documents
+    const docStatus = (d) => (d.reversed ? chip('Reversed', 'warn') : d.reverses ? chip('Reverses another', 'neutral') : chip('Posted', 'good'));
+    const docRows = DOCS.filter((d) => st.docType === 'all' || d.type === st.docType).map((d) => ({
+      ...d, typeLabel: TYPE[d.type].label, icon: TYPE[d.type].icon, reason: d.reason || '—', lines: d.lns.length,
+      linesText: d.lns.length === 1 ? '1 line' : `${d.lns.length} lines`, st: docStatus(d), open: () => this.go('document', { docId: d.id }) }));
+    const dd = docBy[st.docId] || DOCS[0];
+    const lnTotal = dd.lns.reduce((a, l) => a + l[3] * l[4], 0);
+    const doc = { typeLabel: TYPE[dd.type].label, ref: dd.ref, st: docStatus(dd),
+      canReverse: admin && !dd.reversed && !dd.reverses && dd.by !== 'System',
+      note: dd.reversed ? 'This posting was reversed.' : dd.reverses ? 'This reversal undoes an earlier posting.' : '',
+      noteBg: dd.reversed ? TONES.warn.bg : TONES.neutral.bg, noteFg: dd.reversed ? TONES.warn.fg : TONES.neutral.fg,
+      meta: [{ k: 'Posted', v: dd.posted }, { k: 'Posted by', v: dd.by }, ...(dd.reason ? [{ k: 'Reason', v: dd.reason }] : []), { k: 'Reference', v: dd.ref }, ...(dd.notes ? [{ k: 'Notes', v: dd.notes }] : [])],
+      lns: dd.lns.map(([sku, from, to, q, c]) => ({ sku, name: itemBy[sku].name, from, to, qty: `${qtyf(q)} ${itemBy[sku].unit}`, cost: money(c), total: money(q * c) })),
+      total: money(lnTotal) };
+
+    // Post stock
+    const pt = POST[st.postType] ? st.postType : 'receipt';
+    const cfg = POST[pt];
+    const isTransfer = pt === 'transfer', isAdjust = pt === 'adjustment';
+    const srcLoc = isTransfer ? st.fromLoc : st.postLoc;
+    const locFields = isTransfer
+      ? [{ label: 'From', value: st.fromLoc, onChange: (e) => this.setState({ fromLoc: e.target.value }) }, { label: 'To', value: st.toLoc, onChange: (e) => this.setState({ toLoc: e.target.value }) }]
+      : [{ label: 'Location', value: st.postLoc, onChange: (e) => this.setState({ postLoc: e.target.value }) }];
+    locFields.forEach((f) => { f.opts = activeLocs.map((l) => ({ ...l, sel: l.code === f.value })); });
+    let total = 0;
+    const lines = st.lines.map((l) => {
+      const iu = itemBy[l.sku];
+      const b = BAL.find((x) => x[0] === l.sku && x[1] === srcLoc);
+      const have = b ? b[2] : 0;
+      const q = parseFloat(l.qty) || 0, c = parseFloat(l.cost) || 0;
+      const showCost = cfg.cost && (!isAdjust || l.dir === 'add');
+      if (showCost) total += q * c; else total += q * (b && b[3] ? b[3] : 0);
+      const outgoing = pt === 'issue' || isTransfer || (isAdjust && l.dir === 'remove');
+      const short = outgoing && q > have;
+      const on = l.dir === 'add';
+      const seg = (a) => ({ bg: a ? '#fff' : 'transparent', fg: a ? '#1c1b19' : '#78716c', sh: a ? '0 1px 2px rgba(0,0,0,.08)' : 'none' });
+      const A = seg(on), R = seg(!on);
+      return { ...l, unit: iu.unit, showCost,
+        onHand: short ? `Only ${qtyf(have)} ${iu.unit} on hand at ${srcLoc}. This will take the balance negative.` : `On hand at ${srcLoc}: ${qtyf(have)} ${iu.unit}`,
+        hintColor: short ? TONES.bad.fg : '#78716c', hintIcon: short ? 'error' : 'inventory_2',
+        onSku: (e) => this.updLine(l.id, { sku: e.target.value }), onQty: (e) => this.updLine(l.id, { qty: e.target.value }), onCost: (e) => this.updLine(l.id, { cost: e.target.value }),
+        setAdd: () => this.updLine(l.id, { dir: 'add' }), setRemove: () => this.updLine(l.id, { dir: 'remove' }),
+        addBg: A.bg, addFg: A.fg, addSh: A.sh, remBg: R.bg, remFg: R.fg, remSh: R.sh,
+        cantRemove: st.lines.length <= 1, rmColor: st.lines.length <= 1 ? '#d6d3cf' : '#57534e',
+        remove: () => this.setState((s2) => ({ lines: s2.lines.filter((x) => x.id !== l.id) })) };
+    });
+    const post = { ...cfg, isAdjust, locFields, lines, lineCount: lines.length === 1 ? '1 line' : `${lines.length} lines`,
+      totalLabel: cfg.cost ? 'Total cost' : 'Value at average cost', total: money(total) };
+
+    // Locations
+    const locRows = LOCS.map((l) => {
+      const neg = st.neg[l.code] ?? l.neg;
+      const chips = [];
+      if (l.system) chips.push(chip('System', 'neutral'));
+      if (!l.active) chips.push(chip('Inactive', 'neutral'));
+      if (neg && !l.system && !(admin && l.active)) chips.push(chip('Negative stock allowed', 'warn'));
+      return { ...l, chips, editable: admin && !l.system, codeColor: l.active ? '#1c1b19' : '#a8a29e', nameColor: l.active ? '#1c1b19' : '#78716c',
+        track: neg ? '#1c1b19' : '#d6d3cf', knob: neg ? '16px' : '2px',
+        toggleNeg: () => this.setState((s2) => ({ neg: { ...s2.neg, [l.code]: !neg } })) };
+    });
+
+    // Ledger
+    const healthy = !!p.ledgerHealthy;
+    const INV = [
+      { id: 'L1', name: 'On-hand matches movement totals', failures: healthy ? [] : [
+        { sku: 'JAR-200', loc: 'STORE', mv: '—', check: 'On hand', exp: '-4', act: '0' },
+        { sku: 'JAR-200', loc: 'STORE', mv: '—', check: 'Stock value', exp: '-₱155.00', act: '₱0.00' }] },
+      { id: 'L2', name: 'Stock value matches movement totals', failures: [] },
+      { id: 'L3', name: 'Every movement belongs to a document', failures: [] },
+      { id: 'L4', name: 'Running balances are continuous', failures: [] },
+      { id: 'L5', name: 'Reversals mirror their original', failures: [] },
+    ];
+    const failedN = INV.filter((v) => v.failures.length).length;
+    const ledger = {
+      title: failedN ? `${failedN} check failed` : 'All checks passed',
+      sub: failedN ? 'Rebuild balances to recompute them from the movement history.' : `${INV.length} checks across 11 balances.`,
+      icon: failedN ? 'error' : 'check_circle', fg: failedN ? TONES.bad.fg : TONES.good.fg,
+      bg: failedN ? TONES.bad.bg : TONES.good.bg, border: failedN ? 'oklch(0.88 0.05 25)' : 'oklch(0.88 0.04 155)',
+      invs: INV.map((v) => ({ ...v, failed: v.failures.length > 0, count: v.failures.length ? `${v.failures.length} problems` : '',
+        st: v.failures.length ? chip('Failed', 'bad') : chip('Passed', 'good') })),
+    };
+
+    const showSidebar = !narrow || st.drawer;
+    return {
+      narrow, wide: !narrow, admin, role, showSidebar, sbPos: narrow ? 'fixed' : 'sticky', sbShadow: narrow ? '0 8px 32px rgba(0,0,0,.18)' : 'none',
+      drawerBackdrop: narrow && st.drawer, openDrawer: () => this.setState({ drawer: true }), closeDrawer: () => this.setState({ drawer: false }),
+      navGroups, activeLocs,
+      is: { stock: screen === 'stock', items: screen === 'items', item: screen === 'item', locations: screen === 'locations', documents: screen === 'documents', document: screen === 'document', post: screen === 'post', ledger: screen === 'ledger' },
+      goReceive: () => this.go('post', { postType: 'receipt' }), goStock: () => this.go('stock'), goDocs: () => this.go('documents'),
+      loc: st.loc, onLoc: (e) => this.setState({ loc: e.target.value }),
+      stockRows, stockTotal: money(stockRows.reduce((a, r) => a + r.val, 0)),
+      stockSubtitle: `${stockRows.length} balances across ${nLocs} ${nLocs === 1 ? 'location' : 'locations'}`,
+      stockRange: `1–${stockRows.length} of ${stockRows.length}`,
+      search: st.search, onSearch: (e) => this.setState({ search: e.target.value }),
+      toggleInactive: () => this.setState({ showInactive: !st.showInactive }),
+      inactiveTrack: st.showInactive ? '#1c1b19' : '#d6d3cf', inactiveKnob: st.showInactive ? '16px' : '2px',
+      itemRows, itemsSubtitle: `${ITEMS.filter((i) => i.active).length} active items`, itemsRange: `1–${itemRows.length} of ${itemRows.length}`,
+      item, history,
+      docType: st.docType, onDocType: (e) => this.setState({ docType: e.target.value }),
+      docTypes: Object.keys(TYPE).map((k) => ({ value: k, label: TYPE[k].label })),
+      docRows, docsRange: `1–${docRows.length} of ${docRows.length}`, doc,
+      post, itemOptions: ITEMS.filter((i) => i.active),
+      addLine: () => this.setState((s2) => ({ lines: [...s2.lines, { id: s2.nextId, sku: 'CANDLE-WHT', qty: '', cost: '', dir: 'add' }], nextId: s2.nextId + 1 })),
+      noSubmit: (e) => e.preventDefault(),
+      locRows, ledger,
+    };
+  }
+}
+</script>
+</body>
+</html>

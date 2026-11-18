@@ -3,11 +3,14 @@ import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
+import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth/auth.service';
 import { PROBLEM_MESSAGES, problemMessage, problemSlug } from '../core/problems/problem-messages';
 import { ConfirmDialog, ConfirmDialogData } from '../shared/confirm-dialog';
+import { StatusPill } from '../shared/status-pill';
 import {
+  documentStatus,
   documentTypeLabel,
   formatManilaDateTime,
   formatMoney,
@@ -20,67 +23,10 @@ import { IdempotencyKey } from './posting-form';
 
 @Component({
   selector: 'app-document-detail',
-  imports: [RouterLink, MatButtonModule],
+  imports: [RouterLink, MatButtonModule, MatIconModule, StatusPill],
   templateUrl: './document-detail.html',
-  styles: `
-    :host {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      padding: 16px;
-    }
-    h1 {
-      margin: 0;
-      font: var(--mat-sys-headline-medium);
-    }
-    dl {
-      display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: 4px 16px;
-      margin: 0;
-    }
-    dt {
-      color: var(--mat-sys-on-surface-variant);
-    }
-    dd {
-      margin: 0;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-    }
-    th,
-    td {
-      padding: 8px;
-      text-align: left;
-      border-bottom: 1px solid var(--mat-sys-outline-variant);
-    }
-    .num {
-      text-align: right;
-    }
-    @media (max-width: 599px) {
-      thead {
-        display: none;
-      }
-      tr,
-      td {
-        display: block;
-      }
-      tr {
-        padding: 8px 0;
-        border-bottom: 1px solid var(--mat-sys-outline-variant);
-      }
-      td {
-        border: 0;
-        padding: 2px 0;
-        text-align: left;
-      }
-      td[data-label]::before {
-        content: attr(data-label) ': ';
-        color: var(--mat-sys-on-surface-variant);
-      }
-    }
-  `,
+  styleUrl: './document-detail.scss',
+  host: { class: 'page' },
 })
 export class DocumentDetail {
   private readonly documentsService = inject(DocumentsService);
@@ -93,6 +39,7 @@ export class DocumentDetail {
   protected readonly formatDate = formatManilaDateTime;
   protected readonly formatMoney = formatMoney;
   protected readonly formatQuantity = formatQuantity;
+  protected readonly status = documentStatus;
 
   protected readonly document = signal<DocumentDetailData | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -109,6 +56,11 @@ export class DocumentDetail {
     return (
       this.auth.isAdmin() && d !== null && d.type !== 'Reversal' && d.reversedByDocumentId === null
     );
+  });
+
+  protected readonly linesTotal = computed(() => {
+    const total = (this.document()?.lines ?? []).reduce((sum, l) => sum + l.totalCost, 0);
+    return Math.round(total * 10000) / 10000;
   });
 
   private readonly reverseKey = new IdempotencyKey();

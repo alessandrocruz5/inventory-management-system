@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=Roboto:wght@300;400;500&amp;display=swap" rel="stylesheet">
+<style>body{margin:0;background:#ecebe8;font-family:'IBM Plex Sans',system-ui,sans-serif}a{color:#1c1b19}a:hover{color:#57534e}.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 'IBM Plex Sans',sans-serif;color:#1a1a1a}.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.55)}.dv-card{max-width:100%;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}.dv-opt:target .dv-oid{background:#2a78d6;color:#fff}.dv-next{margin:22px 0 0;font:12px/1.5 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.5)}.dv-note{margin:0 0 24px;max-width:760px;font:13px/1.6 'IBM Plex Sans',sans-serif;color:#57534e}</style>
+</helmet>
+
+<section class="dv-turn" id="t2">
+  <div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Redesign — neutral, roomier, responsive</span></div>
+  <p class="dv-note">One live prototype (<a href="Inventory%20App.dc.html">Inventory App</a>) shown at 1280 px and 390 px. Changes: left sidebar replaces the wrapping toolbar (drawer on mobile); page padding scales 16→40 px with a 1240 px max width; filters and tables share one card with 16 px insets; 12 px row padding; warm-gray neutrals with ink buttons. Status is always a dot + label pill — green only for healthy, amber for reversed / negative-allowed, red for negative stock and failed checks, gray for everything else. Lists become stacked rows under 760 px; detail tables scroll sideways.</p>
+  <div class="dv-opts">
+    <div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Stock on hand · desktop</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=stock" style="display:block;width:1280px;height:860px;border:0"></iframe></div></div>
+    <div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Stock · mobile</div><div class="dv-card" style="width:390px"><iframe src="Inventory%20App.dc.html?screen=stock" style="display:block;width:390px;height:860px;border:0"></iframe></div></div>
+    <div class="dv-opt" id="2c"><div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>Mobile nav drawer</div><div class="dv-card" style="width:390px"><iframe src="Inventory%20App.dc.html?screen=stock&amp;drawer=1" style="display:block;width:390px;height:860px;border:0"></iframe></div></div>
+  </div>
+  <div class="dv-opts" style="margin-top:28px">
+    <div class="dv-opt" id="2d"><div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a>Receive stock · desktop</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=post&amp;type=receipt" style="display:block;width:1280px;height:860px;border:0"></iframe></div></div>
+    <div class="dv-opt" id="2e"><div class="dv-olabel"><a class="dv-oid" href="#2e">2e</a>Move stock · mobile (short-stock warning)</div><div class="dv-card" style="width:390px"><iframe src="Inventory%20App.dc.html?screen=post&amp;type=transfer" style="display:block;width:390px;height:860px;border:0"></iframe></div></div>
+    <div class="dv-opt" id="2f"><div class="dv-olabel"><a class="dv-oid" href="#2f">2f</a>Correct stock · mobile</div><div class="dv-card" style="width:390px"><iframe src="Inventory%20App.dc.html?screen=post&amp;type=adjustment" style="display:block;width:390px;height:860px;border:0"></iframe></div></div>
+  </div>
+  <div class="dv-opts" style="margin-top:28px">
+    <div class="dv-opt" id="2g"><div class="dv-olabel"><a class="dv-oid" href="#2g">2g</a>Documents · desktop</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=documents" style="display:block;width:1280px;height:860px;border:0"></iframe></div></div>
+    <div class="dv-opt" id="2h"><div class="dv-olabel"><a class="dv-oid" href="#2h">2h</a>Documents · mobile</div><div class="dv-card" style="width:390px"><iframe src="Inventory%20App.dc.html?screen=documents" style="display:block;width:390px;height:860px;border:0"></iframe></div></div>
+  </div>
+  <div class="dv-opts" style="margin-top:28px">
+    <div class="dv-opt" id="2i"><div class="dv-olabel"><a class="dv-oid" href="#2i">2i</a>Document detail (reversed)</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=document&amp;doc=d6" style="display:block;width:1280px;height:760px;border:0"></iframe></div></div>
+    <div class="dv-opt" id="2j"><div class="dv-olabel"><a class="dv-oid" href="#2j">2j</a>Item detail · mobile</div><div class="dv-card" style="width:390px"><iframe src="Inventory%20App.dc.html?screen=item" style="display:block;width:390px;height:760px;border:0"></iframe></div></div>
+  </div>
+  <div class="dv-opts" style="margin-top:28px">
+    <div class="dv-opt" id="2k"><div class="dv-olabel"><a class="dv-oid" href="#2k">2k</a>Item detail · desktop</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=item" style="display:block;width:1280px;height:860px;border:0"></iframe></div></div>
+  </div>
+  <div class="dv-opts" style="margin-top:28px">
+    <div class="dv-opt" id="2l"><div class="dv-olabel"><a class="dv-oid" href="#2l">2l</a>Items · desktop</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=items" style="display:block;width:1280px;height:760px;border:0"></iframe></div></div>
+    <div class="dv-opt" id="2m"><div class="dv-olabel"><a class="dv-oid" href="#2m">2m</a>Locations · mobile</div><div class="dv-card" style="width:390px"><iframe src="Inventory%20App.dc.html?screen=locations" style="display:block;width:390px;height:760px;border:0"></iframe></div></div>
+  </div>
+  <div class="dv-opts" style="margin-top:28px">
+    <div class="dv-opt" id="2n"><div class="dv-olabel"><a class="dv-oid" href="#2n">2n</a>Locations · desktop</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=locations" style="display:block;width:1280px;height:680px;border:0"></iframe></div></div>
+  </div>
+  <div class="dv-opts" style="margin-top:28px">
+    <div class="dv-opt" id="2o"><div class="dv-olabel"><a class="dv-oid" href="#2o">2o</a>Ledger health (1 failed check)</div><div class="dv-card" style="width:1280px"><iframe src="Inventory%20App.dc.html?screen=ledger" style="display:block;width:1280px;height:760px;border:0"></iframe></div></div>
+  </div>
+  <p class="dv-next">Try next: "denser table rows like <a class="dv-oid" href="#2a">2a</a> but 40 px" · "collapse the sidebar to icons on tablet" · "add a dashboard overview above stock"</p>
+</section>
+
+<section class="dv-turn" id="t1">
+  <div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Current — Stock page as built today (Angular Material azure + AG Grid Quartz)</span></div>
+  <p class="dv-note">Reference recreation from <code>app.html / app.scss</code> and <code>stock.html / stock.scss</code>: 9 nav links wrap the toolbar, 16 px page padding, no active-link styling, fixed 480 px grid.</p>
+  <div class="dv-opts">
+    <div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Stock · 1280 px</div>
+      <div class="dv-card" style="width:1280px;height:800px;background:#f9f9ff;font-family:Roboto,sans-serif;color:#1a1b1f">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;min-height:64px;padding:8px 16px;box-sizing:border-box;background:#f9f9ff;font-size:22px;line-height:28px">
+          <span style="font-weight:500">Inventory</span>
+          <span style="color:#44474e">Lumen Candle Co.</span>
+          <nav style="display:flex;flex-wrap:wrap;min-width:0">
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Stock</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Receive stock</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Use or sell stock</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Move stock</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Correct stock</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Documents</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Items</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Locations</span>
+            <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Ledger health</span>
+          </nav>
+          <span style="flex:1 1 auto"></span>
+          <span style="font:400 14px Roboto">ana@lumencandle.ph (Admin)</span>
+          <span style="height:40px;padding:0 12px;display:inline-flex;align-items:center;font:500 14px Roboto;color:#005cbb">Sign out</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;padding:16px">
+          <h1 style="margin:0;font:400 28px/36px Roboto">Stock on hand</h1>
+          <div style="width:400px;height:56px;background:#e0e2ec;border-radius:4px 4px 0 0;border-bottom:1px solid #44474e;padding:8px 16px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;margin-bottom:22px">
+            <span style="font-size:12px;line-height:16px;color:#44474e">Location</span>
+            <span style="font-size:16px;line-height:24px">All locations</span>
+          </div>
+          <div style="height:440px;border:1px solid #dde2eb;border-radius:8px;overflow:hidden;font:14px system-ui,sans-serif;color:#181d1f;background:#fff;display:flex;flex-direction:column">
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:48px;align-items:center;background:#f8f8f8;border-bottom:1px solid #dde2eb;font-weight:600">
+              <span style="padding:0 16px">Item</span><span style="padding:0 16px">Location</span><span style="padding:0 16px;text-align:right">Qty</span><span style="padding:0 16px">Unit</span><span style="padding:0 16px;text-align:right">Avg cost</span><span style="padding:0 16px;text-align:right">Value</span>
+            </div>
+            <div style="flex:1">
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:42px;align-items:center;border-bottom:1px solid #eef0f3"><span style="padding:0 16px">CANDLE-WHT · White pillar candle</span><span style="padding:0 16px">MAIN</span><span style="padding:0 16px;text-align:right">240</span><span style="padding:0 16px">pc</span><span style="padding:0 16px;text-align:right">₱85.50</span><span style="padding:0 16px;text-align:right">₱20,520.00</span></div>
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:42px;align-items:center;border-bottom:1px solid #eef0f3"><span style="padding:0 16px">CANDLE-WHT · White pillar candle</span><span style="padding:0 16px">STORE</span><span style="padding:0 16px;text-align:right">36</span><span style="padding:0 16px">pc</span><span style="padding:0 16px;text-align:right">₱85.50</span><span style="padding:0 16px;text-align:right">₱3,078.00</span></div>
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:42px;align-items:center;border-bottom:1px solid #eef0f3"><span style="padding:0 16px">CANDLE-LAV · Lavender jar candle</span><span style="padding:0 16px">MAIN</span><span style="padding:0 16px;text-align:right">128</span><span style="padding:0 16px">pc</span><span style="padding:0 16px;text-align:right">₱142.00</span><span style="padding:0 16px;text-align:right">₱18,176.00</span></div>
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:42px;align-items:center;border-bottom:1px solid #eef0f3"><span style="padding:0 16px">WAX-SOY · Soy wax flakes</span><span style="padding:0 16px">MAIN</span><span style="padding:0 16px;text-align:right">46.5</span><span style="padding:0 16px">kg</span><span style="padding:0 16px;text-align:right">₱310.00</span><span style="padding:0 16px;text-align:right">₱14,415.00</span></div>
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:42px;align-items:center;border-bottom:1px solid #eef0f3"><span style="padding:0 16px">JAR-200 · Amber jar, 200 ml</span><span style="padding:0 16px">STORE</span><span style="padding:0 16px;text-align:right;color:#ba1a1a">-4</span><span style="padding:0 16px">pc</span><span style="padding:0 16px;text-align:right">₱38.75</span><span style="padding:0 16px;text-align:right;color:#ba1a1a">-₱155.00</span></div>
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:42px;align-items:center;border-bottom:1px solid #eef0f3"><span style="padding:0 16px">LID-TIN · Tin lid, 70 mm</span><span style="padding:0 16px">MAIN</span><span style="padding:0 16px;text-align:right">0</span><span style="padding:0 16px">pc</span><span style="padding:0 16px;text-align:right">—</span><span style="padding:0 16px;text-align:right">₱0.00</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;height:42px;align-items:center;border-top:1px solid #dde2eb;background:#fff"><span style="padding:0 16px">Total</span><span></span><span></span><span></span><span></span><span style="padding:0 16px;text-align:right">₱77,862.75</span></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;align-items:center;gap:24px;font:12px Roboto;color:#44474e;height:56px">
+            <span>Items per page: 25 ▾</span><span>1 – 11 of 11</span><span style="letter-spacing:12px">‹ ›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+</body>
+</html>

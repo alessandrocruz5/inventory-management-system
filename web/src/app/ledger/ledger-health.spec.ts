@@ -105,7 +105,10 @@ describe('LedgerHealth', () => {
       expect(text).toContain(expected);
     }
     expect(el.querySelectorAll('.invariant')).toHaveLength(5);
-    expect(el.querySelectorAll('.marker.pass')).toHaveLength(5);
+    const pills = el.querySelectorAll('.invariant[data-passed="true"] app-status-pill');
+    expect(pills).toHaveLength(5);
+    expect(pills[0].textContent?.trim()).toBe('Passed');
+    expect(text).toContain('Ran 5 checks.');
     expect(el.querySelector('table')).toBeNull();
   });
 
@@ -125,10 +128,10 @@ describe('LedgerHealth', () => {
     health.mockResolvedValue(data);
     const { el } = await render();
     const text = el.textContent ?? '';
-    expect(text).toContain('1 checks failed');
+    expect(text).toContain('1 check failed');
     expect(text).toContain('150 problems');
     expect(text).toContain('showing the first 100');
-    expect(el.querySelector('.marker.fail')?.textContent).toContain('Failed');
+    expect(el.querySelector('app-status-pill[data-tone="bad"]')?.textContent).toContain('Failed');
     const rows = el.querySelectorAll('tbody tr');
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('SKU-1');

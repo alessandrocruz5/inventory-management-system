@@ -48,7 +48,7 @@ test('T14 · Staff receives 10 @ ₱100 and issues 3; Admin reverses the issue',
       await admin.goto(`/documents/${issueId}`);
       await admin.getByRole('button', { name: 'Reverse' }).click();
       await admin.getByRole('dialog').getByRole('button', { name: 'Reverse' }).click();
-      await expect(admin.getByText('Reversed by')).toBeVisible();
+      await expect(admin.getByText('This posting was reversed.')).toBeVisible();
     });
 
     await test.step('Admin sees 10, ₱100.00 and ₱1,000.00', async () => {
