@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 07
-unit: U2
+unit: IMS-29
 status: todo
 model: opus
 effort: high
@@ -59,7 +59,7 @@ internal static class UnitConversion
 
 ### 3. `UnitPostingTests.cs`
 Use the `PostingTests` and `ItemUnitsTests` setup style: own tenant per test, Admin client. Add a unit with `POST /api/items/{id}/units { code: "case", factor: 12 }`.
-- `Vector_set_U_through_the_api`: run U1–U4 from spec §7 set U (prompt 05) as API posts: receipts with `unit: "case"`, U3 an issue of 0.5 `case`, U4 an issue of 36 with no unit. After each step, assert the movement `Quantity` and `TotalCost` and the balance `OnHand`/`StockValue` with `BalanceAsync`, to the fourth decimal (`GetValue<decimal>()`, never text).
+- `Vector_set_U_through_the_api`: run IMS-28–IMS-31 from spec §7 set U (prompt 05) as API posts: receipts with `unit: "case"`, IMS-30 an issue of 0.5 `case`, IMS-31 an issue of 36 with no unit. After each step, assert the movement `Quantity` and `TotalCost` and the balance `OnHand`/`StockValue` with `BalanceAsync`, to the fourth decimal (`GetValue<decimal>()`, never text).
 - `Base_unit_name_is_factor_1`: `unit: "pc"` on a `pc` item → movement quantity equals the request quantity.
 - `Unknown_or_inactive_unit_is_400_on_unit`: `unit: "box"` → 400 `lines[0].unit`. Deactivate `case`, then post in `case` → 400 `lines[0].unit`. No document is written in either case.
 - `Non_exact_conversion_is_400_on_quantity`: unit `g` with factor 0.001 on a `kg` item (create the item with `ItemsTests.CreateAsync(client, sku, sku, "kg", ct)`), quantity 0.5 g → 0.0005 kg is exact, so it's accepted; then 0.25 g → 400 `lines[0].quantity`. An adjustment with `quantityDelta: -0.25, unit: "g"` → 400 `lines[0].quantityDelta`.

@@ -1,12 +1,12 @@
 ---
 type: plan
 kind: feature
-status: draft
+status: audited
 repo: inventory-management-system
 delivery: pr
 base: develop
 sprint: 3
-epic:
+epic: IMS-27
 created: 2026-11-18
 risk: high
 prompts: 15
@@ -76,9 +76,10 @@ tags: [plan]
 - D9: posting goes through `DocumentPoster`, then `PostingEngine`, as an `Adjustment` with `ReasonCode = CountCorrection`. A positive delta carries the line's `unitCost` (per base unit) when there is one, and otherwise falls back to §6's average rule. A negative delta never carries one. No new document type, no `StockDocuments` column, and the engine is untouched.
 - D10 (§6 change, **approved by the user 2026-11-18**): the posting's Idempotency-Key is server-derived: `stocktake:<id:D>`. The posting flow is (1) Draft → Posting under `UPDLOCK` on the stocktake row, which freezes the lines, then (2) post, then (3) Posting → Posted with `PostedDocumentId`. A crash between (2) and (3) leaves the stocktake in Posting. Posting again replays the same document, because the frozen lines give the same RequestHash. A rejection (400 or 422) writes nothing, so the stocktake goes back to Draft. Parallel posts make one document (engine step 4). Client keys starting `stocktake:` get `400` on `Idempotency-Key`, so a client can't front-run a stocktake's key.
 - D11: roles. Staff and Admin start stocktakes and count. Only an Admin posts or cancels. Anyone can view.
-- D12: one open stocktake (Draft or Posting) per location, enforced by `UX_Stocktakes_Open (TenantId, LocationId) WHERE Status IN ('Draft','Posting')`. A second start gets `409 stocktake-open-exists` with `stocktakeId`. Counting, posting or cancelling a stocktake in the wrong state gets `409 stocktake-not-open` with `status`. The two new slugs land in spec §9, Kernel and Angular in the same PR as the API (U3).
+- D12: one open stocktake (Draft or Posting) per location, enforced by `UX_Stocktakes_Open (TenantId, LocationId) WHERE Status IN ('Draft','Posting')`. A second start gets `409 stocktake-open-exists` with `stocktakeId`. Counting, posting or cancelling a stocktake in the wrong state gets `409 stocktake-not-open` with `status`. The two new slugs land in spec §9, Kernel and Angular in the same PR as the API (IMS-30).
 - D13: a new stocktake is prefilled with every active item that has a non-zero physical balance at the location, uncounted. Anyone counting can add other items. Posting needs every line counted (`400` on `lines[j].quantity`, "enter 0 for none") and at most 100 non-zero deltas (§6's line limit; otherwise `400` on `lines`). With no differences, the stocktake is Posted with no document.
 - D14: the stocktake's line order everywhere (GET, error mapping) is by `Sku` with `StringComparer.Ordinal`. Errors the poster returns as `lines[i].unitCost` or `lines[i].quantityDelta` are remapped to the stocktake line index `j` as `lines[j].unitCost` or `lines[j].quantity`.
+- D16 (Codex audit 2026-11-18): IMS-29's rollback fails closed. Minimal APIs use System.Text.Json's default, which skips unknown members, so reverting IMS-29 would silently turn an alternate-unit quantity into a base-unit quantity. IMS-29 is therefore rolled back by a fix-forward PR that keeps `unit` and rejects any value other than the base unit with `400 lines[i].unit`, after IMS-30 has been rolled back (see Rollback). A global `UnmappedMemberHandling.Disallow` was rejected: it changes every endpoint's behaviour, and a revert of IMS-29 would remove it too.
 - D15: counts write under `UPDLOCK` on the stocktake row, which serializes them against posting's Draft → Posting step. A re-count overwrites the line and takes a new snapshot (last write wins). Lines carry no version.
 
 **Assumptions:**
@@ -153,10 +154,11 @@ Paths are relative to the repo root. `Inv/` is `src/Modules/Inventory/Inventory/
 | T6 catalog (`RowLevelSecurityTests`) | Non-graph | 3 new tenant tables | Yes, without RLS | RLS lands in each creating migration (01, 09) |
 | T10 `No_request_type_carries_a_date` | Non-graph | Types ending `Request`/`Line` | Yes, if a dated type matches | Request types carry no dates. Dated DTOs are named `*Response` |
 | T12 architecture (single public type) | Non-graph | New types | Yes, if any is public | Everything `internal`. Migrations are public by the existing exemption |
-| `InventoryDbContextModelSnapshot` | Non-graph | Two migrations in different units | Merge conflict, if out of order | U1 → U3 is ordered by `depends` |
-| Kernel `ProblemTypes` ↔ `PROBLEM_MESSAGES` ↔ spec §9 | Non-graph | Hidden coupling | Yes, if split across PRs | All three in prompt 10, in U3's PR |
+| `InventoryDbContextModelSnapshot` | Non-graph | Two migrations in different units | Merge conflict, if out of order | IMS-28 → IMS-30 is ordered by `depends` |
+| Kernel `ProblemTypes` ↔ `PROBLEM_MESSAGES` ↔ spec §9 | Non-graph | Hidden coupling | Yes, if split across PRs | All three in prompt 10, in IMS-30's PR |
 | `inventory_app` grants | Non-graph | Schema-level `SELECT, INSERT, UPDATE` | No | The new tables are covered, and no `DELETE` is granted ("no hard deletes") |
 | Seed (`SeedTests`, e2e expectations) | Non-graph | New `ItemUnits` rows | No | No stock changes. The insert is idempotent by PK; a renamed SKU is skipped (IMS-9 pattern) |
+| Rolling back IMS-29 (any client still sending `unit`) | Non-graph | System.Text.Json skips unknown members | Yes, with a plain revert: silent misposting | Fix-forward rollback that keeps `unit` and rejects anything but the base unit with 400, after IMS-30 is rolled back (D16, Rollback) |
 | `deploy/` compose and Bicep | Non-graph | AppHost, env, ports | No | Untouched |
 | Ledger lock / `LedgerLock` Shared | Transitive | Stocktake post via engine | No | It goes through `PostingEngine`, which takes the lock |
 
@@ -170,29 +172,29 @@ Paths are relative to the repo root. `Inv/` is `src/Modules/Inventory/Inventory/
 ## Units
 | Unit | Title | Category | Prompts | Depends | High-stakes | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| U1 | Item units | Added | 01, 02, 03, 04 | — | yes | R1: an Admin adds `case` = 12 to a `pc` item, and `GET /items/{id}` lists it. Staff gets 403. A duplicate code, the base unit as a code, or a factor ≤ 0 or with more than 4 dp gets 400. Deactivate is idempotent. T5 probes and T6 pass. R3: a base-unit change after a movement, or with a unit, gets 400 `baseUnit`. The seed adds 3 units idempotently. The item detail screen lists units, with Admin add and deactivate. |
-| U2 | Posting in units | Added | 05, 06, 07, 08 | U1 | yes | R2: vector set U passes in unit tests and through the API (1 case @ ₱500 = 500.0000). V/R/A/N/X are unchanged. An unknown or inactive unit gets 400 `lines[i].unit`. A non-exact conversion gets 400 on the quantity. Existing RequestHash goldens are unchanged, and a replay with `unit` is 200. A `stocktake:` client key gets 400. The post-stock form offers each item's units. |
-| U3 | Stocktakes API | Added | 09, 10, 11, 12 | U2 | yes | R4: start (prefilled), count with unit conversion and a snapshot, list, detail, cancel. One open stocktake per location (409). R5: post makes one CountCorrection adjustment of the snapshot deltas. A sale posted after a count is kept. Parallel and repeated posts make one document. A rejection returns the stocktake to Draft. Staff gets 403 on post and cancel. T5 probes. Slugs in spec §9, Kernel and Angular. |
-| U4 | Stocktake screens | Added | 13, 14, 15 | U3 | no | R6: `/stocktakes` list and start, and a `/stocktakes/:id` count sheet at 375 px with unit choice, a "moved since count" flag, Admin Post/Cancel, and a link to the posted document. Vitest. Playwright flow: Staff counts, Admin posts, stock shows the count. Spec §10/§11/§15 updated. |
+| IMS-28 | Item units | Added | 01, 02, 03, 04 | — | yes | R1: an Admin adds `case` = 12 to a `pc` item, and `GET /items/{id}` lists it. Staff gets 403. A duplicate code, the base unit as a code, or a factor ≤ 0 or with more than 4 dp gets 400. Deactivate is idempotent. T5 probes and T6 pass. R3: a base-unit change after a movement, or with a unit, gets 400 `baseUnit`. The seed adds 3 units idempotently. The item detail screen lists units, with Admin add and deactivate. |
+| IMS-29 | Posting in units | Added | 05, 06, 07, 08 | IMS-28 | yes | R2: vector set U passes in unit tests and through the API (1 case @ ₱500 = 500.0000). V/R/A/N/X are unchanged. An unknown or inactive unit gets 400 `lines[i].unit`. A non-exact conversion gets 400 on the quantity. Existing RequestHash goldens are unchanged, and a replay with `unit` is 200. A `stocktake:` client key gets 400. The post-stock form offers each item's units. |
+| IMS-30 | Stocktakes API | Added | 09, 10, 11, 12 | IMS-29 | yes | R4: start (prefilled), count with unit conversion and a snapshot, list, detail, cancel. One open stocktake per location (409). R5: post makes one CountCorrection adjustment of the snapshot deltas. A sale posted after a count is kept. Parallel and repeated posts make one document. A rejection returns the stocktake to Draft. Staff gets 403 on post and cancel. T5 probes. Slugs in spec §9, Kernel and Angular. |
+| IMS-31 | Stocktake screens | Added | 13, 14, 15 | IMS-30 | no | R6: `/stocktakes` list and start, and a `/stocktakes/:id` count sheet at 375 px with unit choice, a "moved since count" flag, Admin Post/Cancel, and a link to the posted document. Vitest. Playwright flow: Staff counts, Admin posts, stock shows the count. Spec §10/§11/§15 updated. |
 
 ## Prompts
 | # | Title | Unit | Model | Effort | Depends | Group | Files |
 |---|---|---|---|---|---|---|---|
-| 01 | Item units schema | U1 | opus | high | — | A | ItemUnit.cs, InventoryDbContext.cs, migration, LedgerSchemaTests.cs |
-| 02 | Item units API | U1 | sonnet | high | 01 | B | Features/Items/Units/*, ItemUnitResponse.cs, ItemEndpoints.cs, ItemDetailResponse.cs, GetItem/Handler.cs, InventoryModuleExtensions.cs, ItemUnitsTests.cs, TenantIsolationTests.cs |
-| 03 | Base-unit immutability and demo units | U1 | opus | high | 02 | C | UpdateItem/Handler.cs, ItemsTests.cs, InventorySeeder.cs, SeedTests.cs, spec |
-| 04 | Item detail: units section | U1 | sonnet | medium | 02 | D | items.service.ts(+spec), item-detail.*, item-unit-dialog.* |
-| 05 | Domain UnitFactor and vector set U | U2 | opus | high | — | E | PostingRules.cs, CostingVectorTests.cs, PostingRulesTests.cs, spec |
-| 06 | Unit on request lines, hash and key reservation | U2 | opus | high | 05 | F | 4× Request.cs, PostingValidation.cs, RequestHash.cs, RequestHashTests.cs, PostingValidationTests.cs |
-| 07 | DocumentPoster unit conversion and T16 API run | U2 | opus | high | 06 | G | UnitConversion.cs, DocumentPoster.cs, UnitPostingTests.cs, spec |
-| 08 | Post-stock form: unit per line | U2 | sonnet | high | 07 | H | posting-form.ts(+spec), post-stock.ts/.html(+spec) |
-| 09 | Stocktake schema | U3 | opus | high | — | I | Stocktake.cs, StocktakeLine.cs, StocktakeStatus.cs, InventoryDbContext.cs, migration, LedgerSchemaTests.cs |
-| 10 | Stocktake start, list, detail and slugs | U3 | opus | high | 09 | J | ProblemTypes.cs, Problems.cs, problem-messages(.spec).ts, Features/Stocktakes/{Start,List,Get}/*, StocktakeEndpoints.cs, StocktakeResponses.cs, InventoryModuleExtensions.cs, StocktakeTests.cs, TenantIsolationTests.cs |
-| 11 | Stocktake count and cancel | U3 | sonnet | high | 10 | K | Features/Stocktakes/{CountStocktakeLine,CancelStocktake}/*, StocktakeEndpoints.cs, InventoryModuleExtensions.cs, StocktakeTests.cs, TenantIsolationTests.cs |
-| 12 | Stocktake post (exactly-once) | U3 | opus | xhigh | 11 | L | DocumentPoster.cs, Features/Stocktakes/PostStocktake/*, StocktakeEndpoints.cs, InventoryModuleExtensions.cs, StocktakeTests.cs, TenantIsolationTests.cs, spec |
-| 13 | Stocktakes list and start screen | U4 | sonnet | medium | — | M | stocktakes.service.ts(+spec), stocktakes.ts/.html/.scss(+spec), start dialog, app.routes.ts, app.html |
-| 14 | Count sheet screen | U4 | sonnet | high | 13 | N | stocktake-detail.ts/.html/.scss(+spec), count dialog, app.routes.ts |
-| 15 | Playwright stocktake flow and docs | U4 | sonnet | medium | 14 | O | tests/e2e/specs/stocktake.spec.ts, spec §10/§11/§15 |
+| 01 | Item units schema | IMS-28 | opus | high | — | A | ItemUnit.cs, InventoryDbContext.cs, migration, LedgerSchemaTests.cs |
+| 02 | Item units API | IMS-28 | sonnet | high | 01 | B | Features/Items/Units/*, ItemUnitResponse.cs, ItemEndpoints.cs, ItemDetailResponse.cs, GetItem/Handler.cs, InventoryModuleExtensions.cs, ItemUnitsTests.cs, TenantIsolationTests.cs |
+| 03 | Base-unit immutability and demo units | IMS-28 | opus | high | 02 | C | UpdateItem/Handler.cs, ItemsTests.cs, InventorySeeder.cs, SeedTests.cs, spec |
+| 04 | Item detail: units section | IMS-28 | sonnet | medium | 02 | D | items.service.ts(+spec), item-detail.*, item-unit-dialog.* |
+| 05 | Domain UnitFactor and vector set U | IMS-29 | opus | high | — | E | PostingRules.cs, CostingVectorTests.cs, PostingRulesTests.cs, spec |
+| 06 | Unit on request lines, hash and key reservation | IMS-29 | opus | high | 05 | F | 4× Request.cs, PostingValidation.cs, RequestHash.cs, RequestHashTests.cs, PostingValidationTests.cs |
+| 07 | DocumentPoster unit conversion and T16 API run | IMS-29 | opus | high | 06 | G | UnitConversion.cs, DocumentPoster.cs, UnitPostingTests.cs, spec |
+| 08 | Post-stock form: unit per line | IMS-29 | sonnet | high | 07 | H | posting-form.ts(+spec), post-stock.ts/.html(+spec) |
+| 09 | Stocktake schema | IMS-30 | opus | high | — | I | Stocktake.cs, StocktakeLine.cs, StocktakeStatus.cs, InventoryDbContext.cs, migration, LedgerSchemaTests.cs |
+| 10 | Stocktake start, list, detail and slugs | IMS-30 | opus | high | 09 | J | ProblemTypes.cs, Problems.cs, problem-messages(.spec).ts, Features/Stocktakes/{Start,List,Get}/*, StocktakeEndpoints.cs, StocktakeResponses.cs, InventoryModuleExtensions.cs, StocktakeTests.cs, TenantIsolationTests.cs |
+| 11 | Stocktake count and cancel | IMS-30 | sonnet | high | 10 | K | Features/Stocktakes/{CountStocktakeLine,CancelStocktake}/*, StocktakeEndpoints.cs, InventoryModuleExtensions.cs, StocktakeTests.cs, TenantIsolationTests.cs |
+| 12 | Stocktake post (exactly-once) | IMS-30 | opus | xhigh | 11 | L | DocumentPoster.cs, Features/Stocktakes/PostStocktake/*, StocktakeEndpoints.cs, InventoryModuleExtensions.cs, StocktakeTests.cs, TenantIsolationTests.cs, spec |
+| 13 | Stocktakes list and start screen | IMS-31 | sonnet | medium | — | M | stocktakes.service.ts(+spec), stocktakes.ts/.html/.scss(+spec), start dialog, app.routes.ts, app.html |
+| 14 | Count sheet screen | IMS-31 | sonnet | high | 13 | N | stocktake-detail.ts/.html/.scss(+spec), count dialog, app.routes.ts |
+| 15 | Playwright stocktake flow and docs | IMS-31 | sonnet | medium | 14 | O | tests/e2e/specs/stocktake.spec.ts, spec §10/§11/§15 |
 
 Why each `opus`:
 - **01, 09:** new tenant tables with RLS in `**/Migrations/**`, a High-stakes path. T6 and the rollback order depend on getting them exactly right.
@@ -224,10 +226,16 @@ cd tests/e2e && npx playwright test specs/stocktake.spec.ts
 ```
 
 ## Rollback
-- Each unit is one PR. Revert the PR on `develop`.
-- **U1 and U3 add migrations with RLS** (IMS-4 Downstream): roll the schema back on that build first (`dotnet ef database update <previous>`, whose `Down` drops the predicates before the tables), then revert the code.
+- Each unit is one PR. Revert the PR on `develop`, except IMS-29 (below).
+- **IMS-28 and IMS-30 add migrations with RLS** (IMS-4 Downstream): roll the schema back on that build first (`dotnet ef database update <previous>`, whose `Down` drops the predicates before the tables), then revert the code.
 - No ledger row is created or changed by anything except normal postings. A stocktake's adjustment is reversed like any document (`POST /documents/{id}/reversal`, latest-only).
-- **U2 is code-only.** Reverting it makes `unit` an unknown property. Any document already posted in units stays valid in base units.
+- **IMS-29 is never rolled back with `git revert`** (D16). The API sets no `UnmappedMemberHandling`, so a reverted API would silently skip `unit` and post `quantity: 1, unit: "sack"` as 1 base unit. IMS-29's rollback is a fix-forward PR, in this order:
+  1. If IMS-30 has merged, roll IMS-30 back first: its schema per the bullet above, then its code. The count endpoint converts units through IMS-29.
+  2. In the fix-forward PR, keep `string? Unit` on the four posting request line types and in `PostingValidation`. Return `400 validation` on `lines[i].unit` when `unit` is not null and not the item's base unit. Remove only the conversion (`UnitConversion`, the `PostingLine.UnitFactor` use in `DocumentPoster`). Keep D6's hash rule, so `unit` stays in the RequestHash.
+  3. Verify before merging: an integration test posts with `unit: "<alternate>"`, expects 400 `lines[0].unit` and checks that no movement was written. A post with no `unit`, or with the base unit, still returns 200.
+  4. Any document already posted in units stays valid, because the ledger is in base units.
 
 ## Log
 - 2026-11-18: planned. The user chose input-only units, a snapshot-at-count variance, Staff counts / Admin posts, and approved the §6/§7 changes D2 and D10.
+- 2026-11-18: audited, 1 fix applied (Codex BLOCK: IMS-29's rollback now fails closed instead of reverting, D16).
+- 2026-11-18: applied Codex audit (1 applied, 0 disputed)

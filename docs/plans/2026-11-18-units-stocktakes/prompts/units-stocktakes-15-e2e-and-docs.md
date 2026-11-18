@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 15
-unit: U4
+unit: IMS-31
 status: todo
 model: sonnet
 effort: medium
@@ -30,7 +30,7 @@ Add one Playwright spec that proves the stocktake flow end to end at phone width
   - Use `CANDLE-WHT` or your own item, because other seeded items carry stock.
   - Renaming seeded emails, port 4200 or UI labels used by specs breaks the suite.
   - The suite runs against the AppHost (or `E2E_BASE_URL`), with `E2E_PASSWORD` = the seed password.
-- U4's UI labels (prompts 13–14): nav "Count stock", button "Start a count", row tap opens the count dialog, Admin "Post count", posted link "View the correction". Read the components to get the exact accessible names.
+- IMS-31's UI labels (prompts 13–14): nav "Count stock", button "Start a count", row tap opens the count dialog, Admin "Post count", posted link "View the correction". Read the components to get the exact accessible names.
 
 ### Steps
 1. `stocktake.spec.ts`, one `test`, viewport 375 × 812:

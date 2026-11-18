@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 05
-unit: U2
+unit: IMS-29
 status: todo
 model: opus
 effort: high
@@ -45,10 +45,10 @@ Add `Vector_set_U_units` in the style of `Vector_set_V_two_locations` (`:25`). I
 
 | Step | Action | Line passed to `Post` | Movement cost (₱) | U after: qty / value | LastUnitCost |
 |---|---|---|---|---|---|
-| U1 | Receive 1 case @ 500.00 | Quantity 12, UnitCost 500.00, UnitFactor 12 | 500.0000 (per-pc 41.6667 × 12 would give 500.0004) | 12 / 500.0000 | 41.6667 |
-| U2 | Receive 2.5 case @ 480.00 | 30, 480.00, 12 | 1,200.0000 | 42 / 1,700.0000 | 40.4762 |
-| U3 | Issue 0.5 case | 6, null, 12 | 242.8571 | 36 / 1,457.1429 | 40.4762 |
-| U4 | Issue 36 pc | 36, null, 1 | 1,457.1429 (the remainder) | 0 / 0.0000 | 40.4762 |
+| IMS-28 | Receive 1 case @ 500.00 | Quantity 12, UnitCost 500.00, UnitFactor 12 | 500.0000 (per-pc 41.6667 × 12 would give 500.0004) | 12 / 500.0000 | 41.6667 |
+| IMS-29 | Receive 2.5 case @ 480.00 | 30, 480.00, 12 | 1,200.0000 | 42 / 1,700.0000 | 40.4762 |
+| IMS-30 | Issue 0.5 case | 6, null, 12 | 242.8571 | 36 / 1,457.1429 | 40.4762 |
+| IMS-31 | Issue 36 pc | 36, null, 1 | 1,457.1429 (the remainder) | 0 / 0.0000 | 40.4762 |
 
 Received 1,700.0000 = issued 242.8571 + 1,457.1429. Assert every cell to the fourth decimal.
 

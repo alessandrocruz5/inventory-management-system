@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 13
-unit: U4
+unit: IMS-31
 status: todo
 model: sonnet
 effort: medium
@@ -28,9 +28,9 @@ files:
 Add the stocktakes service, the `/stocktakes` list screen with a "Start a count" dialog, the route and a nav link.
 
 ## Context
-- Repo: `/home/apa/Code/portfolio/inventory-management-system`. Check `git branch --show-current` equals this prompt's `unit` key, and stop if it doesn't. U3 is merged.
+- Repo: `/home/apa/Code/portfolio/inventory-management-system`. Check `git branch --show-current` equals this prompt's `unit` key, and stop if it doesn't. IMS-30 is merged.
 - Angular, latest stable: standalone components, signals, zoneless, `@if`/`@for`, typed reactive forms, Material.
-- API (U3), all under `/api`:
+- API (IMS-30), all under `/api`:
   - `GET /stocktakes?page&pageSize&status&locationId` returns `Paged<StocktakeSummary>`. `StocktakeSummary` is `{ id, locationId, locationCode, locationName, status: 'Draft'|'Posting'|'Posted'|'Cancelled', notes, createdAt, createdBy, lineCount, countedCount, postedDocumentId }`.
   - `POST /stocktakes { locationId, notes }` returns 201 with the detail. A second open stocktake gets `409 stocktake-open-exists` with `stocktakeId`; an inactive location gets 422.
   - `GET /stocktakes/{id}` returns the detail: `{ …summary fields, updatedAt, lines: StocktakeLine[] }`.

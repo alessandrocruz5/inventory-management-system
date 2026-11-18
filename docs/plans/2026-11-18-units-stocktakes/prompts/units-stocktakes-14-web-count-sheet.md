@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 14
-unit: U4
+unit: IMS-31
 status: todo
 model: sonnet
 effort: high
@@ -26,8 +26,8 @@ Build the count sheet: one row per item showing the expected, counted and differ
 
 ## Context
 - Repo: `/home/apa/Code/portfolio/inventory-management-system`. Check `git branch --show-current` equals this prompt's `unit` key, and stop if it doesn't.
-- Prompt 13 added `web/src/app/stocktakes/stocktakes.service.ts` with its types (read it). U2 added unit options to the post-stock form: `web/src/app/documents/post-stock.ts` loads `ItemsService.get(id)` to get `units`. Copy that unit-select pattern.
-- API behaviour (U3):
+- Prompt 13 added `web/src/app/stocktakes/stocktakes.service.ts` with its types (read it). IMS-29 added unit options to the post-stock form: `web/src/app/documents/post-stock.ts` loads `ItemsService.get(id)` to get `units`. Copy that unit-select pattern.
+- API behaviour (IMS-30):
   - Count `PUT …/lines/{itemId} { quantity, unit?, unitCost? }` returns the full detail. Errors are 400 on `quantity`, `unit` or `unitCost`; `409 stocktake-not-open`; and `422 inactive-item`.
   - Post (Admin) returns the detail with `status` Posted and `postedDocumentId`, or `null` when nothing differed. Errors:
     - 400 with remapped `lines[j].quantity` / `lines[j].unitCost`. `j` is the index in `lines` as returned, already in display order.

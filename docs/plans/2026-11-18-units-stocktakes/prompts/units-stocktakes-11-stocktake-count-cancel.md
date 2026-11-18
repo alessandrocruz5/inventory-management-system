@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 11
-unit: U3
+unit: IMS-30
 status: todo
 model: sonnet
 effort: high
@@ -30,7 +30,7 @@ Add `PUT /api/stocktakes/{id}/lines/{itemId}` (Staff and Admin), which records a
 ## Context
 - Repo: `/home/apa/Code/portfolio/inventory-management-system`. Check `git branch --show-current` equals this prompt's `unit` key, and stop if it doesn't.
 - Prompt 10 added `StocktakeEndpoints`, `StocktakeReader`, the responses, `Problems.StocktakeNotOpen(status)`, `StocktakeTests.StartAsync` and the T5 probes for start, list and get.
-- U2 added `Features/Posting/UnitConversion.{ToBase, ActiveFactorsAsync}` and `PostingValidation.MaxAmount`.
+- IMS-29 added `Features/Posting/UnitConversion.{ToBase, ActiveFactorsAsync}` and `PostingValidation.MaxAmount`.
 - Plan D8: a count stores `CountedQuantity` (base units), `ExpectedQuantity` = the balance's `OnHand` **now** (0 if there's no balance row), `ExpectedLastMovementId` = its `LastMovementId` (null if none), `CountedAt` = `clock.GetUtcNow()` and `CountedBy` = `user.UserId`. A re-count overwrites all of them and takes a new snapshot (D15: last write wins, no version).
 - Plan D15: every count runs in a strategy transaction that first U-locks the stocktake row: `db.Stocktakes.FromSql($"SELECT * FROM [inventory].[Stocktakes] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id}")`. That serializes counts against posting's Draft → Posting step (prompt 12), so no count slips in after the lines freeze. The snapshot read of `StockBalances` is a plain read with no lock hint (plan Assumptions).
 - Plan D11: count is any signed-in user. Cancel is `.RequireAuthorization(InventoryPolicies.Admin)`.

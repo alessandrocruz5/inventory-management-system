@@ -129,5 +129,12 @@ Epic: IMS-21 · Branch base: `develop` · Plan: [[2026-11-17-ui-redesign]]
 - [x] IMS-25 — Document detail and Ledger health · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 09, 10 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Document detail (back link, title pill, notices, meta grid, Lines total) and Ledger health (overall banner, invariant pills, nested failure tables) restyled. Downstream: none — IMS-26 touches disjoint files.
 - [x] IMS-26 — Post stock form · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 11, 12 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Post stock form restyled; verified by CI only (local Commands not run). Downstream: none.
 
+## Sprint 3 — Food-service pack: unit conversions and stocktakes   (planned 2026-11-18)
+Epic: IMS-27 · Branch base: `develop` · Plan: [[2026-11-18-units-stocktakes]]
+- [ ] IMS-28 — Item units · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 01, 02, 03, 04 · depends: — · model: opus
+- [ ] IMS-29 — Posting in units · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 05, 06, 07, 08 · depends: IMS-28 · model: opus
+- [ ] IMS-30 — Stocktakes API · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 09, 10, 11, 12 · depends: IMS-29 · model: opus
+- [ ] IMS-31 — Stocktake screens · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 13, 14, 15 · depends: IMS-30 · model: sonnet
+
 ## Hotfixes
 - [x] IMS-19 — Bump Aspire packages to 13.6.5 (GHSA-f7vh-h5g3-7jrh) · Fixed · files: src/AppHost/AppHost.csproj, src/Modules/Inventory/Inventory/Inventory.csproj, src/Modules/Platform/Platform/Platform.csproj · depends: — · model: haiku (merged 2026-11-12)

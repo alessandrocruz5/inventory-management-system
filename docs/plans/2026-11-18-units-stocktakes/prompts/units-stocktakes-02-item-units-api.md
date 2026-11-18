@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 02
-unit: U1
+unit: IMS-28
 status: todo
 model: sonnet
 effort: high
@@ -73,7 +73,7 @@ Lowercase the route `code`. A missing item or unit → 404. Already inactive →
 
 ## Do not
 - Touch files outside `files`. If you must, stop and report why.
-- Change `UpdateItem`, the seed or posting. Those are prompt 03 and U2.
+- Change `UpdateItem`, the seed or posting. Those are prompt 03 and IMS-29.
 - Add an update or reactivate route, dependencies or abstractions. Create or switch branches, commit, or push.
 
 ## Done when

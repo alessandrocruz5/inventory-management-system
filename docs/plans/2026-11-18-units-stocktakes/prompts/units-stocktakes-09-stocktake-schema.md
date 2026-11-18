@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 09
-unit: U3
+unit: IMS-30
 status: todo
 model: opus
 effort: high
@@ -27,7 +27,7 @@ files:
 Add two tenant-owned work tables for stocktakes, with their entities, configuration, checks, FKs, the one-open-per-location filtered unique index and RLS predicates, all in one migration. Extend the schema tests.
 
 ## Context
-- Repo: `/home/apa/Code/portfolio/inventory-management-system`. Check `git branch --show-current` equals this prompt's `unit` key, and stop if it doesn't. U1 (`ItemUnits`) and U2 are merged into the base, so the latest migration is `*_ItemUnits`.
+- Repo: `/home/apa/Code/portfolio/inventory-management-system`. Check `git branch --show-current` equals this prompt's `unit` key, and stop if it doesn't. IMS-28 (`ItemUnits`) and IMS-29 are merged into the base, so the latest migration is `*_ItemUnits`.
 - Conventions:
   - `decimal(19,4)` for quantities and costs.
   - `TenantId` first in every PK, unique index and FK, with composite FKs and `NoAction`.

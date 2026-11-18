@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 03
-unit: U1
+unit: IMS-28
 status: todo
 model: opus
 effort: high
@@ -21,7 +21,7 @@ files:
 # 03 · Base-unit immutability (R3), demo units, spec §5/§9
 
 ## Task
-Make `PUT /api/items/{id}` reject a base-unit change while the item has a movement or any `ItemUnits` row. Seed three demo units. Record U1 in the spec.
+Make `PUT /api/items/{id}` reject a base-unit change while the item has a movement or any `ItemUnits` row. Seed three demo units. Record IMS-28 in the spec.
 
 ## Context
 - Repo: `/home/apa/Code/portfolio/inventory-management-system`. Check `git branch --show-current` equals this prompt's `unit` key, and stop if it doesn't. Prompts 01–02 added `ItemUnits` and its API. `CreateItemUnit` reads the item `WITH (UPDLOCK, ROWLOCK)` before inserting.

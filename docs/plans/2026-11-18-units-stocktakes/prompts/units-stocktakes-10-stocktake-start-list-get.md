@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 10
-unit: U3
+unit: IMS-30
 status: todo
 model: opus
 effort: high
@@ -119,7 +119,7 @@ Copy the shape from `LocationsTests`/`PostingTests`: own tenant per test, Admin 
   - `GET /api/stocktakes/{id:guid}`: B's id → 404.
 
 ## Do not
-- Touch files outside `files`. If you must, stop and report why. Count, cancel and post are prompts 11 and 12. The stocktake screens are U4.
+- Touch files outside `files`. If you must, stop and report why. Count, cancel and post are prompts 11 and 12. The stocktake screens are IMS-31.
 - Add triggers, grants, columns or dependencies. Create or switch branches, commit, or push.
 
 ## Done when

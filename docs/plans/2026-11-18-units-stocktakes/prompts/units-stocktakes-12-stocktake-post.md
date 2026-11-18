@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 12
-unit: U3
+unit: IMS-30
 status: todo
 model: opus
 effort: xhigh
