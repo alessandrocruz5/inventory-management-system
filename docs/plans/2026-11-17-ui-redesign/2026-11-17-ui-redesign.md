@@ -236,3 +236,8 @@ Frontend-only, with no data or contract change. Revert the unit's merge commit o
 - 2026-11-18: 04 done (sonnet, 0 retries): Stock restyled (header, card, themed grid, mobile list, status pill); 204 tests green. Deviations: Item column keeps SKU · Name valueGetter alongside the renderer; one eslint-disable on the label-has-associated-control rule (label-above pattern)
 - 2026-11-18: 05 done (sonnet, 0 retries): Documents restyled (filter grid, type icons, status pill, mobile rows); 208 tests green
 - 2026-11-18: IMS-23 merged; fix commit for e2e column virtualisation (flex columns, suppressColumnVirtualisation on Stock)
+- 2026-11-18: build started on IMS-24; rollback point 154fd1a51f33c61c142f65d7a40f8afc02a6e05f
+- 2026-11-18: 06 done (sonnet, 0 retries): Items card list with per-row Admin actions, spec §10/§15 amended; lint/build/210 tests green
+- 2026-11-18: 07 done (sonnet, 0 retries): Item detail restyled (back link, title pill, meta line, scrolling table cards); lint/build/212 tests green
+- 2026-11-18: 08 done (sonnet, 0 retries): Locations card list with badge, pills, Admin actions; lint/build/212 tests green
+- 2026-11-18: IMS-24 merged
