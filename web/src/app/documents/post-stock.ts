@@ -15,6 +15,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -33,23 +34,28 @@ import { ConfirmDialog, ConfirmDialogData } from '../shared/confirm-dialog';
 import {
   ADJUSTMENT_REASONS,
   AdjustmentReason,
+  formatMoney,
   formatQuantity,
   reasonLabel,
 } from '../shared/format';
-import { StockService } from '../stock/stock.service';
+import { StockBalance, StockService } from '../stock/stock.service';
 import { DocumentsService, POSTING_TYPES, PostedDocument, PostingType } from './documents.service';
 import {
   IdempotencyKey,
   LineDirection,
   MAX_LINES,
+  POSTING_SUBTITLES,
   POSTING_TITLES,
   PostingHeader,
   PostingLine,
   amountValidator,
   buildPostingBody,
   duplicateItemLines,
+  isOutflow,
   linesOverOnHand,
   postingErrors,
+  postingTotal,
+  postingTotalLabel,
   sourceLocationId,
   unitCostRequired,
   usesUnitCost,
@@ -70,11 +76,13 @@ function itemChosen(control: AbstractControl): ValidationErrors | null {
     MatButtonModule,
     MatButtonToggleModule,
     MatFormFieldModule,
+    MatIconModule,
     MatInputModule,
     MatSelectModule,
   ],
   templateUrl: './post-stock.html',
   styleUrl: './post-stock.scss',
+  host: { class: 'page page--narrow' },
 })
 export class PostStock {
   private readonly documents = inject(DocumentsService);
@@ -89,12 +97,15 @@ export class PostStock {
   protected readonly maxLines = MAX_LINES;
   protected readonly reasons = ADJUSTMENT_REASONS;
   protected readonly reasonLabel = reasonLabel;
+  protected readonly formatMoney = formatMoney;
 
   protected readonly type = signal<PostingType>('receipt');
   protected readonly title = computed(() => POSTING_TITLES[this.type()]);
+  protected readonly subtitle = computed(() => POSTING_SUBTITLES[this.type()]);
   protected readonly locations = signal<Location[]>([]);
   protected readonly options = signal<Item[][]>([[]]);
   protected readonly onHand = signal<(number | null)[]>([null]);
+  protected readonly averageCost = signal<(number | null)[]>([null]);
   protected readonly posting = signal(false);
   protected readonly message = signal<string | null>(null);
   protected readonly originalDocumentId = signal<string | null>(null);
@@ -130,6 +141,12 @@ export class PostStock {
 
   protected readonly duplicates = computed(() => duplicateItemLines(this.lineValues()));
 
+  protected readonly total = computed(() =>
+    postingTotal(this.type(), this.lineValues(), this.averageCost()),
+  );
+
+  protected readonly totalLabel = computed(() => postingTotalLabel(this.type()));
+
   protected readonly canSubmit = computed(() => {
     this.tick();
     return !this.posting() && this.form.valid && this.duplicates().length === 0;
@@ -163,13 +180,34 @@ export class PostStock {
     return usesUnitCost(this.type(), this.lineValue(line));
   }
 
-  protected onHandText(i: number): string | null {
+  protected lineHint(i: number): { tone: 'muted' | 'bad'; icon: string; text: string } | null {
+    const line = this.lineValues()[i];
+    if (!line) {
+      return null;
+    }
+    if (this.duplicates().includes(i)) {
+      return { tone: 'bad', icon: 'error', text: 'This item is already on another line.' };
+    }
     const have = this.onHand()[i];
     if (have == null) {
       return null;
     }
-    const unit = this.lineValues()[i]?.itemId ? this.unitOf(this.form.controls.lines.at(i)) : '';
-    return `On hand: ${formatQuantity(have)}${unit ? ` ${unit}` : ''}`;
+    const unit = line.itemId ? this.unitOf(this.form.controls.lines.at(i)) : '';
+    const amount = `${formatQuantity(have)}${unit ? ` ${unit}` : ''}`;
+    const sourceId = sourceLocationId(
+      this.type(),
+      this.form.controls.header.getRawValue() as PostingHeader,
+    );
+    const code = this.locations().find((l) => l.id === sourceId)?.code ?? '';
+    const at = code ? ` at ${code}` : '';
+    if (isOutflow(this.type(), line) && line.quantity != null && line.quantity > have) {
+      return {
+        tone: 'bad',
+        icon: 'error',
+        text: `Only ${amount} on hand${at}. This will take the balance negative.`,
+      };
+    }
+    return { tone: 'muted', icon: 'inventory_2', text: `On hand${at}: ${amount}` };
   }
 
   protected errorText(control: AbstractControl, required: string): string {
@@ -200,6 +238,7 @@ export class PostStock {
     lines.push(this.makeLine());
     this.options.update((o) => [...o, []]);
     this.onHand.update((o) => [...o, null]);
+    this.averageCost.update((o) => [...o, null]);
   }
 
   protected removeLine(i: number): void {
@@ -211,6 +250,7 @@ export class PostStock {
     lines.removeAt(i);
     this.options.update((o) => o.filter((_, j) => j !== i));
     this.onHand.update((o) => o.filter((_, j) => j !== i));
+    this.averageCost.update((o) => o.filter((_, j) => j !== i));
   }
 
   protected async submit(): Promise<void> {
@@ -326,6 +366,7 @@ export class PostStock {
     lines.push(this.makeLine());
     this.options.set([[]]);
     this.onHand.set([null]);
+    this.averageCost.set([null]);
   }
 
   private makeLine() {
@@ -348,7 +389,7 @@ export class PostStock {
       if (typeof value !== 'string') {
         this.refreshOnHand(group);
       } else {
-        this.setOnHand(group, null);
+        this.setBalance(group, null);
       }
     });
     group.controls.item.valueChanges
@@ -378,7 +419,8 @@ export class PostStock {
     };
   }
 
-  private unitOf(group: ReturnType<PostStock['makeLine']>): string {
+  protected unitOf(group: ReturnType<PostStock['makeLine']>): string {
+    this.tick();
     const item = group.controls.item.value;
     return typeof item === 'object' ? item.baseUnit : '';
   }
@@ -395,10 +437,11 @@ export class PostStock {
     }
   }
 
-  private setOnHand(group: ReturnType<PostStock['makeLine']>, value: number | null): void {
+  private setBalance(group: ReturnType<PostStock['makeLine']>, value: StockBalance | null): void {
     const i = this.form.controls.lines.controls.indexOf(group);
     if (i >= 0) {
-      this.onHand.update((o) => o.map((x, j) => (j === i ? value : x)));
+      this.onHand.update((o) => o.map((x, j) => (j === i ? (value?.onHand ?? null) : x)));
+      this.averageCost.update((o) => o.map((x, j) => (j === i ? (value?.averageCost ?? null) : x)));
     }
   }
 
@@ -412,18 +455,18 @@ export class PostStock {
       this.type(),
       this.form.controls.header.getRawValue() as PostingHeader,
     );
-    this.setOnHand(group, null);
+    this.setBalance(group, null);
     if (!itemId || !location) {
       return;
     }
-    this.stock.onHand(itemId, location).then(
-      (n) => {
+    this.stock.balance(itemId, location).then(
+      (balance) => {
         const still = sourceLocationId(
           this.type(),
           this.form.controls.header.getRawValue() as PostingHeader,
         );
         if (this.lineValue(group).itemId === itemId && still === location) {
-          this.setOnHand(group, n);
+          this.setBalance(group, balance);
         }
       },
       () => undefined,
