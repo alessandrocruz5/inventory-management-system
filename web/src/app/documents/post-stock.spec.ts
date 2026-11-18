@@ -29,6 +29,8 @@ interface PostStockInternals {
   }>;
   submit(): Promise<void>;
   title(): string;
+  subtitle(): string;
+  totalLabel(): string;
   message(): string | null;
 }
 
@@ -43,15 +45,15 @@ const ITEM = {
 
 describe('PostStock', () => {
   const post = vi.fn();
-  const onHand = vi.fn();
+  const balance = vi.fn();
   const open = vi.fn();
   const paramMap = new BehaviorSubject(convertToParamMap({ type: 'receipt' }));
 
   beforeEach(async () => {
     post.mockReset();
-    onHand.mockReset();
+    balance.mockReset();
     open.mockReset();
-    onHand.mockRejectedValue(new Error('nope'));
+    balance.mockRejectedValue(new Error('nope'));
     open.mockReturnValue({ afterClosed: () => of(true) });
     paramMap.next(convertToParamMap({ type: 'receipt' }));
     await TestBed.configureTestingModule({
@@ -60,7 +62,7 @@ describe('PostStock', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap } },
         { provide: DocumentsService, useValue: { post } },
-        { provide: StockService, useValue: { onHand } },
+        { provide: StockService, useValue: { balance } },
         { provide: ItemsService, useValue: { list: vi.fn().mockResolvedValue({ items: [] }) } },
         {
           provide: LocationsService,
@@ -221,7 +223,9 @@ describe('PostStock', () => {
     line.controls.direction.setValue('remove');
     fixture.detectChanges();
     expect(line.controls.unitCost.value).toBeNull();
-    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Unit cost');
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('label[for="post-cost-0"]'),
+    ).toBeNull();
     post.mockResolvedValue({ id: 'd', type: 'Adjustment' });
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     await c.submit();
@@ -230,7 +234,7 @@ describe('PostStock', () => {
   });
 
   it('asks before posting an outflow over on-hand, and posts nothing on cancel', async () => {
-    onHand.mockResolvedValue(1);
+    balance.mockResolvedValue({ onHand: 1, averageCost: 4 });
     open.mockReturnValue({ afterClosed: () => of(false) });
     const { fixture, c } = await setup('issue');
     const line = c.form.controls.lines.at(0);
@@ -257,5 +261,58 @@ describe('PostStock', () => {
     );
     await c.submit();
     expect(line.controls.quantity.errors?.['server']).toBe('Too big.');
+  });
+
+  it('shows the subtitle and total label for each type', async () => {
+    const { fixture, c } = await setup('issue');
+    expect(c.subtitle()).toBe('Record stock that was sold or used up.');
+    expect(c.totalLabel()).toBe('Value at average cost');
+    const el = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+    expect(el.querySelector('.page-subtitle')?.textContent).toContain('sold or used up');
+    expect(el.querySelector('.post-total__label')?.textContent).toContain('Value at average cost');
+    const receipt = await setup('receipt');
+    expect(receipt.c.totalLabel()).toBe('Total cost');
+  });
+
+  it('shows the running total in the sticky bar', async () => {
+    const { fixture, c } = await setup('receipt');
+    const line = c.form.controls.lines.at(0);
+    line.controls.quantity.setValue(2);
+    line.controls.unitCost.setValue(10);
+    fixture.detectChanges();
+    const bar = (fixture.nativeElement as HTMLElement).querySelector('.post-bar');
+    expect(bar?.textContent).toContain('₱20.00');
+  });
+
+  it('shows the on-hand hint and the negative warning for an issue line', async () => {
+    balance.mockResolvedValue({ onHand: 5, averageCost: 4 });
+    const { fixture, c } = await setup('issue');
+    const line = c.form.controls.lines.at(0);
+    c.form.controls.header.controls['locationId'].setValue('l1');
+    line.controls.item.setValue(ITEM);
+    line.controls.quantity.setValue(2);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.hint')?.textContent).toContain('On hand at MAIN: 5 pc');
+    expect(el.querySelector('.post-bar')?.textContent).toContain('₱8.00');
+    line.controls.quantity.setValue(9);
+    fixture.detectChanges();
+    expect(el.querySelector('.hint')?.textContent).toContain(
+      'Only 5 pc on hand at MAIN. This will take the balance negative.',
+    );
+  });
+
+  it('labels the fields with the label-above pattern', async () => {
+    const { fixture } = await setup('receipt');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('mat-select')?.getAttribute('aria-labelledby')).toContain(
+      'post-location-label',
+    );
+    expect(el.querySelector('label[for="post-reference"]')).not.toBeNull();
+    expect(el.querySelector('label[for="post-item-0"]')).not.toBeNull();
+    expect(el.querySelector('button[aria-label="Remove line"]')).not.toBeNull();
   });
 });
