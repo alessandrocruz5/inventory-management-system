@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ADMIN, STAFF, createLocation, signIn, stockRow } from '../support/app';
+import { ADMIN, STAFF, choose, createLocation, signIn } from '../support/app';
 
 test.use({ viewport: { width: 375, height: 812 } });
 
@@ -88,9 +88,13 @@ test('T18 · Staff counts, Admin posts, stock shows the count (375 px)', async (
     });
 
     await test.step('Stock shows 8 and ₱160.00', async () => {
-      const row = await stockRow(admin, loc.code, SKU);
-      await expect(row.locator('[col-id="onHand"]')).toHaveText('8');
-      await expect(row.locator('[col-id="stockValue"]')).toHaveText('₱160.00');
+      // At 375 px /stock is a stacked list, not the grid.
+      await admin.goto('/stock');
+      await choose(admin, 'Location', new RegExp(`^${loc.code} ·`));
+      const row = admin.getByRole('link').filter({ hasText: SKU });
+      await expect(row).toHaveCount(1);
+      await expect(row.locator('.row-qty')).toContainText('8');
+      await expect(row.locator('.row-value')).toHaveText('₱160.00');
     });
   } finally {
     await adminContext.close();
