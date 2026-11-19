@@ -6,7 +6,8 @@ namespace Inventory.Persistence;
 /// A posting that passed step 1 and the step 2 lookup (spec §6, plan D2). <see cref="Lines"/> carry resolved From and To
 /// locations, numbered 1..n. <see cref="PostedBy"/> comes from the caller, so a seeder can pass its own principal.
 /// <see cref="ReasonCode"/> is set on an adjustment, null on every other type, including a reversal of an adjustment
-/// (<c>CK_StockDocuments_ReasonCode</c>).
+/// (<c>CK_StockDocuments_ReasonCode</c>). <see cref="Guard"/> is a caller's precondition, run inside the posting
+/// transaction after the ledger lock and before step 4 claims the key; false writes nothing (stocktakes, plan D17).
 /// </summary>
 internal sealed record PostingCommand(
     PostingKind Kind,
@@ -17,7 +18,8 @@ internal sealed record PostingCommand(
     string? Reference,
     string? Notes,
     Guid PostedBy,
-    AdjustmentReason? ReasonCode);
+    AdjustmentReason? ReasonCode,
+    Func<CancellationToken, Task<bool>>? Guard = null);
 
 /// <summary>What <see cref="PostingEngine"/> did with a posting or a reversal. Only <see cref="PostedOutcome"/> wrote anything.</summary>
 internal abstract record PostingOutcome;
@@ -51,6 +53,9 @@ internal sealed record BalanceOutOfRangeOutcome(Guid ItemId, Guid LocationId) : 
 
 /// <summary>Every retry failed with a transient error (deadlock 1205 included): <c>409 concurrency-conflict</c>.</summary>
 internal sealed record RetriesExhaustedOutcome : PostingOutcome;
+
+/// <summary>The command's <see cref="PostingCommand.Guard"/> returned false: <c>409 concurrency-conflict</c> (plan D17).</summary>
+internal sealed record GuardFailedOutcome : PostingOutcome;
 
 /// <summary>
 /// A reversal that passed the route's checks (plan D3): the original document is not a reversal and had no reversal

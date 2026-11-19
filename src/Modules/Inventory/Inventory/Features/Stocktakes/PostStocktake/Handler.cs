@@ -11,7 +11,6 @@ using Kernel.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace Inventory.Features.Stocktakes.PostStocktake;
 
@@ -19,14 +18,14 @@ namespace Inventory.Features.Stocktakes.PostStocktake;
 /// Posts a stocktake's snapshot deltas as one <c>CountCorrection</c> adjustment (plan D9, D10, D13, D14). The lines are
 /// frozen while the status is Posting, so every attempt builds the same posting and hash; the key <c>stocktake:&lt;id&gt;</c>
 /// lets the engine post it once only; the status records the outcome, and a crash between post and finish heals on a retry.
+/// The engine's guard re-checks the status and the sheet under the stocktake's lock before the key is claimed (plan D17).
 /// </summary>
 internal sealed partial class PostStocktakeHandler(
     InventoryDbContext db,
     DocumentPoster poster,
     ICurrentUser user,
     TimeProvider clock,
-    StocktakeReader reader,
-    ILogger<PostStocktakeHandler> logger)
+    StocktakeReader reader)
 {
     private static readonly string MaxAmountText = PostingValidation.MaxAmount.ToString("N4", CultureInfo.InvariantCulture);
     private static readonly string[] NoLines = ["Add at least one count."];
@@ -55,28 +54,28 @@ internal sealed partial class PostStocktakeHandler(
             return await DetailAsync(id, cancellationToken);
         }
 
-        // 2. Build: the non-zero deltas in sheet order (D14), numbered 1..n. Index is the line's position on the sheet.
-        var differences = frozen.Lines
-            .Select((line, index) => (line.ItemId, line.UnitCost, Delta: Delta(line), Index: index))
-            .Where(d => d.Delta != 0m)
-            .ToList();
-
+        // 2. Build: the non-zero deltas in sheet order (D14), numbered 1..n, or none when nothing differs.
         Guid? documentId = null;
-        if (differences.Count > 0)
+        if (Build(id, frozen) is (var validated, var sheetIndex))
         {
-            var validated = new ValidatedPosting(
-                frozen.LocationId,
-                $"Stocktake {id.ToString("N")[..8].ToUpperInvariant()}",
-                frozen.Notes,
-                [.. differences.Select((d, n) => new ValidatedLine(n + 1, d.ItemId, d.Delta, d.Delta > 0m ? d.UnitCost : null))])
-            {
-                ReasonCode = AdjustmentReason.CountCorrection,
-            };
-
             // 3. Post under the server's key. Clients can't send this prefix (PostingValidation.IdempotencyKey).
             var key = PostingValidation.StocktakeKeyPrefix + id.ToString("D");
+            var hash = RequestHash.Adjustment(validated);
+
+            // Plan D17: set by the guard's last run; a deadlock retry runs it again.
+            var sheetChanged = false;
             var result = await poster.PostValidatedAsync(
-                http, PostingKind.Adjustment, key, validated, RequestHash.Adjustment(validated), cancellationToken);
+                http,
+                PostingKind.Adjustment,
+                key,
+                validated,
+                hash,
+                cancellationToken,
+                async ct =>
+                {
+                    sheetChanged = !await SheetUnchangedAsync(id, hash, ct);
+                    return !sheetChanged;
+                });
             switch (result.Result)
             {
                 case Created<DocumentResponse> created:
@@ -86,21 +85,20 @@ internal sealed partial class PostStocktakeHandler(
                     documentId = replayed.Value!.Id;
                     break;
                 case ProblemHttpResult reused when reused.ProblemDetails.Type == ProblemTypes.Uri(ProblemTypes.IdempotencyKeyReused):
-                    // Only this route posts under the key, so its document is this stocktake's adjustment, built from other
-                    // lines: a parallel attempt failed and unfroze, and the sheet was recounted before this retry. Record it;
-                    // throwing would leave the stocktake in Posting, where counting and cancelling are refused, for good.
-                    documentId = (Guid)reused.ProblemDetails.Extensions["originalDocumentId"]!;
-                    logger.LogWarning(
-                        "Stocktake {StocktakeId}: document {DocumentId} holds its key with another request hash; recording it.",
-                        id,
-                        documentId);
-                    break;
+                    // Plan D17: every document under the key was built from the sheet frozen at its insert, under the
+                    // stocktake's lock. Fail closed: recording another sheet's adjustment is what D17 exists to prevent.
+                    var holder = (Guid)reused.ProblemDetails.Extensions["originalDocumentId"]!;
+                    throw new InvalidOperationException($"Stocktake {id}: document {holder} holds its key with another request hash.");
+                case ProblemHttpResult conflict when sheetChanged:
+                    // Plan D17: the sheet changed under this attempt (unfrozen, or frozen again with other counts by an
+                    // attempt that may be in flight, which unfreezing could break). Nothing was written; leave it as it is.
+                    return conflict;
                 case ValidationProblem invalid:
-                    await strategy.ExecuteAsync(ct => UnfreezeAsync(id, ct), cancellationToken);
-                    return Problems.Validation(ToSheetKeys(invalid.ProblemDetails.Errors, [.. differences.Select(d => d.Index)]));
+                    await strategy.ExecuteAsync(ct => UnfreezeAsync(id, key, hash, ct), cancellationToken);
+                    return Problems.Validation(ToSheetKeys(invalid.ProblemDetails.Errors, sheetIndex));
                 case ProblemHttpResult problem:
                     // Nothing was written: insufficient stock, an inactive item or location, or exhausted retries.
-                    await strategy.ExecuteAsync(ct => UnfreezeAsync(id, ct), cancellationToken);
+                    await strategy.ExecuteAsync(ct => UnfreezeAsync(id, key, hash, ct), cancellationToken);
                     return problem;
                 default:
                     throw new InvalidOperationException($"Unexpected posting result: {result.Result}.");
@@ -155,13 +153,24 @@ internal sealed partial class PostStocktakeHandler(
         return (null, new Frozen(stocktake.LocationId, stocktake.Notes, lines));
     }
 
-    /// <summary>The post wrote nothing: back to Draft so the counts can be fixed, unless another attempt already moved it on.</summary>
-    private async Task UnfreezeAsync(Guid id, CancellationToken cancellationToken)
+    /// <summary>
+    /// The post wrote nothing: back to Draft so the counts can be fixed, unless another attempt already moved it on, a
+    /// document holds <paramref name="key"/> (plan D17), which that attempt's finish records, or the sheet no longer hashes
+    /// as <paramref name="hash"/>: a stale attempt must not unfreeze a newer freeze.
+    /// </summary>
+    private async Task UnfreezeAsync(Guid id, string key, byte[] hash, CancellationToken cancellationToken)
     {
         db.ChangeTracker.Clear();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         if (await LockAsync(id, cancellationToken) is not { Status: StocktakeStatus.Posting } stocktake)
+        {
+            return;
+        }
+
+        // Every document under the key is inserted while its transaction holds this lock, so this read sees any of them.
+        if (await db.StockDocuments.AsNoTracking().AnyAsync(d => d.IdempotencyKey == key, cancellationToken)
+            || !await SheetUnchangedAsync(id, hash, cancellationToken))
         {
             return;
         }
@@ -173,8 +182,9 @@ internal sealed partial class PostStocktakeHandler(
     }
 
     /// <summary>
-    /// Records the outcome. A document in the ledger is recorded whatever the status, because a parallel attempt that failed
-    /// may have unfrozen the stocktake meanwhile; without one, only a Posting stocktake becomes Posted.
+    /// Records the outcome. A document under the key was built from the frozen sheet under the stocktake's lock, and
+    /// unfreezing refuses while one exists, so the status is Posting or already Posted (plan D17); without one, only a
+    /// Posting stocktake becomes Posted.
     /// </summary>
     private async Task FinishAsync(Guid id, Guid? documentId, CancellationToken cancellationToken)
     {
@@ -211,6 +221,55 @@ internal sealed partial class PostStocktakeHandler(
         db.Stocktakes
             .FromSql($"SELECT * FROM [inventory].[Stocktakes] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id}")
             .SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>
+    /// Plan D17, the engine's guard: runs inside the posting transaction after the ledger lock (the unfreeze checks it too).
+    /// True only when the stocktake is still Posting (or already Posted: step 4 then meets that document and replays it)
+    /// and its sheet still builds the posting hashed as <paramref name="hash"/>. The U lock is held until that transaction
+    /// ends, and counts take it first, so the sheet can't change before the document is in.
+    /// </summary>
+    private async Task<bool> SheetUnchangedAsync(Guid id, byte[] hash, CancellationToken cancellationToken)
+    {
+        // LockAsync's lock, untracked: the engine's SaveChanges must not pick the stocktake up.
+        var stocktake = await db.Stocktakes
+            .FromSql($"SELECT * FROM [inventory].[Stocktakes] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id}")
+            .AsNoTracking()
+            .SingleOrDefaultAsync(cancellationToken);
+        if (stocktake is not { Status: StocktakeStatus.Posting or StocktakeStatus.Posted })
+        {
+            return false;
+        }
+
+        var lines = await SheetLinesAsync(id, cancellationToken);
+        return Build(id, new Frozen(stocktake.LocationId, stocktake.Notes, lines)) is (var rebuilt, _)
+            && RequestHash.Adjustment(rebuilt).AsSpan().SequenceEqual(hash);
+    }
+
+    /// <summary>
+    /// Step 2: the non-zero deltas in sheet order (D14), numbered 1..n, with each one's index on the sheet; null when
+    /// nothing differs.
+    /// </summary>
+    private static (ValidatedPosting Posting, int[] SheetIndex)? Build(Guid id, Frozen frozen)
+    {
+        var differences = frozen.Lines
+            .Select((line, index) => (line.ItemId, line.UnitCost, Delta: Delta(line), Index: index))
+            .Where(d => d.Delta != 0m)
+            .ToList();
+        if (differences.Count == 0)
+        {
+            return null;
+        }
+
+        var posting = new ValidatedPosting(
+            frozen.LocationId,
+            $"Stocktake {id.ToString("N")[..8].ToUpperInvariant()}",
+            frozen.Notes,
+            [.. differences.Select((d, n) => new ValidatedLine(n + 1, d.ItemId, d.Delta, d.Delta > 0m ? d.UnitCost : null))])
+        {
+            ReasonCode = AdjustmentReason.CountCorrection,
+        };
+        return (posting, [.. differences.Select(d => d.Index)]);
+    }
 
     /// <summary>The stocktake's lines in sheet order (D14), the order error keys index into.</summary>
     private async Task<IReadOnlyList<SheetLine>> SheetLinesAsync(Guid id, CancellationToken cancellationToken)

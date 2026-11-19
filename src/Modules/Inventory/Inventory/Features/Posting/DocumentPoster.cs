@@ -59,9 +59,16 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
     }
 
     /// <summary>Steps 2–10 for a posting already through step 1's pure checks, under <paramref name="key"/>. Stocktakes post
-    /// here with a server-derived key (plan D10); PostAsync calls it after reading and checking the client's header.</summary>
+    /// here with a server-derived key (plan D10) and a <paramref name="guard"/> the engine runs before step 4 (plan D17);
+    /// PostAsync calls it after reading and checking the client's header.</summary>
     public async Task<Results<Created<DocumentResponse>, Ok<DocumentResponse>, ValidationProblem, ProblemHttpResult>> PostValidatedAsync(
-        HttpContext http, PostingKind kind, string key, ValidatedPosting validated, byte[] requestHash, CancellationToken ct)
+        HttpContext http,
+        PostingKind kind,
+        string key,
+        ValidatedPosting validated,
+        byte[] requestHash,
+        CancellationToken ct,
+        Func<CancellationToken, Task<bool>>? guard = null)
     {
         var errors = new Dictionary<string, string[]>();
 
@@ -147,7 +154,7 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
 
         var command = new PostingCommand(
             kind, type, postingLines, key, requestHash, validated.Reference, validated.Notes, user.UserId,
-            kind == PostingKind.Adjustment ? validated.ReasonCode : null);
+            kind == PostingKind.Adjustment ? validated.ReasonCode : null, Guard: guard);
         return ToResult(http, kind, validated, await engine.PostAsync(command, ct));
     }
 
@@ -255,8 +262,11 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
                 return Problems.Validation(new Dictionary<string, string[]> { [$"lines[{index}].{field}"] = BalanceOutOfRange });
             case RetriesExhaustedOutcome:
                 return Problems.ConcurrencyConflict();
+            case GuardFailedOutcome:
+                // Plan D17: the caller's precondition no longer held, so nothing was written.
+                return Problems.ConcurrencyConflict();
             default:
-                // Only ReversalNotLatest is left, and it can't arise from these lines: S9 maps it on its own route.
+                // Only the reversal outcomes are left, and they can't arise from these lines: S9 maps them on its own route.
                 throw new InvalidOperationException($"Unexpected posting outcome: {outcome}.");
         }
     }

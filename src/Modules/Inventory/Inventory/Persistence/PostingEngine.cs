@@ -125,6 +125,12 @@ internal sealed class PostingEngine(InventoryDbContext db, ITenantContext tenant
 
         await TakeLedgerLockAsync(ct);
 
+        // Plan D17: the caller's precondition, under the ledger lock and before step 4 claims the key. False writes nothing.
+        if (command.Guard is { } guard && !await guard(ct))
+        {
+            return new GuardFailedOutcome();
+        }
+
         // Step 4: the document, final at insert because the trigger forbids changing it. Inserting it claims the key.
         var document = new StockDocument
         {

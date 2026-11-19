@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -712,7 +713,7 @@ public sealed class StocktakeTests(DatabaseFixture db)
     }
 
     [Fact]
-    public async Task Heal_after_a_recount_records_the_document_that_holds_the_key()
+    public async Task Key_held_by_another_sheet_fails_closed()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var app = db.CreateApp();
@@ -723,10 +724,9 @@ public sealed class StocktakeTests(DatabaseFixture db)
         await PostingTests.ReceiveAsync(client, location, x, 10m, 5m, ct);
         var id = (await StartAsync(client, location, ct))["id"]!.GetValue<Guid>();
         await CountOkAsync(client, id, x, new { quantity = 9 }, ct);
-        var documentId = (await PostOkAsync(client, id, ct))["postedDocumentId"]!.GetValue<Guid>();
+        await PostOkAsync(client, id, ct);
 
-        // A parallel attempt that failed unfroze the sheet and it was recounted, then this attempt's finish was lost: the
-        // retry's lines no longer hash like the document under the key.
+        // A state plan D17 rules out, made by hand: Posting, with lines that no longer hash like the document under the key.
         await SetStatusAsync(tenant, id, "Posting", ct);
         await using (var connection = await LedgerRows.OpenAsync(db, tenant, ct))
         {
@@ -736,10 +736,151 @@ public sealed class StocktakeTests(DatabaseFixture db)
             (await recount.ExecuteNonQueryAsync(ct)).ShouldBe(1);
         }
 
-        var healed = await PostOkAsync(client, id, ct);
+        var response = await PostAsync(client, id, ct);
 
-        healed["status"]!.GetValue<string>().ShouldBe("Posted");
-        healed["postedDocumentId"]!.GetValue<Guid>().ShouldBe(documentId);
+        // The handler throws rather than record another sheet's adjustment; the exception handler makes it a 500.
+        response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+        var stocktake = await GetJsonAsync(client, $"{Stocktakes}/{id}", ct);
+        stocktake["status"]!.GetValue<string>().ShouldBe("Posting");
+        stocktake["postedDocumentId"].ShouldBeNull();
+        (await KeyHoldersAsync(tenant, id, ct)).ShouldBe(1);
+        await using var ledger = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await PostingTests.BalanceAsync(ledger, x, location, ct)).ShouldBe((9m, 45.0000m));
+    }
+
+    [Fact]
+    public async Task Stale_sheet_is_refused_after_an_unfreeze_and_recount()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct, "L");
+        var x = await PostingTests.NewItemAsync(client, "X-ITEM", ct);
+        await PostingTests.ReceiveAsync(client, location, x, 10m, 5m, ct);
+        var id = (await StartAsync(client, location, ct))["id"]!.GetValue<Guid>();
+        await CountOkAsync(client, id, x, new { quantity = 9 }, ct);
+
+        // The interleaving plan D17 closes: B freezes the sheet counted 9 and waits at the ledger lock; C fails before the
+        // engine and unfreezes; X is recounted to 7. Before D17, B then posted the 9 and finished: a Posted stocktake whose
+        // sheet says 7 over a balance of 9.
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await TakeLedgerLockAsync(holder, tx, tenant, ct);
+        var b = PostAsync(client, id, ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await UnfreezeAndRecountAsync(client, tenant, id, x, 7m, ct);
+
+        tx.Rollback();
+
+        await ReversalTests.AssertProblemAsync(await b, HttpStatusCode.Conflict, "concurrency-conflict", ct);
+        var stocktake = await GetJsonAsync(client, $"{Stocktakes}/{id}", ct);
+        stocktake["status"]!.GetValue<string>().ShouldBe("Draft");
+        OnlyLine(stocktake)["countedQuantity"]!.GetValue<decimal>().ShouldBe(7m);
+        (await KeyHoldersAsync(tenant, id, ct)).ShouldBe(0);
+        await using (var connection = await LedgerRows.OpenAsync(db, tenant, ct))
+        {
+            (await PostingTests.BalanceAsync(connection, x, location, ct)).ShouldBe((10m, 50.0000m));
+        }
+
+        // Posting again posts the sheet as it is now.
+        (await PostOkAsync(client, id, ct))["status"]!.GetValue<string>().ShouldBe("Posted");
+        (await KeyHoldersAsync(tenant, id, ct)).ShouldBe(1);
+        await using var ledger = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await PostingTests.BalanceAsync(ledger, x, location, ct)).ShouldBe((7m, 35.0000m));
+    }
+
+    [Fact]
+    public async Task Stale_attempt_is_refused_when_the_recount_is_frozen_again()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct, "L");
+        var x = await PostingTests.NewItemAsync(client, "X-ITEM", ct);
+        await PostingTests.ReceiveAsync(client, location, x, 10m, 5m, ct);
+        var id = (await StartAsync(client, location, ct))["id"]!.GetValue<Guid>();
+        await CountOkAsync(client, id, x, new { quantity = 9 }, ct);
+
+        // As above, B holds the sheet counted 9 at the ledger lock while the recount to 7 lands.
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await TakeLedgerLockAsync(holder, tx, tenant, ct);
+        var b = PostAsync(client, id, ct);
+        await LedgerRows.WaitUntilBlockedAsync(db, holder, ct, tx);
+        await UnfreezeAndRecountAsync(client, tenant, id, x, 7m, ct);
+
+        // Another session queues Exclusive behind B, then D freezes the recount and queues behind it. Locks are granted in
+        // queue order, so the release lets B's guard run alone while D is frozen and in flight: the order in which an
+        // unfreeze on B's 409 would undo D's freeze.
+        await using var queue = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var queueTx = queue.BeginTransaction();
+        var queued = TakeLedgerLockAsync(queue, queueTx, tenant, ct);
+        (await WaitUntilQueuedAsync(holder, tx, 2, ct)).ShouldBe(2);
+        var d = PostAsync(client, id, ct);
+        (await WaitUntilQueuedAsync(holder, tx, 3, ct)).ShouldBe(3);
+
+        tx.Rollback();
+
+        await ReversalTests.AssertProblemAsync(await b, HttpStatusCode.Conflict, "concurrency-conflict", ct);
+        await queued;
+        // B left D's freeze as it was.
+        (await GetJsonAsync(client, $"{Stocktakes}/{id}", ct))["status"]!.GetValue<string>().ShouldBe("Posting");
+        (await KeyHoldersAsync(tenant, id, ct)).ShouldBe(0);
+
+        queueTx.Rollback();
+
+        var response = await d;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(ct));
+        var posted = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        posted["status"]!.GetValue<string>().ShouldBe("Posted");
+        posted["postedDocumentId"]!.GetValue<Guid>().ShouldBe(await KeyHolderAsync(tenant, id, ct));
+        (await KeyHoldersAsync(tenant, id, ct)).ShouldBe(1);
+        await using var ledger = await LedgerRows.OpenAsync(db, tenant, ct);
+        (await PostingTests.BalanceAsync(ledger, x, location, ct)).ShouldBe((7m, 35.0000m));
+    }
+
+    [Fact]
+    public async Task Parallel_post_that_reaches_the_guard_after_the_finish_replays()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct, "L");
+        var x = await PostingTests.NewItemAsync(client, "X-ITEM", ct);
+        await PostingTests.ReceiveAsync(client, location, x, 10m, 5m, ct);
+        var id = (await StartAsync(client, location, ct))["id"]!.GetValue<Guid>();
+        await CountOkAsync(client, id, x, new { quantity = 9 }, ct);
+
+        // A double post of one sheet: the first queues at the ledger lock, an Exclusive session queues behind it, and the
+        // second passes step 2 (no document yet) and queues behind that. The release lets the first post and finish alone.
+        await using var holder = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var tx = holder.BeginTransaction();
+        await TakeLedgerLockAsync(holder, tx, tenant, ct);
+        var first = PostAsync(client, id, ct);
+        (await WaitUntilQueuedAsync(holder, tx, 1, ct)).ShouldBe(1);
+        await using var queue = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var queueTx = queue.BeginTransaction();
+        var queued = TakeLedgerLockAsync(queue, queueTx, tenant, ct);
+        (await WaitUntilQueuedAsync(holder, tx, 2, ct)).ShouldBe(2);
+        var second = PostAsync(client, id, ct);
+        (await WaitUntilQueuedAsync(holder, tx, 3, ct)).ShouldBe(3);
+
+        tx.Rollback();
+
+        var firstResponse = await first;
+        firstResponse.StatusCode.ShouldBe(HttpStatusCode.OK, await firstResponse.Content.ReadAsStringAsync(ct));
+        var posted = (await firstResponse.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        posted["status"]!.GetValue<string>().ShouldBe("Posted");
+        await queued;
+        queueTx.Rollback();
+
+        // The guard sees Posted with the same sheet, so step 4 meets the first's document and replays it.
+        var secondResponse = await second;
+        secondResponse.StatusCode.ShouldBe(HttpStatusCode.OK, await secondResponse.Content.ReadAsStringAsync(ct));
+        (await secondResponse.Content.ReadFromJsonAsync<JsonNode>(ct))!.ToJsonString().ShouldBe(posted.ToJsonString());
         (await KeyHoldersAsync(tenant, id, ct)).ShouldBe(1);
         await using var ledger = await LedgerRows.OpenAsync(db, tenant, ct);
         (await PostingTests.BalanceAsync(ledger, x, location, ct)).ShouldBe((9m, 45.0000m));
@@ -899,6 +1040,90 @@ public sealed class StocktakeTests(DatabaseFixture db)
             "SELECT COUNT(*) FROM inventory.StockDocuments WHERE IdempotencyKey = @key",
             new SqlParameter("@key", SqlDbType.VarChar, 64) { Value = $"stocktake:{stocktake:D}" },
             ct);
+    }
+
+    /// <summary>The id of the document that holds the stocktake's server key; there must be one.</summary>
+    private async Task<Guid> KeyHolderAsync(Guid tenant, Guid stocktake, CancellationToken ct)
+    {
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        return await PostingTests.ScalarAsync<Guid>(
+            connection,
+            "SELECT Id FROM inventory.StockDocuments WHERE IdempotencyKey = @key",
+            new SqlParameter("@key", SqlDbType.VarChar, 64) { Value = $"stocktake:{stocktake:D}" },
+            ct);
+    }
+
+    /// <summary>
+    /// With a post frozen and held at the ledger lock: deactivates the item by SQL (the API refuses while it has stock), so
+    /// a second post fails before the engine and unfreezes, with no document under the key; then reactivates and recounts it.
+    /// </summary>
+    private async Task UnfreezeAndRecountAsync(HttpClient client, Guid tenant, Guid id, Guid item, decimal quantity, CancellationToken ct)
+    {
+        await SetItemActiveAsync(tenant, item, false, ct);
+        await ReversalTests.AssertProblemAsync(await PostAsync(client, id, ct), HttpStatusCode.UnprocessableEntity, "inactive-item", ct);
+        (await GetJsonAsync(client, $"{Stocktakes}/{id}", ct))["status"]!.GetValue<string>().ShouldBe("Draft");
+        (await KeyHoldersAsync(tenant, id, ct)).ShouldBe(0);
+        await SetItemActiveAsync(tenant, item, true, ct);
+        await CountOkAsync(client, id, item, new { quantity }, ct);
+    }
+
+    /// <summary>Sets an item's <c>IsActive</c> as <c>inventory_app</c> in the tenant's session.</summary>
+    private async Task SetItemActiveAsync(Guid tenant, Guid item, bool active, CancellationToken ct)
+    {
+        await using var connection = await LedgerRows.OpenAsync(db, tenant, ct);
+        await using var command = new SqlCommand("UPDATE inventory.Items SET IsActive = @active WHERE Id = @x", connection);
+        command.Parameters.Add(new SqlParameter("@active", SqlDbType.Bit) { Value = active });
+        command.Parameters.Add(new SqlParameter("@x", SqlDbType.UniqueIdentifier) { Value = item });
+        (await command.ExecuteNonQueryAsync(ct)).ShouldBe(1);
+    }
+
+    /// <summary>Takes the tenant's ledger applock Exclusive, owned by <paramref name="tx"/>, as S11's rebuild does.</summary>
+    private static async Task TakeLedgerLockAsync(SqlConnection holder, SqlTransaction tx, Guid tenant, CancellationToken ct)
+    {
+        await using var command = new SqlCommand("""
+            DECLARE @r int;
+            EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Exclusive', @LockOwner = 'Transaction';
+            SELECT @r;
+            """, holder, tx);
+        command.Parameters.Add(new SqlParameter("@res", SqlDbType.NVarChar, 255) { Value = $"ledger:{tenant:D}" });
+        ((int)(await command.ExecuteScalarAsync(ct))!).ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    /// <summary>
+    /// Waits (10 s at most) until <paramref name="count"/> requests wait on <paramref name="holder"/>, directly or behind
+    /// another waiter, polling sys.dm_exec_requests as sa; returns the last count seen (as in PostingConcurrencyTests).
+    /// </summary>
+    private async Task<int> WaitUntilQueuedAsync(SqlConnection holder, SqlTransaction tx, int count, CancellationToken ct)
+    {
+        int spid;
+        await using (var command = new SqlCommand("SELECT @@SPID", holder, tx))
+        {
+            spid = Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+        }
+
+        await using var admin = new SqlConnection(db.AdminConnectionString);
+        await admin.OpenAsync(ct);
+        await using var poll = new SqlCommand("""
+            WITH waiters AS (
+                SELECT session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @spid
+                UNION ALL
+                SELECT r.session_id FROM sys.dm_exec_requests AS r JOIN waiters AS w ON r.blocking_session_id = w.session_id)
+            SELECT COUNT(DISTINCT session_id) FROM waiters;
+            """, admin);
+        poll.Parameters.Add(new SqlParameter("@spid", SqlDbType.Int) { Value = spid });
+
+        var waited = Stopwatch.StartNew();
+        var queued = 0;
+        while (waited.Elapsed < TimeSpan.FromSeconds(10) && queued < count)
+        {
+            queued = (int)(await poll.ExecuteScalarAsync(ct))!;
+            if (queued < count)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            }
+        }
+
+        return queued;
     }
 
     /// <summary>PUT a count; the response is returned as is.</summary>
