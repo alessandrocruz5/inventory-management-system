@@ -10,7 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 
 ### Added
 
-
+- Units: `ItemUnits` (per-item purchase units with a base-unit factor), Admin add/deactivate, base-unit change blocked once an item has movements or units, and a Units card on item detail (IMS-28).
+- Posting in units: optional `unit` on posting lines converted to base quantities, inflow cost per entered unit (`PostingLine.UnitFactor`, vector set U), and a unit select on the post-stock form (IMS-29).
+- Stocktakes: `Stocktakes`/`StocktakeLines` with row-level security, start (prefilled), list, detail, count, cancel and an Admin post that makes one count-correction document, exactly once, with crash healing (IMS-30).
+- Stocktake screens: Count stock list and count sheet with units, moved-since-count notice and Admin Post/Cancel, and a Playwright end-to-end spec (IMS-31).
 
 ## [0.2.0] - 2026-11-18
 
@@ -49,10 +52,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 - Deploy: `aspire publish` output in `deploy/` that runs with `docker compose` alone, with an nginx `web` image (SPA fallback, `/api` proxy) and a README section (IMS-17).
 - Azure: hand-written Bicep and `deploy.sh` deploy `web`, an internal-only `api`, `migrate` and `seed` jobs and Azure SQL (free offer) to Container Apps, with nginx Host forwarding and a Playwright `E2E_BASE_URL` override (IMS-18).
 - Platform: Data Protection keys persisted in `platform.DataProtectionKeys`, and a contained `inventory_app` user on Azure SQL with a guarded RCSI migration (IMS-20).
-- Units: `ItemUnits` (per-item purchase units with a base-unit factor), Admin add/deactivate, base-unit change blocked once an item has movements or units, and a Units card on item detail (IMS-28).
-- Posting in units: optional `unit` on posting lines converted to base quantities, inflow cost per entered unit (`PostingLine.UnitFactor`, vector set U), and a unit select on the post-stock form (IMS-29).
-- Stocktakes: `Stocktakes`/`StocktakeLines` with row-level security, start (prefilled), list, detail, count, cancel and an Admin post that makes one count-correction document, exactly once, with crash healing (IMS-30).
-- Stocktake screens: Count stock list and count sheet with units, moved-since-count notice and Admin Post/Cancel, and a Playwright end-to-end spec (IMS-31).
 
 ### Fixed
 
