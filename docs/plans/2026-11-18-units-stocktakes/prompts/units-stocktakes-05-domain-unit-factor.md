@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 05
 unit: IMS-29
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: []
@@ -14,6 +14,7 @@ files:
     - src/Modules/Inventory/Inventory/Domain/PostingRules.cs
     - tests/Inventory.UnitTests/CostingVectorTests.cs
     - tests/Inventory.UnitTests/PostingRulesTests.cs
+    - tests/Inventory.UnitTests/LedgerHarness.cs
     - docs/Inventory System — Sprint 1 Spec.md
   delete: []
 ---

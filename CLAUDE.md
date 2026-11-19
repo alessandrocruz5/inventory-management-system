@@ -55,7 +55,7 @@ Shared code: src/Shared/Kernel/**, src/Modules/*/*.Contracts/**
 dotnet build -warnaserror
 dotnet format --verify-no-changes
 dotnet test
-cd web && npm run lint && npm run build && npm test -- --watch=false
+cd web && npm run lint && npm run build && npm test -- --watch=false && cd ..
 
 ## Review constraints
 - Money and quantities are decimal / decimal(19,4), never double or float; rounding is AwayFromZero to 4 dp.
