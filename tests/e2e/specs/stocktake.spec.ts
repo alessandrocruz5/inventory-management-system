@@ -75,11 +75,16 @@ test('T18 · Staff counts, Admin posts, stock shows the count (375 px)', async (
       await expect(admin.getByTestId('posted-notice')).toBeVisible();
     });
 
-    await test.step('The correction shows -2', async () => {
+    await test.step('The correction moves 2 out', async () => {
       await admin.getByRole('link', { name: 'View the correction' }).click();
       await expect(admin).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
       await expect(admin.getByRole('heading', { name: 'Corrected' })).toBeVisible();
-      await expect(admin.getByText(/[−-]2\s/).first()).toBeVisible();
+      // A shrink is a movement of 2 out of the location (₱20 each), shown unsigned.
+      const row = admin.getByRole('row').filter({ hasText: SKU });
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText(`${loc.code} →`);
+      await expect(row).toContainText(/\b2 /);
+      await expect(row).toContainText('₱40.00');
     });
 
     await test.step('Stock shows 8 and ₱160.00', async () => {
