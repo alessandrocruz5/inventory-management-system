@@ -59,11 +59,11 @@ internal sealed class LedgerHarness
     /// <summary>The revaluation movement of a posting (LineNo above 1000), or null.</summary>
     public LedgerMovement? Revaluation(Posted posted) => posted.Movements.SingleOrDefault(m => m.LineNo > 1000);
 
-    public Posted Receive(string item, string loc, decimal qty, decimal unitCost) =>
-        Post(PostingKind.Receipt, item, "SUP", loc, qty, unitCost);
+    public Posted Receive(string item, string loc, decimal qty, decimal unitCost, decimal unitFactor = 1m) =>
+        Post(PostingKind.Receipt, item, "SUP", loc, qty, unitCost, unitFactor);
 
-    public Posted Issue(string item, string loc, decimal qty) =>
-        Post(PostingKind.Issue, item, loc, "CUS", qty, null);
+    public Posted Issue(string item, string loc, decimal qty, decimal unitFactor = 1m) =>
+        Post(PostingKind.Issue, item, loc, "CUS", qty, null, unitFactor);
 
     public Posted Transfer(string item, string from, string to, decimal qty) =>
         Post(PostingKind.Transfer, item, from, to, qty, null);
@@ -173,12 +173,12 @@ internal sealed class LedgerHarness
         }
     }
 
-    private Posted Post(PostingKind kind, string item, string from, string to, decimal qty, decimal? unitCost)
+    private Posted Post(PostingKind kind, string item, string from, string to, decimal qty, decimal? unitCost, decimal unitFactor = 1m)
     {
         var itemId = ItemId(item);
         var fromId = LocationId(from);
         var toId = LocationId(to);
-        var line = new PostingLine(1, itemId, fromId, toId, qty, unitCost);
+        var line = new PostingLine(1, itemId, fromId, toId, qty, unitCost, unitFactor);
 
         // The engine's step 5 also creates (item, ADJ) for a possible revaluation; it's committed only if Post returns it.
         var adjustmentId = LocationId("ADJ");

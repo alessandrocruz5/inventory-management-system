@@ -169,7 +169,7 @@
         <div class="field qty">
           <label class="field-label" for="post-qty-{{ i }}"
             >Quantity
-            @if (unitOf(line); as unit) {
+            @if (entryUnitOf(line); as unit) {
               <span class="field-hint">· {{ unit }}</span>
             }
           </label>
@@ -184,10 +184,37 @@
             <mat-error>{{ errorText(line.controls.quantity, 'Enter a quantity.') }}</mat-error>
           </mat-form-field>
         </div>
+        @let choices = unitChoices(line);
+        @if (choices.length > 0) {
+          <div class="field qty">
+            <label class="field-label" id="post-unit-label-{{ i }}" for="post-unit-{{ i }}"
+              >Unit</label
+            >
+            <mat-form-field>
+              <mat-select
+                formControlName="unit"
+                id="post-unit-{{ i }}"
+                aria-labelledby="post-unit-label-{{ i }}"
+              >
+                <mat-option value="">{{ unitOf(line) }}</mat-option>
+                @for (u of choices; track u.code) {
+                  <mat-option [value]="u.code"
+                    >{{ u.code }} ({{ formatQuantity(u.factor) }} {{ unitOf(line) }})</mat-option
+                  >
+                }
+              </mat-select>
+              <mat-error>{{ errorText(line.controls.unit, 'Choose a unit.') }}</mat-error>
+            </mat-form-field>
+          </div>
+        }
         @if (showUnitCost(line)) {
           <div class="field qty">
             <label class="field-label" for="post-cost-{{ i }}"
-              >Unit cost <span class="field-hint">· ₱</span></label
+              >Unit cost
+              @if (entryUnitOf(line); as unit) {
+                per {{ unit }}
+              }
+              <span class="field-hint">· ₱</span></label
             >
             <mat-form-field>
               <input

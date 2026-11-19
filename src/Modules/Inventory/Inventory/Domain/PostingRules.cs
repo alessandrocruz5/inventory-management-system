@@ -9,8 +9,13 @@ internal enum PostingKind
     Adjustment,
 }
 
-/// <summary>A request line, which the handler resolves to its locations (spec §6 table); Quantity is always > 0.</summary>
-internal sealed record PostingLine(int LineNo, Guid ItemId, Guid FromLocationId, Guid ToLocationId, decimal Quantity, decimal? UnitCost);
+/// <summary>
+/// A request line, which the handler resolves to its locations (spec §6 table); Quantity is always > 0.
+/// <c>UnitFactor</c>: base units per entered unit (plan D2). <c>Quantity</c> is in base units and equals entered × factor
+/// exactly; <c>UnitCost</c> is per entered unit. Only an inflow with a unit cost uses it.
+/// </summary>
+internal sealed record PostingLine(
+    int LineNo, Guid ItemId, Guid FromLocationId, Guid ToLocationId, decimal Quantity, decimal? UnitCost, decimal UnitFactor = 1m);
 
 /// <summary>Movements in insert order and the new state of every touched balance. LastMovementId is left for the engine.</summary>
 internal sealed record PostingResult(IReadOnlyList<PlannedMovement> Movements, IReadOnlyList<Balance> Balances);
@@ -62,6 +67,12 @@ internal static class PostingRules
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(lines), line.UnitCost, $"Line {line.LineNo}: the unit cost must not be negative.");
+            }
+
+            if (line.UnitFactor <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(lines), line.UnitFactor, $"Line {line.LineNo}: the unit factor must be greater than 0.");
             }
 
             if (line.FromLocationId == line.ToLocationId)
@@ -116,7 +127,9 @@ internal static class PostingRules
             }
             else if (line.UnitCost is { } unitCost)
             {
-                cost = CostingPolicy.InflowCost(qty, unitCost);
+                // Cost in the entered unit (plan D2): qty / factor is the entered quantity exactly, so a case of 12 at
+                // ₱500 costs 500.0000, not 12 × Round4(500 / 12).
+                cost = CostingPolicy.InflowCost(qty / line.UnitFactor, unitCost);
             }
             else
             {

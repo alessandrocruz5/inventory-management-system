@@ -12,7 +12,8 @@ namespace Inventory.Features.Posting;
 /// (<c>locationId</c>, <c>reference</c>, <c>notes</c>, <c>lines[itemId, quantity, unitCost]</c>), an issue (the same
 /// without <c>unitCost</c>), a transfer (<c>fromLocationId</c>, <c>toLocationId</c>, <c>reference</c>, <c>notes</c>,
 /// <c>lines[itemId, quantity]</c>) and an adjustment (<c>locationId</c>, <c>reasonCode</c>, <c>reference</c>,
-/// <c>notes</c>, <c>lines[itemId, quantityDelta, unitCost]</c>). A reversal hashes
+/// <c>notes</c>, <c>lines[itemId, quantityDelta, unitCost]</c>). Each line form ends with <c>unit</c>, written only
+/// when present (plan D6). A reversal hashes
 /// <c>"POST /api/documents/{id}/reversal\n{}"</c>: its body is empty, so its canonical form is <c>{}</c> and the
 /// route carries the document id. Hidden coupling: changing a form changes every hash
 /// of it, so a retry of an earlier post would get a false <c>409 idempotency-key-reused</c>.
@@ -47,7 +48,8 @@ internal static class RequestHash
     public static byte[] Reversal(Guid documentId) => Hash(ReversalRoute(documentId), ReversalBody);
 
     /// <summary>
-    /// No whitespace, every property always written in a fixed order, null for absent. Guids are lowercase
+    /// No whitespace, every property always written in a fixed order, null for absent (except a line's <c>unit</c>,
+    /// omitted when absent: plan D6). Guids are lowercase
     /// <c>"D"</c>, strings are the normalized values, decimals are raw numbers without trailing zeros, and lines
     /// are in <c>LineNo</c> order. The writer's default encoder escapes every non-ASCII character, so the output is
     /// ASCII.
@@ -72,6 +74,7 @@ internal static class RequestHash
                     WriteDecimal(json, "unitCost", line.UnitCost);
                 }
 
+                WriteUnit(json, line);
                 json.WriteEndObject();
             }
 
@@ -101,6 +104,7 @@ internal static class RequestHash
                 json.WriteStartObject();
                 json.WriteString("itemId", line.ItemId.ToString("D"));
                 WriteDecimal(json, "quantity", line.Quantity);
+                WriteUnit(json, line);
                 json.WriteEndObject();
             }
 
@@ -132,6 +136,7 @@ internal static class RequestHash
                 json.WriteString("itemId", line.ItemId.ToString("D"));
                 WriteDecimal(json, "quantityDelta", line.Quantity);
                 WriteDecimal(json, "unitCost", line.UnitCost);
+                WriteUnit(json, line);
                 json.WriteEndObject();
             }
 
@@ -165,6 +170,15 @@ internal static class RequestHash
         else
         {
             json.WriteString(name, value);
+        }
+    }
+
+    /// <summary>Plan D6: <c>unit</c> is the line's last property and is written only when present, so a line without one keeps its pre-Sprint-3 bytes.</summary>
+    private static void WriteUnit(Utf8JsonWriter json, ValidatedLine line)
+    {
+        if (line.Unit is { } unit)
+        {
+            json.WriteString("unit", unit);
         }
     }
 

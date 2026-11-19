@@ -308,6 +308,40 @@ public sealed class PostingRulesTests
             () => PostingRules.Post(PostingKind.Receipt, [Line(Sup, A, 0m, 1m)], balances, Adj));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Unit_factor_zero_or_negative_throws(int factor)
+    {
+        var balances = BalancesOf(Virtual(Sup), Physical(A));
+        var line = Line(Sup, A, 12m, 500m) with { UnitFactor = factor };
+
+        var ex = Should.Throw<ArgumentOutOfRangeException>(() => PostingRules.Post(PostingKind.Receipt, [line], balances, Adj));
+
+        ex.ActualValue.ShouldBe((decimal)factor);
+    }
+
+    [Fact]
+    public void Unit_factor_is_ignored_on_outflows_and_default_adjustment_cost()
+    {
+        var adjustBalances = BalancesOf(Virtual(Adj), Physical(A, 3m, 30.02m, luc: 10.0067m));
+        var adjust = Line(Adj, A, 3m) with { UnitFactor = 12m };
+
+        var adjusted = PostingRules.Post(PostingKind.Adjustment, [adjust], adjustBalances, Adj);
+
+        adjusted.Movements.Single().TotalCost.ShouldBe(CostingPolicy.DefaultAdjustmentCost(3m, adjustBalances[new BalanceKey(Item, A)]));
+        adjusted.Movements.Single().TotalCost.ShouldBe(30.0200m);
+
+        var issueBalances = BalancesOf(Physical(A, 42m, 1700m, luc: 40.4762m), Virtual(Cus));
+
+        var inUnits = PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 6m) with { UnitFactor = 12m }], issueBalances, Adj);
+        var inBase = PostingRules.Post(PostingKind.Issue, [Line(A, Cus, 6m)], issueBalances, Adj);
+
+        inUnits.Movements.ShouldBe(inBase.Movements);
+        inUnits.Balances.ShouldBe(inBase.Balances);
+        inUnits.Movements.Single().TotalCost.ShouldBe(242.8571m);
+    }
+
     [Fact]
     public void Post_from_and_to_the_same_location_throws_argument()
     {

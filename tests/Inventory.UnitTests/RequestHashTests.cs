@@ -316,4 +316,84 @@ public sealed class RequestHashTests
 
         Should.Throw<InvalidOperationException>(() => RequestHash.Adjustment(posting));
     }
+
+    private static byte[] Sha256(string route, string json) => SHA256.HashData(Encoding.UTF8.GetBytes($"POST {route}\n{json}"));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Absent_unit_keeps_the_pre_sprint_3_bytes(string? unit)
+    {
+        // Plan D6: the golden strings of the four *_canonical_json_is_exact tests, with every line's unit absent.
+        const string receiptJson = """{"locationId":"0f8fad5b-d9cb-469f-a165-70867728950e","reference":"DR-1","notes":null,"lines":[{"itemId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","quantity":10,"unitCost":125.5},{"itemId":"d3c8a2f0-5b1e-4a7c-9e26-1f04b8c7e5aa","quantity":0.5,"unitCost":0}]}""";
+        const string issueJson = """{"locationId":"0f8fad5b-d9cb-469f-a165-70867728950e","reference":null,"notes":"Sold to Caf\u00E9","lines":[{"itemId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","quantity":3},{"itemId":"d3c8a2f0-5b1e-4a7c-9e26-1f04b8c7e5aa","quantity":1.25}]}""";
+        const string transferJson = """{"fromLocationId":"0f8fad5b-d9cb-469f-a165-70867728950e","toLocationId":"3b241101-e2bb-4255-8caf-4136c566a962","reference":"TR-1","notes":null,"lines":[{"itemId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","quantity":4},{"itemId":"d3c8a2f0-5b1e-4a7c-9e26-1f04b8c7e5aa","quantity":0.5}]}""";
+        const string adjustmentJson = """{"locationId":"0f8fad5b-d9cb-469f-a165-70867728950e","reasonCode":"Damaged","reference":null,"notes":"water damage","lines":[{"itemId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","quantityDelta":-2,"unitCost":null},{"itemId":"d3c8a2f0-5b1e-4a7c-9e26-1f04b8c7e5aa","quantityDelta":5,"unitCost":42.5}]}""";
+
+        var receipt = ValidReceipt(new PostReceiptRequest(
+            Loc,
+            "  DR-1 ",
+            null,
+            [new PostReceiptLine(ItemA, 10.0000m, 125.50m, Unit: unit), new PostReceiptLine(ItemB, 0.5m, 0m, Unit: unit)]));
+        var issue = ValidIssue(new PostIssueRequest(
+            Loc,
+            "   ",
+            " Sold to Caf\u00e9 ",
+            [new PostIssueLine(ItemA, 3m, Unit: unit), new PostIssueLine(ItemB, 1.2500m, Unit: unit)]));
+        var transfer = ValidTransfer(new PostTransferRequest(
+            Loc,
+            OtherLoc,
+            "  TR-1 ",
+            null,
+            [new PostTransferLine(ItemA, 4m, Unit: unit), new PostTransferLine(ItemB, 0.5000m, Unit: unit)]));
+        var adjustment = ValidAdjustment(new PostAdjustmentRequest(
+            Loc,
+            "Damaged",
+            null,
+            " water damage ",
+            [new PostAdjustmentLine(ItemA, -2.0000m, null, Unit: unit), new PostAdjustmentLine(ItemB, 5.0000m, 42.50m, Unit: unit)]));
+
+        RequestHash.CanonicalJson(receipt, withUnitCost: true).ShouldBe(receiptJson);
+        RequestHash.CanonicalJson(issue, withUnitCost: false).ShouldBe(issueJson);
+        RequestHash.TransferCanonicalJson(transfer).ShouldBe(transferJson);
+        RequestHash.AdjustmentCanonicalJson(adjustment).ShouldBe(adjustmentJson);
+
+        RequestHash.Receipt(receipt).ShouldBe(Sha256(RequestHash.ReceiptsRoute, receiptJson));
+        RequestHash.Issue(issue).ShouldBe(Sha256(RequestHash.IssuesRoute, issueJson));
+        RequestHash.Transfer(transfer).ShouldBe(Sha256(RequestHash.TransfersRoute, transferJson));
+        RequestHash.Adjustment(adjustment).ShouldBe(Sha256(RequestHash.AdjustmentsRoute, adjustmentJson));
+    }
+
+    [Fact]
+    public void Unit_is_the_last_line_property_when_present()
+    {
+        var receipt = ValidReceipt(new PostReceiptRequest(Loc, null, null, [new PostReceiptLine(ItemA, 1m, 500m, " Case ")]));
+        var issue = ValidIssue(new PostIssueRequest(Loc, null, null, [new PostIssueLine(ItemA, 0.5m, "case")]));
+        var transfer = ValidTransfer(new PostTransferRequest(Loc, OtherLoc, null, null, [new PostTransferLine(ItemA, 2m, "case")]));
+        var adjustment = ValidAdjustment(new PostAdjustmentRequest(Loc, "Lost", null, null, [new PostAdjustmentLine(ItemA, -1m, null, "sack")]));
+
+        RequestHash.CanonicalJson(receipt, withUnitCost: true).ShouldEndWith(""","quantity":1,"unitCost":500,"unit":"case"}]}""");
+        RequestHash.CanonicalJson(issue, withUnitCost: false).ShouldEndWith(""","quantity":0.5,"unit":"case"}]}""");
+        RequestHash.TransferCanonicalJson(transfer).ShouldEndWith(""","quantity":2,"unit":"case"}]}""");
+        RequestHash.AdjustmentCanonicalJson(adjustment).ShouldEndWith(""","quantityDelta":-1,"unitCost":null,"unit":"sack"}]}""");
+    }
+
+    [Fact]
+    public void Unit_changes_the_hash()
+    {
+        ReceiptHash(Loc, null, new PostReceiptLine(ItemA, 1m, 500m))
+            .ShouldNotBe(ReceiptHash(Loc, null, new PostReceiptLine(ItemA, 1m, 500m, "case")));
+        ReceiptHash(Loc, null, new PostReceiptLine(ItemA, 1m, 500m, "case"))
+            .ShouldNotBe(ReceiptHash(Loc, null, new PostReceiptLine(ItemA, 1m, 500m, "sack")));
+        AdjustmentHash("Lost", new PostAdjustmentLine(ItemA, -1m, null))
+            .ShouldNotBe(AdjustmentHash("Lost", new PostAdjustmentLine(ItemA, -1m, null, "sack")));
+    }
+
+    [Fact]
+    public void Unit_case_and_whitespace_do_not_change_the_hash()
+    {
+        ReceiptHash(Loc, null, new PostReceiptLine(ItemA, 1m, 500m, " CASE "))
+            .ShouldBe(ReceiptHash(Loc, null, new PostReceiptLine(ItemA, 1m, 500m, "case")));
+    }
 }

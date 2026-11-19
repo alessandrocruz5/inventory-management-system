@@ -5,7 +5,7 @@ using Shouldly;
 namespace Inventory.UnitTests;
 
 /// <summary>
-/// T1 unit part (spec §11): vector sets V, R, A, N and X of spec §7 :395-467. Must match the spec tables (CLAUDE.md Hidden coupling).
+/// T1 unit part (spec §11): vector sets V, R, A, N, X and U of spec §7 :395-467. Must match the spec tables (CLAUDE.md Hidden coupling).
 /// </summary>
 public sealed class CostingVectorTests
 {
@@ -325,6 +325,64 @@ public sealed class CostingVectorTests
         Expect(h, "K2", 0m, 0.0000m);
         ExpectLuc(h, "K2", 10.0000m);
         h.AssertInvariants("X4");
+    }
+
+    // Set U (plan D2): item base pc, unit case = 12. Quantities reach the rules in base units; the inflow is costed in the
+    // entered unit, so 1 case @ 500.00 costs 500.0000, not 12 × Round4(500 / 12) = 500.0004.
+    [Fact]
+    public void Vector_set_U_units()
+    {
+        var h = new LedgerHarness();
+
+        var u1 = h.Receive(Item, "U", 12m, 500.00m, unitFactor: 12m);
+        u1.Movements.Single().Quantity.ShouldBe(12m);
+        u1.Movements.Single().TotalCost.ShouldBe(500.0000m);
+        Expect(h, "U", 12m, 500.0000m);
+        ExpectLuc(h, "U", 41.6667m);
+        h.AssertInvariants("U1");
+
+        var u2 = h.Receive(Item, "U", 30m, 480.00m, unitFactor: 12m);
+        u2.Movements.Single().Quantity.ShouldBe(30m);
+        u2.Movements.Single().TotalCost.ShouldBe(1200.0000m);
+        Expect(h, "U", 42m, 1700.0000m);
+        ExpectLuc(h, "U", 40.4762m);
+        h.AssertInvariants("U2");
+
+        var u3 = h.Issue(Item, "U", 6m, unitFactor: 12m);
+        u3.Movements.Single().Quantity.ShouldBe(6m);
+        u3.Movements.Single().TotalCost.ShouldBe(242.8571m);
+        Expect(h, "U", 36m, 1457.1429m);
+        ExpectLuc(h, "U", 40.4762m);
+        h.AssertInvariants("U3");
+
+        var u4 = h.Issue(Item, "U", 36m);
+        u4.Movements.Single().TotalCost.ShouldBe(1457.1429m);
+        Expect(h, "U", 0m, 0.0000m);
+        ExpectLuc(h, "U", 40.4762m);
+        h.AssertInvariants("U4");
+
+        // Received 1,700.0000 = issued 242.8571 + 1,457.1429.
+        (u1.Movements.Single().TotalCost + u2.Movements.Single().TotalCost)
+            .ShouldBe(u3.Movements.Single().TotalCost + u4.Movements.Single().TotalCost);
+    }
+
+    public static TheoryData<decimal, decimal> FactorOneCases => new()
+    {
+        { 1m, 10.00m },
+        { 2m, 10.01m },
+        { 3m, 10.0067m },
+        { 0.5m, 0.0001m },
+    };
+
+    [Theory]
+    [MemberData(nameof(FactorOneCases))]
+    public void Unit_factor_1_matches_the_old_inflow_cost(decimal qty, decimal unitCost)
+    {
+        var h = new LedgerHarness();
+
+        var posted = h.Receive(Item, "U", qty, unitCost, unitFactor: 1m);
+
+        posted.Movements.Single().TotalCost.ShouldBe(CostingPolicy.InflowCost(qty, unitCost));
     }
 
     // N1-N4 at location K with the toggle on; returns the N4 posting.
