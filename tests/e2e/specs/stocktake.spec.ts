@@ -50,10 +50,11 @@ test('T18 · Staff counts, Admin posts, stock shows the count (375 px)', async (
     await expect(page).toHaveURL(/\/stocktakes\/[0-9a-f-]{36}$/);
 
     const line = page.getByTestId('line').filter({ hasText: SKU });
-    await expect(line.getByTestId('expected')).toContainText('Expected 10');
+    await expect(line.getByTestId('counted')).toHaveText('Not counted');
     await line.click();
     await page.getByTestId('count-quantity').fill('8');
     await page.getByRole('button', { name: 'Save count' }).click();
+    await expect(line.getByTestId('expected')).toContainText('Expected 10');
     await expect(line.getByTestId('difference')).toHaveText(/[−-]2/);
     return page.url();
   });
