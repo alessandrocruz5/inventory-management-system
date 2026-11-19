@@ -4,7 +4,7 @@ Managed by `/plan-feature`, `/audit-plan` and `/build-unit`. Newest first. Statu
 
 | Created | Plan | Status | Risk | Prompts | Repo |
 |---|---|---|---|---|---|
-| 2026-11-18 | [[2026-11-18-units-stocktakes]] | in-progress | high | 15 | inventory-management-system |
+| 2026-11-18 | [[2026-11-18-units-stocktakes]] | done | high | 15 | inventory-management-system |
 | 2026-11-17 | [[2026-11-17-ui-redesign]] | in-progress | medium | 12 | inventory-management-system |
 | 2026-11-17 | [[2026-11-17-s14-azure]] | in-progress | high | 5 | inventory-management-system |
 | 2026-11-17 | [[2026-11-17-s13-compose-output]] | done | medium | 2 | inventory-management-system |

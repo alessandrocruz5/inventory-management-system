@@ -4,7 +4,7 @@ Status: [ ] planned · [~] in progress · [x] merged · [-] cancelled (excluded 
 > Each unit's plan, prompts and acceptance criteria are in its `plan:` link. `/build-unit {KEY-id}` runs them.
 > A unit with `spec:` instead of `plan:` isn't planned yet: `/plan-feature {KEY-id}` plans it from that spec slice and replaces `spec:` with `plan:` and `prompts:`. Models are provisional until then.
 
-## Sprint 1 — Stock ledger core   (planned 2026-11-04)
+## Sprint 1 — Stock ledger core   (planned 2026-11-04) — v0.1.0, 2026-11-17
 Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 Spec]]
 - [x] IMS-2 — S1 Skeleton · Added · plan: [[2026-11-04-s1-skeleton]] prompts: 01, 02, 03, 04, 05, 06 · depends: — · model: sonnet (merged 2026-11-04) Skeleton: AppHost (sql 2025, api, web), ServiceDefaults, 5 module projects, Angular 22 app, T12 architecture tests (8), CI jobs `build` and `test`.
 - [x] IMS-3 — S2 Platform · Added · plan: [[2026-11-04-s2-platform]] prompts: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11 · depends: IMS-2 · model: opus (merged 2026-11-04) Platform: Identity cookie auth (login/logout/me), tenants, `Api migrate` + `Api seed` modes, Inventory `Locations` + `ProvisionTenantAsync`, tenant middleware, AppHost `sql`→`migrate`→`seed`→`api`→`web`, Angular login/guard/shell, T12 `Migrate*` rule (10 arch tests), 19 integration tests.
@@ -121,7 +121,7 @@ Epic: IMS-1 · Branch base: `develop` · Plan: [[Inventory System — Sprint 1 S
 - **S11:** INV-5's windowed SQL must return what `CostingPolicy.LastUnitCost` returns. T9 can compare the two.
 - **Build:** restore needs `DOTNET_SYSTEM_NET_DISABLEIPV6=1` on this machine.
 
-## Sprint 2 — UI redesign (neutral, responsive)   (planned 2026-11-17)
+## Sprint 2 — UI redesign (neutral, responsive)   (planned 2026-11-17) — v0.2.0, 2026-11-18
 Epic: IMS-21 · Branch base: `develop` · Plan: [[2026-11-17-ui-redesign]]
 - [x] IMS-22 — Design foundation and app shell · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 01, 02, 03 · depends: — · model: sonnet (merged 2026-11-17)
 - [x] IMS-23 — Stock and Documents lists · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 04, 05 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Stock and Documents restyled (themed AG Grid, status pills, stacked rows below 760 px). Downstream: all grid columns use flex with minWidths and Stock disables column virtualisation, so e2e col-ids stay in the DOM beside the 248 px sidebar.
@@ -129,12 +129,12 @@ Epic: IMS-21 · Branch base: `develop` · Plan: [[2026-11-17-ui-redesign]]
 - [x] IMS-25 — Document detail and Ledger health · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 09, 10 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Document detail (back link, title pill, notices, meta grid, Lines total) and Ledger health (overall banner, invariant pills, nested failure tables) restyled. Downstream: none — IMS-26 touches disjoint files.
 - [x] IMS-26 — Post stock form · Changed · plan: [[2026-11-17-ui-redesign]] prompts: 11, 12 · depends: IMS-22 · model: sonnet (merged 2026-11-18) Post stock form restyled; verified by CI only (local Commands not run). Downstream: none.
 
-## Sprint 3 — Food-service pack: unit conversions and stocktakes   (planned 2026-11-18)
+## Sprint 3 — Food-service pack: unit conversions and stocktakes   (planned 2026-11-18) — v0.3.0, 2026-11-19
 Epic: IMS-27 · Branch base: `develop` · Plan: [[2026-11-18-units-stocktakes]]
 - [x] IMS-28 — Item units · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 01, 02, 03, 04 · depends: — · model: opus (merged 2026-11-19) ItemUnits table (RLS, factor check), Admin add/deactivate API and `units` on GET /items/{id}, base-unit change with movements or units rejected (400 baseUnit), demo units seeded, Units card on item detail. Downstream: IMS-29 posts in these units; IMS-30 migration follows 20261119021332_ItemUnits.
 - [x] IMS-29 — Posting in units · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 05, 06, 07, 08 · depends: IMS-28 · model: opus (merged 2026-11-19) `PostingLine.UnitFactor` (§6/§7, vector set U), optional `unit` on the 4 posting request lines (RequestHash writes it last, only when present; goldens unchanged), `UnitConversion` in DocumentPoster (400 `lines[i].unit` / quantity before any 422), `stocktake:` client keys rejected (400 Idempotency-Key), post-stock form unit select. Downstream: IMS-30 counts through `UnitConversion`; posting reuses DocumentPoster.
-- [~] IMS-30 — Stocktakes API · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 09, 10, 11, 12 · depends: IMS-29 · model: opus
-- [ ] IMS-31 — Stocktake screens · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 13, 14, 15 · depends: IMS-30 · model: sonnet
+- [x] IMS-30 — Stocktakes API · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 09, 10, 11, 12 · depends: IMS-29 · model: opus (merged 2026-11-19) Stocktakes: `Stocktakes`/`StocktakeLines` tables (RLS, `UX_Stocktakes_Open`), start (prefilled), list, detail, count (unit conversion, snapshot), cancel, post (one CountCorrection, server key `stocktake:<id>`, engine `Guard` D17); slugs `stocktake-open-exists`/`stocktake-not-open` in §9, Kernel and Angular. Downstream: IMS-31 uses `/api/stocktakes` (`StocktakeSummary`, `StocktakeLine`); Admin-only post and cancel.
+- [x] IMS-31 — Stocktake screens · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 13, 14, 15 · depends: IMS-30 · model: sonnet (merged 2026-11-19) `/stocktakes` list (filters, Start a count) and `/stocktakes/:id` count sheet (count in any unit, moved-since-count notice, Admin Post/Cancel, link to the correction), "Count stock" nav, T18 Playwright spec (375 px). Downstream: none. Gotchas: at 375 px `/stock` is a stacked list (no AG Grid cols) and a correction's document lines are unsigned movements.
 
 ## Hotfixes
 - [x] IMS-19 — Bump Aspire packages to 13.6.5 (GHSA-f7vh-h5g3-7jrh) · Fixed · files: src/AppHost/AppHost.csproj, src/Modules/Inventory/Inventory/Inventory.csproj, src/Modules/Platform/Platform/Platform.csproj · depends: — · model: haiku (merged 2026-11-12)
