@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ADMIN, STAFF, choose, createLocation, signIn, stockRow } from '../support/app';
+import { ADMIN, STAFF, createLocation, signIn, stockRow } from '../support/app';
 
 test.use({ viewport: { width: 375, height: 812 } });
 
@@ -43,8 +43,10 @@ test('T18 · Staff counts, Admin posts, stock shows the count (375 px)', async (
     await signIn(page, STAFF);
     await page.goto('/stocktakes');
     await page.getByRole('button', { name: 'Start a count' }).click();
-    await choose(page, 'Location', new RegExp(`^${loc.code} ·`));
-    await page.getByRole('button', { name: 'Start counting' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox', { name: 'Location' }).click();
+    await page.getByRole('option', { name: new RegExp(`^${loc.code} ·`) }).click();
+    await dialog.getByRole('button', { name: 'Start counting' }).click();
     await expect(page).toHaveURL(/\/stocktakes\/[0-9a-f-]{36}$/);
 
     const line = page.getByTestId('line').filter({ hasText: SKU });
