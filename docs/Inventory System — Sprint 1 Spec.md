@@ -667,11 +667,13 @@ Eight screens, written for a shop owner who is not technical: plain verbs, peso 
 | `/items` | Items | any (edit: Admin) | List with search; per-row edit and deactivate; create/edit dialog; deactivate with the `stock-not-zero` message when blocked |
 | `/items/:id` | Item detail | any | Balance per location; movement history with running balance; link to each document |
 | `/locations` | Locations | any (edit: Admin) | Physical list with create/edit/deactivate and an Allow negative stock switch (Admin, with a warning); virtual ones read-only with a "System" chip |
-| `/documents/new/:type` | Post stock | Staff, Admin (adjust: Admin) | One form component for all four types (below) |
+| `/documents/new/:type` | Post stock | Staff, Admin (adjust: Admin) | One form component for all four types (below), with a unit per line when the item has units |
 | `/documents`, `/documents/:id` | Documents | any (reverse: Admin) | List with type and date filters; detail with lines, costs, Reverse button, link to the reversal |
+| `/stocktakes` | Count stock | any (start: Staff, Admin) | List with location and status filters; Start a count dialog (opens the count already in progress on `stocktake-open-exists`) |
+| `/stocktakes/:id` | Count sheet | any (post, cancel: Admin) | Expected, counted and signed difference per item; moved-since-count notice; count in any of the item's units; add an item; Admin Post count and Cancel count; link to the correction |
 | `/admin/ledger` | Ledger health | Admin | INV-1 to INV-5 pass/fail with failing rows; Rebuild button with a confirm step and the returned diff |
 
-**Labels.** Use the plain verbs in the navigation and form titles: Receive stock, Use or sell stock, Move stock, Correct stock. Document types keep their technical names in the API.
+**Labels.** Use the plain verbs in the navigation and form titles: Receive stock, Use or sell stock, Move stock, Correct stock, Count stock. Document types keep their technical names in the API.
 
 **Post-stock form**
 
@@ -714,6 +716,7 @@ The tests are the portfolio. Each one below must exist by name, and each proves 
 | T15 | Vector sets N and X; toggle off with a negative balance; Staff tries to flip the toggle | Unit + integration | Estimate costing, revaluation and value conservation; 422 negative-balances-exist; 403 for Staff |
 | T16 | Vector set U; unit errors; replays with a unit | Unit + integration | Inflow cost in the entered unit; exact conversion; byte-stable hashes |
 | T17 | Stocktake snapshot deltas, exactly-once post, crash heal, roles | Integration | D8–D15 |
+| T18 | Staff counts, Admin posts, stock shows the count (375 px) | Playwright | Stocktake end to end |
 
 **Tooling.** xUnit v3, Shouldly, `WebApplicationFactory<Program>`, Testcontainers.MsSql pinned to `mcr.microsoft.com/mssql/server:2025-latest`, `Microsoft.Extensions.TimeProvider.Testing`, NetArchTest.Rules, Vitest, Playwright. Prefer the real database over mocks; use NSubstitute only where a fake is impossible.
 
@@ -803,3 +806,4 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-18: Sprint 3 D2 (approved): inflow cost in the entered unit via PostingLine.UnitFactor; vector set U, and `unit` on request lines (§9, T16).
 - 2026-11-18: Sprint 3 D10 (approved): stocktakes (§5, §6, §9, T17).
 - 2026-11-19: IMS-30 code review D17 (approved): stocktake posting guard in §6 step 3.
+- 2026-11-18: Sprint 3 screens (§10) and T18.
