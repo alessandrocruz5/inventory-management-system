@@ -3,6 +3,8 @@ using Inventory.Features.Items.DeactivateItem;
 using Inventory.Features.Items.GetItem;
 using Inventory.Features.Items.ListItemMovements;
 using Inventory.Features.Items.ListItems;
+using Inventory.Features.Items.Units.CreateItemUnit;
+using Inventory.Features.Items.Units.DeactivateItemUnit;
 using Inventory.Features.Items.UpdateItem;
 
 using Microsoft.AspNetCore.Builder;
@@ -22,6 +24,8 @@ internal static class ItemEndpoints
         items.MapCreateItem();
         items.MapUpdateItem();
         items.MapDeactivateItem();
+        items.MapCreateItemUnit();
+        items.MapDeactivateItemUnit();
         return api;
     }
 }

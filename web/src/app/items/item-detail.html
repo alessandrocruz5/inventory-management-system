@@ -71,6 +71,50 @@
     }
   </div>
 
+  <h2 class="section-title">Units</h2>
+  <div class="card">
+    @if (it.units.length === 0) {
+      <p class="empty-state">No other units. Stock is counted in {{ it.baseUnit }}.</p>
+    } @else {
+      <table class="data-table units-table">
+        <tbody>
+          @for (u of it.units; track u.code) {
+            <tr>
+              <td>1 {{ u.code }} = {{ formatQuantity(u.factor) }} {{ it.baseUnit }}</td>
+              <td>
+                @if (!u.isActive) {
+                  <app-status-pill tone="neutral" label="Inactive" />
+                }
+              </td>
+              @if (auth.isAdmin()) {
+                <td class="num">
+                  @if (u.isActive) {
+                    <button
+                      mat-stroked-button
+                      class="btn-sm"
+                      type="button"
+                      [attr.aria-label]="'Deactivate ' + u.code"
+                      (click)="deactivateUnit(it, u)"
+                    >
+                      Deactivate
+                    </button>
+                  }
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+    @if (auth.isAdmin()) {
+      <div class="card__footer">
+        <button mat-flat-button type="button" (click)="addUnit(it)">
+          <mat-icon>add</mat-icon>Add unit
+        </button>
+      </div>
+    }
+  </div>
+
   <h2 class="section-title">History</h2>
   <div class="card">
     @if (movements().length === 0) {

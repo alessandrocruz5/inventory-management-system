@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: in-progress
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -239,3 +239,8 @@ cd tests/e2e && npx playwright test specs/stocktake.spec.ts
 - 2026-11-18: planned. The user chose input-only units, a snapshot-at-count variance, Staff counts / Admin posts, and approved the §6/§7 changes D2 and D10.
 - 2026-11-18: audited, 1 fix applied (Codex BLOCK: IMS-29's rollback now fails closed instead of reverting, D16).
 - 2026-11-18: applied Codex audit (1 applied, 0 disputed)
+- 2026-11-19: IMS-28 started. Rollback point 10d69805c01ea82b36c6780c9e77ec256daa9bca.
+- 2026-11-19: 01 done (opus, 0 retries): ItemUnits table, CK_ItemUnits_Factor, tenant FK and RLS in 20261119021332_ItemUnits; check and PK tests added to LedgerSchemaTests.
+- 2026-11-19: 02 done (sonnet, 0 retries): POST /items/{id}/units and /units/{code}/deactivate (Admin), `units` on GET /items/{id}, 2 T5 probes, ItemUnitsTests (76 tests green in the Done-when run).
+- 2026-11-19: 03 done (opus, 0 retries): PUT /items/{id} rejects a base-unit change with a movement or unit (400 baseUnit, combined with sku in one 400); 3 demo units seeded idempotently; spec §5/§9/§15. 5 new ItemsTests, SeedTests extended.
+- 2026-11-19: 04 done (sonnet, 0 retries): Units card on /items/:id (Admin Add unit dialog + confirmed Deactivate), addUnit/deactivateUnit in ItemsService; web lint, build and 239 tests green (initial-bundle budget warning predates this).

@@ -82,6 +82,48 @@ namespace Inventory.Persistence.Migrations
                     b.ToTable("Items", "inventory");
                 });
 
+            modelBuilder.Entity("Inventory.Persistence.ItemUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Factor")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TenantId", "ItemId", "Code");
+
+                    b.ToTable("ItemUnits", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_ItemUnits_Factor", "[Factor] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Inventory.Persistence.Location", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -351,6 +393,15 @@ namespace Inventory.Persistence.Migrations
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("Inventory.Persistence.ItemUnit", b =>
+                {
+                    b.HasOne("Inventory.Persistence.Item", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ItemId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Inventory.Persistence.StockBalance", b =>

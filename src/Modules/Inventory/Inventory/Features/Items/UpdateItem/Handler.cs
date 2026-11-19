@@ -12,6 +12,7 @@ internal sealed class UpdateItemHandler(InventoryDbContext db, ICurrentUser user
 {
     private static readonly string[] DuplicateSku = ["An item with this SKU already exists."];
     private static readonly string[] SkuInUse = ["The SKU can't change once the item has stock movements."];
+    private static readonly string[] BaseUnitInUse = ["The base unit can't change once the item has stock history or other units."];
 
     public async Task<Results<Ok<ItemResponse>, ValidationProblem, ProblemHttpResult>> HandleAsync(
         Guid id,
@@ -68,13 +69,36 @@ internal sealed class UpdateItemHandler(InventoryDbContext db, ICurrentUser user
         // IX_Movements_Item until commit, so a first posting can't land between this check and the update.
         // FORCESEEK keeps that range to this item. No UPDLOCK: a shared range lock already blocks inserts, and
         // U locks would needlessly serialize concurrent SKU checks.
-        if (!string.Equals(item.Sku, sku, StringComparison.Ordinal)
-            && await db.StockMovements
-                .FromSql($"SELECT * FROM [inventory].[StockMovements] WITH (HOLDLOCK, FORCESEEK, INDEX([IX_Movements_Item])) WHERE [ItemId] = {id}")
-                .AnyAsync(cancellationToken))
+        // Plan D7: the base unit is immutable once the item has a movement or an alternate unit, which would otherwise
+        // be reinterpreted. Same range lock as the SKU check; on ItemUnits, UPDLOCK + HOLDLOCK over the item's PK slice
+        // blocks a concurrent unit insert until commit. CreateItemUnit U-locks the item row first, so the two can
+        // deadlock (1205); the execution strategy retries the loser, as for a SKU edit racing a first posting
+        // (TASKS.md IMS-6).
+        var skuChanged = !string.Equals(item.Sku, sku, StringComparison.Ordinal);
+        var baseUnitChanged = !string.Equals(item.BaseUnit, baseUnit, StringComparison.Ordinal);
+        if (skuChanged || baseUnitChanged)
         {
-            errors["sku"] = SkuInUse;
-            return Problems.Validation(errors);
+            var hasMovement = await db.StockMovements
+                .FromSql($"SELECT * FROM [inventory].[StockMovements] WITH (HOLDLOCK, FORCESEEK, INDEX([IX_Movements_Item])) WHERE [ItemId] = {id}")
+                .AnyAsync(cancellationToken);
+            if (skuChanged && hasMovement)
+            {
+                errors["sku"] = SkuInUse;
+            }
+
+            if (baseUnitChanged
+                && (hasMovement
+                    || await db.ItemUnits
+                        .FromSql($"SELECT * FROM [inventory].[ItemUnits] WITH (UPDLOCK, HOLDLOCK, FORCESEEK) WHERE [ItemId] = {id}")
+                        .AnyAsync(cancellationToken)))
+            {
+                errors["baseUnit"] = BaseUnitInUse;
+            }
+
+            if (errors.Count > 0)
+            {
+                return Problems.Validation(errors);
+            }
         }
 
         db.Entry(item).Property(i => i.RowVersion).OriginalValue = version;

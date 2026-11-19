@@ -37,6 +37,12 @@ internal sealed class GetItemHandler(InventoryDbContext db)
                 r.LastUnitCost))
             .ToList();
 
-        return TypedResults.Ok(ItemDetailResponse.From(item, balances));
+        // Inactive units are listed, flagged by isActive. Ordinal, so the order doesn't depend on the SQL collation.
+        var units = (await db.ItemUnits.AsNoTracking().Where(u => u.ItemId == id).ToListAsync(cancellationToken))
+            .OrderBy(u => u.Code, StringComparer.Ordinal)
+            .Select(ItemUnitResponse.From)
+            .ToList();
+
+        return TypedResults.Ok(ItemDetailResponse.From(item, balances, units));
     }
 }

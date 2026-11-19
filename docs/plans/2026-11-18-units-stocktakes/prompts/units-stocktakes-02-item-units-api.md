@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 02
 unit: IMS-28
-status: todo
+status: done
 model: sonnet
 effort: high
 depends_on: [01]

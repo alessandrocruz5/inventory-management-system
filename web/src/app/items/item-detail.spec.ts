@@ -1,9 +1,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { PageEvent } from '@angular/material/paginator';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
 import { ItemDetail } from './item-detail';
 import { ItemDetail as ItemDetailData, ItemMovement, ItemsService } from './items.service';
@@ -14,6 +15,9 @@ interface ItemDetailInternals {
 
 describe('ItemDetail', () => {
   const get = vi.fn();
+  const deactivateUnit = vi.fn();
+  const open = vi.fn();
+  const isAdmin = signal(false);
   const movements = vi.fn();
   const params = new BehaviorSubject(convertToParamMap({ id: 'i1' }));
 
@@ -34,6 +38,10 @@ describe('ItemDetail', () => {
           averageCost: 123,
           lastUnitCost: 125,
         },
+      ],
+      units: [
+        { code: 'case', factor: 12, isActive: true },
+        { code: 'old', factor: 0.5, isActive: false },
       ],
       ...over,
     }) as ItemDetailData;
@@ -80,6 +88,9 @@ describe('ItemDetail', () => {
 
   beforeEach(async () => {
     get.mockReset();
+    deactivateUnit.mockReset();
+    open.mockReset();
+    isAdmin.set(false);
     movements.mockReset();
     get.mockResolvedValue(item());
     movements.mockResolvedValue(page(twoMovements()));
@@ -88,11 +99,13 @@ describe('ItemDetail', () => {
       imports: [ItemDetail],
       providers: [
         provideRouter([]),
-        { provide: ItemsService, useValue: { get, movements } },
-        { provide: AuthService, useValue: { user: signal({ id: 'u-1' }) } },
+        { provide: ItemsService, useValue: { get, movements, deactivateUnit } },
+        { provide: AuthService, useValue: { user: signal({ id: 'u-1' }), isAdmin } },
         { provide: ActivatedRoute, useValue: { paramMap: params } },
       ],
-    }).compileComponents();
+    })
+      .overrideProvider(MatDialog, { useValue: { open } })
+      .compileComponents();
   });
 
   async function render() {
@@ -200,5 +213,59 @@ describe('ItemDetail', () => {
   it('keeps the back link to /stock in the loaded state', async () => {
     const { el } = await render();
     expect(el.querySelector('a')?.getAttribute('href')).toBe('/stock');
+  });
+
+  it('lists the units as "1 code = factor base" with an Inactive pill and no controls for Staff', async () => {
+    const { el } = await render();
+    const text = el.querySelector('.units-table')?.textContent ?? '';
+    expect(text).toContain('1 case = 12 pc');
+    expect(text).toContain('1 old = 0.5 pc');
+    expect(text).toContain('Inactive');
+    expect(el.textContent).not.toContain('Add unit');
+    expect(el.querySelector('[aria-label="Deactivate case"]')).toBeNull();
+  });
+
+  it('shows the empty state when there are no units', async () => {
+    get.mockResolvedValue(item({ units: [] }));
+    const { el } = await render();
+    expect(el.textContent).toContain('No other units. Stock is counted in pc.');
+  });
+
+  it('gives an Admin Add unit and Deactivate on active rows only', async () => {
+    isAdmin.set(true);
+    const { el } = await render();
+    expect(el.textContent).toContain('Add unit');
+    expect(el.querySelector('[aria-label="Deactivate case"]')).not.toBeNull();
+    expect(el.querySelector('[aria-label="Deactivate old"]')).toBeNull();
+  });
+
+  it('reloads the item after a unit is added', async () => {
+    isAdmin.set(true);
+    open.mockReturnValue({ afterClosed: () => of({ code: 'sack', factor: 25, isActive: true }) });
+    const { fixture, el } = await render();
+    const add = Array.from(el.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Add unit'),
+    )!;
+    add.click();
+    await fixture.whenStable();
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('deactivates a unit only after confirmation, then reloads', async () => {
+    isAdmin.set(true);
+    deactivateUnit.mockResolvedValue({ code: 'case', factor: 12, isActive: false });
+    open.mockReturnValueOnce({ afterClosed: () => of(false) });
+    const { fixture, el } = await render();
+    const button = () => el.querySelector<HTMLButtonElement>('[aria-label="Deactivate case"]')!;
+    button().click();
+    await fixture.whenStable();
+    expect(deactivateUnit).not.toHaveBeenCalled();
+    open.mockReturnValueOnce({ afterClosed: () => of(true) });
+    button().click();
+    await fixture.whenStable();
+    expect(open.mock.calls[1][1].data.message).toContain('Deactivate case?');
+    expect(deactivateUnit).toHaveBeenCalledWith('i1', 'case');
+    expect(get).toHaveBeenCalledTimes(2);
   });
 });

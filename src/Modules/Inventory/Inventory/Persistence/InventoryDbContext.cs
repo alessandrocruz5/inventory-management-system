@@ -15,6 +15,8 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
 
     public DbSet<Item> Items => Set<Item>();
 
+    public DbSet<ItemUnit> ItemUnits => Set<ItemUnit>();
+
     public DbSet<StockDocument> StockDocuments => Set<StockDocument>();
 
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
@@ -71,6 +73,18 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             item.Property(i => i.CreatedAt).IsRequired();
             item.Property(i => i.RowVersion).IsRowVersion();
             item.HasIndex(i => new { i.TenantId, i.Sku }).IsUnique().HasDatabaseName("UX_Items_Sku");
+        });
+
+        modelBuilder.Entity<ItemUnit>(unit =>
+        {
+            unit.ToTable("ItemUnits", t => t.HasCheckConstraint("CK_ItemUnits_Factor", "[Factor] > 0"));
+            unit.HasKey(u => new { u.TenantId, u.ItemId, u.Code });
+            ConfigureTenantOwned(unit);
+            unit.Property(u => u.Code).HasMaxLength(16).IsRequired();
+            unit.Property(u => u.Factor).HasPrecision(19, 4);
+            unit.Property(u => u.IsActive).HasDefaultValue(true);
+            unit.Property(u => u.CreatedAt).IsRequired();
+            unit.HasOne<Item>().WithMany().HasForeignKey(u => new { u.TenantId, u.ItemId }).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.HasSequence<long>("MovementIds").StartsAt(1).IncrementsBy(1);

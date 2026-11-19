@@ -396,6 +396,106 @@ public sealed class ItemsTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Update_rejects_a_base_unit_change_once_the_item_has_a_movement()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var created = await CreateAsync(client, "AB-1", "Rice", "kg", ct);
+        var id = created["id"]!.GetValue<Guid>();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var store = await LedgerRows.AddLocationAsync(c, "BR-1", ct);
+        await ReceiveAsync(c, id, store, ct);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/items/{id}", new { sku = "AB-1", name = "Rice", baseUnit = "g", version = created["version"]!.GetValue<string>() }, ct);
+
+        await AssertValidationAsync(response, "baseUnit", ct);
+        var item = await GetJsonAsync(client, $"/api/items/{id}", ct);
+        item["baseUnit"]!.GetValue<string>().ShouldBe("kg");
+        item["version"]!.GetValue<string>().ShouldBe(created["version"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Update_reports_sku_and_base_unit_together_once_the_item_has_a_movement()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var created = await CreateAsync(client, "AB-1", "Rice", "kg", ct);
+        var id = created["id"]!.GetValue<Guid>();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var store = await LedgerRows.AddLocationAsync(c, "BR-1", ct);
+        await ReceiveAsync(c, id, store, ct);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/items/{id}", new { sku = "AB-2", name = "Rice", baseUnit = "g", version = created["version"]!.GetValue<string>() }, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var errors = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["errors"]!.AsObject();
+        errors.ContainsKey("sku").ShouldBeTrue();
+        errors.ContainsKey("baseUnit").ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Update_rejects_a_base_unit_change_once_the_item_has_a_unit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var created = await CreateAsync(client, "AB-1", "Eggs", "pc", ct);
+        var id = created["id"]!.GetValue<Guid>();
+        (await client.PostAsJsonAsync($"/api/items/{id}/units", new { code = "case", factor = 12 }, ct))
+            .StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/items/{id}", new { sku = "AB-1", name = "Eggs", baseUnit = "tray", version = created["version"]!.GetValue<string>() }, ct);
+
+        await AssertValidationAsync(response, "baseUnit", ct);
+        (await GetJsonAsync(client, $"/api/items/{id}", ct))["baseUnit"]!.GetValue<string>().ShouldBe("pc");
+    }
+
+    [Fact]
+    public async Task Update_allows_a_base_unit_change_with_no_history_or_units()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var created = await CreateAsync(client, "AB-1", "Rice", "kg", ct);
+        var id = created["id"]!.GetValue<Guid>();
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/items/{id}", new { sku = "AB-1", name = "Rice", baseUnit = "g", version = created["version"]!.GetValue<string>() }, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["baseUnit"]!.GetValue<string>().ShouldBe("g");
+    }
+
+    [Fact]
+    public async Task Update_with_only_a_case_change_in_the_unit_is_not_a_change()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (tenant, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var created = await CreateAsync(client, "AB-1", "Rice", "kg", ct);
+        var id = created["id"]!.GetValue<Guid>();
+        await using var c = await LedgerRows.OpenAsync(db, tenant, ct);
+        var store = await LedgerRows.AddLocationAsync(c, "BR-1", ct);
+        await ReceiveAsync(c, id, store, ct);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/items/{id}", new { sku = "AB-1", name = "Rice", baseUnit = "KG", version = created["version"]!.GetValue<string>() }, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["baseUnit"]!.GetValue<string>().ShouldBe("kg");
+    }
+
+    [Fact]
     public async Task Update_allows_name_edits_after_a_movement()
     {
         var ct = TestContext.Current.CancellationToken;

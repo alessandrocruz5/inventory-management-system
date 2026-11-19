@@ -200,7 +200,7 @@ A bug that skips the EF filter, such as a raw SQL report or a stray `IgnoreQuery
 
 ## 5. Data model
 
-Five inventory tables, one sequence, and Identity. The sketch below is the contract; turn it into EF Core configurations and migrations, using `migrationBuilder.Sql` for triggers, the sequence, check constraints and RLS.
+Six inventory tables, one sequence, and Identity. The sketch below is the contract; turn it into EF Core configurations and migrations, using `migrationBuilder.Sql` for triggers, the sequence, check constraints and RLS.
 
 ```sql
 -- schema platform
@@ -214,10 +214,19 @@ inventory.Items (
   TenantId uniqueidentifier, Id uniqueidentifier,
   Sku nvarchar(64) NOT NULL,              -- immutable once the item has a movement
   Name nvarchar(200) NOT NULL,
-  BaseUnit nvarchar(16) NOT NULL,         -- free text, lowercase: pc, kg, l, box
+  BaseUnit nvarchar(16) NOT NULL,         -- free text, lowercase: pc, kg, l, box; immutable once the item has a movement or an alternate unit
   IsActive bit NOT NULL DEFAULT 1,
   CreatedAt, CreatedBy, UpdatedAt, UpdatedBy, RowVersion rowversion,
   PRIMARY KEY (TenantId, Id), UNIQUE (TenantId, Sku))
+
+inventory.ItemUnits (                     -- Sprint 3: alternate units of an item
+  TenantId, ItemId,
+  Code nvarchar(16) NOT NULL,             -- lowercase; never the item's base unit
+  Factor decimal(19,4) NOT NULL CHECK (Factor > 0),  -- base units in one Code; never edited
+  IsActive bit NOT NULL DEFAULT 1,
+  CreatedAt, CreatedBy, UpdatedAt, UpdatedBy,
+  PRIMARY KEY (TenantId, ItemId, Code),
+  FOREIGN KEY (TenantId, ItemId) -> Items)
 
 inventory.Locations (
   TenantId, Id,
@@ -281,6 +290,7 @@ inventory.StockBalances (                     -- projection of the ledger
 **Rules**
 
 - Every foreign key is composite and includes `TenantId`, so a row can never point at another tenant's row.
+- An item's alternate units (`ItemUnits`) are fixed factors of its base unit: never edited, deactivated not deleted, and an inactive code stays reserved.
 - Every `TenantId` column defaults to `CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)`, so raw-SQL inserts get the tenant without passing it. The BLOCK predicate still checks it.
 - Average cost is derived (`StockValue / OnHand`), never stored. It is undefined when `OnHand <= 0`; outflows then use `LastUnitCost`.
 - Virtual locations track quantity only. Their `OnHand` goes negative by design (Supplier ends at minus everything ever received) and `StockValue` stays 0.
@@ -533,8 +543,10 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 | `GET /auth/me` | any | User id, email, role, tenant name |
 | `GET /items` | any | Search by SKU or name; filter `active` |
 | `POST /items` | Admin | Create |
-| `GET /items/{id}` | any | Item with its balance in each physical location |
-| `PUT /items/{id}` | Admin | Edit name and unit; SKU only before the first movement; body carries `version` (rowversion) |
+| `GET /items/{id}` | any | Item with its balance in each physical location and its units |
+| `PUT /items/{id}` | Admin | Edit name and unit; SKU only before the first movement; base unit only before the first movement or alternate unit; body carries `version` (rowversion) |
+| `POST /items/{id}/units` | Admin | Add an alternate unit (`code`, `factor`) |
+| `POST /items/{id}/units/{code}/deactivate` | Admin | Deactivate a unit |
 | `POST /items/{id}/deactivate` | Admin | Only with zero physical stock |
 | `GET /items/{id}/movements` | any | Ledger history, newest first, with running balance per location (window `SUM() OVER`) |
 | `GET /locations` | any | Physical and virtual; virtual ones flagged `isSystem` |
@@ -732,3 +744,4 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-09: S5c plan amended §6 steps 1, 2 and 8 (overflow guards; replay before the database checks of step 1).
 - 2026-11-17: S14 plan ([[2026-11-17-s14-azure]]) replaced Static Web Apps with nginx on Container Apps and added Data Protection keys in the database.
 - 2026-11-17: Sprint 2 UI redesign ([[2026-11-17-ui-redesign]]) shows /items as a list with per-row actions instead of an AG Grid (D1).
+- 2026-11-18: Sprint 3 (units-stocktakes plan) adds item units (§5, §9) and base-unit immutability.
