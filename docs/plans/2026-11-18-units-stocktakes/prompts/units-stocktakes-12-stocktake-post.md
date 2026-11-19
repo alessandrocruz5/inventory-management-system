@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-18-units-stocktakes]]"
 id: 12
 unit: IMS-30
-status: todo
+status: done
 model: opus
 effort: xhigh
 depends_on: [11]
@@ -14,6 +14,8 @@ files:
     - src/Modules/Inventory/Inventory/Features/Stocktakes/PostStocktake/Handler.cs
   modify:
     - src/Modules/Inventory/Inventory/Features/Posting/DocumentPoster.cs
+    - src/Modules/Inventory/Inventory/Persistence/PostingCommand.cs   # D17 guard (Codex review fix, user-approved)
+    - src/Modules/Inventory/Inventory/Persistence/PostingEngine.cs    # D17 guard (Codex review fix, user-approved)
     - src/Modules/Inventory/Inventory/Features/Stocktakes/StocktakeEndpoints.cs
     - src/Modules/Inventory/Inventory/InventoryModuleExtensions.cs
     - tests/Inventory.IntegrationTests/StocktakeTests.cs
@@ -89,7 +91,7 @@ Each test uses its own tenant, an Admin client and a Staff client. Use `ScalarAs
 - `Posting_twice_is_idempotent`: post, post again → both 200 with the same `postedDocumentId`, and exactly one document holds the key.
 - `Parallel_posts_make_one_document`: 5 parallel posts → all 200, the same `postedDocumentId`, one document.
 - `Crash_between_post_and_finish_heals_on_retry`: post. Then, as the **owner** (sa, the fixture's admin connection; the stocktake tables have no triggers), set `Status = 'Posting', PostedDocumentId = NULL` to simulate the crash. Post again → 200, the same document id (a replay), `Posted`.
-- `Count_while_posting_is_409`: set the status to `Posting` as owner, then a count → 409 `stocktake-not-open` with `status` "Posting".
+- `Count_while_posting_is_409`: set the status to `Posting` as owner, then a count → 409 `stocktake-not-open` with `stocktakeStatus` "Posting" (prompt 10: `status` is the ProblemDetails HTTP status member).
 - `Over_100_differences_is_400`: insert 101 counted lines with non-zero deltas directly through a tenant scope (`ITenantScopeFactory.BeginScope`, `InventoryDbContext`), creating the items through EF too. Post → 400 `lines`, status Draft.
 - `Staff_gets_403_on_post`: no `Location` header, and the status is unchanged.
 - `Ledger_health_is_clean_after_stocktakes`: after the scenarios above in one tenant, `GET /api/ledger/health` reports every invariant passing. This proves the stocktake writes nothing but a normal posting.
