@@ -131,7 +131,7 @@ Epic: IMS-21 · Branch base: `develop` · Plan: [[2026-11-17-ui-redesign]]
 
 ## Sprint 3 — Food-service pack: unit conversions and stocktakes   (planned 2026-11-18)
 Epic: IMS-27 · Branch base: `develop` · Plan: [[2026-11-18-units-stocktakes]]
-- [~] IMS-28 — Item units · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 01, 02, 03, 04 · depends: — · model: opus
+- [x] IMS-28 — Item units · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 01, 02, 03, 04 · depends: — · model: opus (merged 2026-11-19) ItemUnits table (RLS, factor check), Admin add/deactivate API and `units` on GET /items/{id}, base-unit change with movements or units rejected (400 baseUnit), demo units seeded, Units card on item detail. Downstream: IMS-29 posts in these units; IMS-30 migration follows 20261119021332_ItemUnits.
 - [ ] IMS-29 — Posting in units · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 05, 06, 07, 08 · depends: IMS-28 · model: opus
 - [ ] IMS-30 — Stocktakes API · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 09, 10, 11, 12 · depends: IMS-29 · model: opus
 - [ ] IMS-31 — Stocktake screens · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 13, 14, 15 · depends: IMS-30 · model: sonnet
