@@ -8,6 +8,8 @@ using Inventory.Features.Items.DeactivateItem;
 using Inventory.Features.Items.GetItem;
 using Inventory.Features.Items.ListItemMovements;
 using Inventory.Features.Items.ListItems;
+using Inventory.Features.Items.Units.CreateItemUnit;
+using Inventory.Features.Items.Units.DeactivateItemUnit;
 using Inventory.Features.Items.UpdateItem;
 using Inventory.Features.Ledger;
 using Inventory.Features.Ledger.GetLedgerHealth;
@@ -59,6 +61,8 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<CreateItemHandler>();
         builder.Services.AddScoped<UpdateItemHandler>();
         builder.Services.AddScoped<DeactivateItemHandler>();
+        builder.Services.AddScoped<CreateItemUnitHandler>();
+        builder.Services.AddScoped<DeactivateItemUnitHandler>();
         builder.Services.AddScoped<ListLocationsHandler>();
         builder.Services.AddScoped<CreateLocationHandler>();
         builder.Services.AddScoped<UpdateLocationHandler>();

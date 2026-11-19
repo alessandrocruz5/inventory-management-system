@@ -23,8 +23,15 @@ export interface ItemBalance {
   lastUnitCost: number | null;
 }
 
+export interface ItemUnit {
+  code: string;
+  factor: number;
+  isActive: boolean;
+}
+
 export interface ItemDetail extends Item {
   balances: ItemBalance[];
+  units: ItemUnit[];
 }
 
 export interface ItemMovement {
@@ -106,6 +113,21 @@ export class ItemsService {
   deactivate(id: string): Promise<Item> {
     return firstValueFrom(
       this.http.post<Item>(`/api/items/${encodeURIComponent(id)}/deactivate`, null),
+    );
+  }
+
+  addUnit(itemId: string, input: { code: string; factor: number }): Promise<ItemUnit> {
+    return firstValueFrom(
+      this.http.post<ItemUnit>(`/api/items/${encodeURIComponent(itemId)}/units`, input),
+    );
+  }
+
+  deactivateUnit(itemId: string, code: string): Promise<ItemUnit> {
+    return firstValueFrom(
+      this.http.post<ItemUnit>(
+        `/api/items/${encodeURIComponent(itemId)}/units/${encodeURIComponent(code)}/deactivate`,
+        null,
+      ),
     );
   }
 }

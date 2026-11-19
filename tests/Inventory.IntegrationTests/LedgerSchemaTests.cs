@@ -23,6 +23,7 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
 {
     private const int ConstraintViolation = 547;
     private const int DuplicateKey = 2601;
+    private const int DuplicatePrimaryKey = 2627;
 
     [Theory]
     [InlineData("document-type", "CK_StockDocuments_Type")]
@@ -39,6 +40,7 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
     [InlineData("physical-value-without-stock", "CK_StockBalances_Physical")]
     [InlineData("physical-negative-value", "CK_StockBalances_Physical")]
     [InlineData("virtual-value", "CK_StockBalances_VirtualValue")]
+    [InlineData("unit-zero-factor", "CK_ItemUnits_Factor")]
     public async Task Checks_reject_bad_rows(string @case, string check)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -67,6 +69,7 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
             "physical-value-without-stock" => () => LedgerRows.AddBalanceAsync(c, item, physical, isVirtual: false, allowNegative: false, 0m, 5m, ct),
             "physical-negative-value" => () => LedgerRows.AddBalanceAsync(c, item, physical, isVirtual: false, allowNegative: false, 1m, -1m, ct),
             "virtual-value" => () => LedgerRows.AddBalanceAsync(c, item, supplier, isVirtual: true, allowNegative: false, -5m, 1m, ct),
+            "unit-zero-factor" => () => AddItemUnitAsync(c, item, "case", 0m, ct),
             _ => throw new ArgumentOutOfRangeException(nameof(@case), @case, null),
         };
 
@@ -132,6 +135,11 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
         var sameLine = await Should.ThrowAsync<SqlException>(LedgerRows.AddMovementAsync(asA, receipt, 1, item, supplier, physical, 2m, 20m, ct));
         sameLine.Number.ShouldBe(DuplicateKey);
         sameLine.Message.ShouldContain("UX_StockMovements_DocumentLine");
+
+        await AddItemUnitAsync(asA, item, "case", 12m, ct);
+        var sameUnit = await Should.ThrowAsync<SqlException>(AddItemUnitAsync(asA, item, "case", 24m, ct));
+        sameUnit.Number.ShouldBe(DuplicatePrimaryKey);
+        sameUnit.Message.ShouldContain("PK_ItemUnits");
     }
 
     [Fact]
@@ -344,6 +352,19 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
         await using var app = db.CreateApp();
         var (tenant, _) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
         return tenant;
+    }
+
+    private static async Task AddItemUnitAsync(SqlConnection c, Guid item, string code, decimal factor, CancellationToken ct)
+    {
+        await using var command = new SqlCommand(
+            "INSERT INTO inventory.ItemUnits (ItemId, Code, Factor, CreatedAt) VALUES (@item, @code, @factor, SYSDATETIMEOFFSET());", c);
+        command.Parameters.Add("@item", SqlDbType.UniqueIdentifier).Value = item;
+        command.Parameters.Add("@code", SqlDbType.NVarChar, 16).Value = code;
+        var factorParameter = command.Parameters.Add("@factor", SqlDbType.Decimal);
+        factorParameter.Precision = 19;
+        factorParameter.Scale = 4;
+        factorParameter.Value = factor;
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     private async Task<SqlConnection> OpenAdminAsync(CancellationToken ct)

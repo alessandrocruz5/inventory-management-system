@@ -1,8 +1,11 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth/auth.service';
 import { problemMessage } from '../core/problems/problem-messages';
@@ -13,19 +16,28 @@ import {
   formatQuantity,
   postedByLabel,
 } from '../shared/format';
+import { ConfirmDialog, ConfirmDialogData } from '../shared/confirm-dialog';
 import { StatusPill } from '../shared/status-pill';
-import { ItemDetail as ItemDetailData, ItemMovement, ItemsService } from './items.service';
+import { ItemUnitDialog, ItemUnitDialogData } from './item-unit-dialog';
+import {
+  ItemDetail as ItemDetailData,
+  ItemMovement,
+  ItemUnit,
+  ItemsService,
+} from './items.service';
 
 @Component({
   selector: 'app-item-detail',
-  imports: [RouterLink, MatIconModule, MatPaginatorModule, StatusPill],
+  imports: [RouterLink, MatButtonModule, MatIconModule, MatPaginatorModule, StatusPill],
   templateUrl: './item-detail.html',
   styleUrl: './item-detail.scss',
   host: { class: 'page' },
 })
 export class ItemDetail {
   private readonly itemsService = inject(ItemsService);
-  private readonly auth = inject(AuthService);
+  protected readonly auth = inject(AuthService);
+  private readonly dialog = inject(MatDialog);
+  private readonly snackBar = inject(MatSnackBar);
   private readonly route = inject(ActivatedRoute);
 
   protected readonly typeLabel = documentTypeLabel;
@@ -56,6 +68,48 @@ export class ItemDetail {
         void this.load(id);
       }
     });
+  }
+
+  protected addUnit(item: ItemDetailData): void {
+    this.dialog
+      .open<ItemUnitDialog, ItemUnitDialogData, ItemUnit | undefined>(ItemUnitDialog, {
+        data: { itemId: item.id, baseUnit: item.baseUnit },
+      })
+      .afterClosed()
+      .subscribe((unit) => {
+        if (unit) {
+          this.snackBar.open('Unit added', 'OK', { duration: 4000 });
+          void this.reloadItem(item.id);
+        }
+      });
+  }
+
+  protected deactivateUnit(item: ItemDetailData, unit: ItemUnit): void {
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
+        data: {
+          title: 'Deactivate unit',
+          message: `Deactivate ${unit.code}? It stays on past documents; you can't post in it any more.`,
+          confirm: 'Deactivate',
+        },
+      })
+      .afterClosed()
+      .subscribe(async (confirmed) => {
+        if (!confirmed) {
+          return;
+        }
+        try {
+          await this.itemsService.deactivateUnit(item.id, unit.code);
+          this.snackBar.open('Unit deactivated', 'OK', { duration: 4000 });
+          await this.reloadItem(item.id);
+        } catch (err) {
+          this.snackBar.open(
+            problemMessage(err instanceof HttpErrorResponse ? err.error : null),
+            'OK',
+            { duration: 6000 },
+          );
+        }
+      });
   }
 
   protected signedQuantity(q: number): string {
@@ -97,6 +151,19 @@ export class ItemDetail {
     } finally {
       if (this.requestedId === id) {
         this.loading.set(false);
+      }
+    }
+  }
+
+  private async reloadItem(id: string): Promise<void> {
+    try {
+      const item = await this.itemsService.get(id);
+      if (this.requestedId === id) {
+        this.item.set(item);
+      }
+    } catch (err) {
+      if (this.requestedId === id) {
+        this.error.set(problemMessage(err instanceof HttpErrorResponse ? err.error : null));
       }
     }
   }

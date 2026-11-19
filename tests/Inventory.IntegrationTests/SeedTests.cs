@@ -49,6 +49,11 @@ public sealed class SeedTests(DatabaseFixture db)
         // 2. (a) Content.
         await AssertContentAsync(c, branches, items, sup, ct);
 
+        // IMS-28: exactly the three demo units, active and system-created.
+        var units = await UnitsAsync(c, ct);
+        units.Select(u => (u.Sku, u.Code, u.Factor)).ShouldBe(InventorySeeder.Units.OrderBy(u => u.Sku, StringComparer.Ordinal).ThenBy(u => u.Code, StringComparer.Ordinal));
+        units.ShouldAllBe(u => u.IsActive && u.CreatedBy == null && u.UpdatedAt == null);
+
         // 3. (b) API replay (R3).
         await using (var app = db.CreateApp())
         {
@@ -95,6 +100,7 @@ public sealed class SeedTests(DatabaseFixture db)
 
         (await CountAsync(c, "inventory.StockDocuments", ct)).ShouldBe(DocumentTotal);
         (await CountAsync(c, "inventory.StockMovements", ct)).ShouldBe(DocumentTotal);
+        (await UnitsAsync(c, ct)).ShouldBe(units);
 
         var newQc = await LedgerRows.LocationIdAsync(c, "QC", ct);
         newQc.ShouldNotBe(qc);
@@ -207,6 +213,30 @@ public sealed class SeedTests(DatabaseFixture db)
         JsonNode.Parse(text)!["healthy"]!.GetValue<bool>().ShouldBeTrue(text);
     }
 
+    private static async Task<List<UnitRow>> UnitsAsync(SqlConnection c, CancellationToken ct)
+    {
+        await using var command = new SqlCommand(
+            """
+            SELECT i.Sku, u.Code, u.Factor, u.IsActive, u.CreatedAt, u.CreatedBy, u.UpdatedAt
+            FROM inventory.ItemUnits u JOIN inventory.Items i ON i.TenantId = u.TenantId AND i.Id = u.ItemId
+            """, c);
+        var rows = new List<UnitRow>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new UnitRow(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetDecimal(2),
+                reader.GetBoolean(3),
+                reader.GetDateTimeOffset(4),
+                reader.IsDBNull(5) ? null : reader.GetGuid(5),
+                reader.IsDBNull(6) ? null : reader.GetDateTimeOffset(6)));
+        }
+
+        return [.. rows.OrderBy(r => r.Sku, StringComparer.Ordinal).ThenBy(r => r.Code, StringComparer.Ordinal)];
+    }
+
     private static async Task<int> CountAsync(SqlConnection c, string table, CancellationToken ct)
     {
         await using var command = new SqlCommand($"SELECT COUNT(*) FROM {table}", c);
@@ -295,4 +325,6 @@ public sealed class SeedTests(DatabaseFixture db)
         long Id, int LineNo, Guid ItemId, Guid From, Guid To, decimal Quantity, decimal TotalCost, long? Reverses);
 
     private sealed record BalanceRow(bool IsVirtual, decimal OnHand, decimal StockValue, decimal? LastUnitCost, long? LastMovementId);
+
+    private sealed record UnitRow(string Sku, string Code, decimal Factor, bool IsActive, DateTimeOffset CreatedAt, Guid? CreatedBy, DateTimeOffset? UpdatedAt);
 }
