@@ -1,0 +1,64 @@
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Stock counts</h1>
+    <p class="page-subtitle">Count what's really on the shelf and correct the system to match.</p>
+  </div>
+  <div class="page-actions">
+    <button mat-flat-button type="button" (click)="openStart()">
+      <mat-icon>add</mat-icon>Start a count
+    </button>
+  </div>
+</header>
+
+<section class="card">
+  <div class="filter-bar filter-stack">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="location-filter">
+      <mat-label>Location</mat-label>
+      <mat-select [value]="locationId()" (selectionChange)="onLocation($event.value)">
+        <mat-option [value]="null">All locations</mat-option>
+        @for (l of locations(); track l.id) {
+          <mat-option [value]="l.id">{{ l.code }} · {{ l.name }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+    <mat-chip-listbox
+      aria-label="Status"
+      [value]="status()"
+      (change)="onStatus($event.value ?? null)"
+    >
+      @for (s of statuses; track s) {
+        <mat-chip-option [value]="s">{{ statusLabel(s) }}</mat-chip-option>
+      }
+    </mat-chip-listbox>
+  </div>
+
+  @for (row of rows(); track row.id) {
+    <a class="count-row" [routerLink]="['/stocktakes', row.id]">
+      <span class="count-main">
+        <span class="count-location">{{ row.locationCode }} · {{ row.locationName }}</span>
+        <span class="count-meta muted">
+          {{ row.countedCount }} of {{ row.lineCount }} counted · {{ formatDate(row.createdAt) }}
+        </span>
+      </span>
+      <app-status-pill [tone]="statusTone(row.status)" [label]="statusLabel(row.status)" />
+    </a>
+  } @empty {
+    @if (loading()) {
+      @for (n of [1, 2, 3, 4, 5]; track n) {
+        <div class="skeleton skeleton-row"></div>
+      }
+    } @else {
+      <p class="empty-state">No counts yet. Start one to check what's really on the shelf.</p>
+    }
+  }
+
+  <div class="card__footer">
+    <mat-paginator
+      [length]="total()"
+      [pageIndex]="pageIndex()"
+      [pageSize]="pageSize()"
+      [pageSizeOptions]="pageSizeOptions"
+      (page)="onPage($event)"
+    />
+  </div>
+</section>

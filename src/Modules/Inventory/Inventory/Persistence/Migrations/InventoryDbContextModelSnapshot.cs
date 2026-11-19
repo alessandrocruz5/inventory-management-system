@@ -82,6 +82,48 @@ namespace Inventory.Persistence.Migrations
                     b.ToTable("Items", "inventory");
                 });
 
+            modelBuilder.Entity("Inventory.Persistence.ItemUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Factor")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TenantId", "ItemId", "Code");
+
+                    b.ToTable("ItemUnits", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_ItemUnits_Factor", "[Factor] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Inventory.Persistence.Location", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -353,6 +395,120 @@ namespace Inventory.Persistence.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("Inventory.Persistence.Stocktake", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)");
+
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid?>("PostedDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TenantId", "Id");
+
+                    b.HasIndex("TenantId", "CreatedAt")
+                        .HasDatabaseName("IX_Stocktakes_Created");
+
+                    b.HasIndex("TenantId", "LocationId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Stocktakes_Open")
+                        .HasFilter("[Status] IN ('Draft', 'Posting')");
+
+                    b.ToTable("Stocktakes", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_Stocktakes_PostedDocument", "[PostedDocumentId] IS NULL OR [Status] = 'Posted'");
+
+                            t.HasCheckConstraint("CK_Stocktakes_Status", "[Status] IN ('Draft', 'Posting', 'Posted', 'Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Inventory.Persistence.StocktakeLine", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)");
+
+                    b.Property<Guid>("StocktakeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("CountedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CountedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("CountedQuantity")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<long?>("ExpectedLastMovementId")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("ExpectedQuantity")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("UnitCost")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.HasKey("TenantId", "StocktakeId", "ItemId");
+
+                    b.ToTable("StocktakeLines", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_StocktakeLines_Counted", "([CountedQuantity] IS NULL AND [ExpectedQuantity] IS NULL AND [CountedAt] IS NULL AND [CountedBy] IS NULL AND [ExpectedLastMovementId] IS NULL) OR ([CountedQuantity] IS NOT NULL AND [CountedQuantity] >= 0 AND [ExpectedQuantity] IS NOT NULL AND [CountedAt] IS NOT NULL AND [CountedBy] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_StocktakeLines_UnitCost", "[UnitCost] IS NULL OR [UnitCost] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Inventory.Persistence.ItemUnit", b =>
+                {
+                    b.HasOne("Inventory.Persistence.Item", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ItemId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Inventory.Persistence.StockBalance", b =>
                 {
                     b.HasOne("Inventory.Persistence.Item", null)
@@ -404,6 +560,35 @@ namespace Inventory.Persistence.Migrations
                     b.HasOne("Inventory.Persistence.Location", null)
                         .WithMany()
                         .HasForeignKey("TenantId", "ToLocationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Inventory.Persistence.Stocktake", b =>
+                {
+                    b.HasOne("Inventory.Persistence.Location", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LocationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Inventory.Persistence.StockDocument", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PostedDocumentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Inventory.Persistence.StocktakeLine", b =>
+                {
+                    b.HasOne("Inventory.Persistence.Item", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ItemId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Inventory.Persistence.Stocktake", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "StocktakeId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

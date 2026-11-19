@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Inventory.Domain;
 using Inventory.Persistence;
 
@@ -22,6 +24,8 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
     private static readonly string[] UnknownItem = ["Choose an existing item."];
     private static readonly string[] BalanceOutOfRange = ["This would exceed the largest stock quantity or value the system can hold."];
     private static readonly string[] UnitCostRequired = ["Enter a unit cost: there is no stock here to average."];
+    private static readonly string[] UnknownUnit = ["Choose one of this item's units."];
+    private static readonly string MaxAmountText = PostingValidation.MaxAmount.ToString("N4", CultureInfo.InvariantCulture);
 
     /// <param name="kind">The posting kind; it fixes the document type, the counterpart and the header locations.</param>
     /// <param name="validate">The pure step-1 checks; null after adding an error per invalid field.</param>
@@ -51,6 +55,22 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
         }
 
         var requestHash = hash(validated);
+        return await PostValidatedAsync(http, kind, key, validated, requestHash, ct);
+    }
+
+    /// <summary>Steps 2–10 for a posting already through step 1's pure checks, under <paramref name="key"/>. Stocktakes post
+    /// here with a server-derived key (plan D10) and a <paramref name="guard"/> the engine runs before step 4 (plan D17);
+    /// PostAsync calls it after reading and checking the client's header.</summary>
+    public async Task<Results<Created<DocumentResponse>, Ok<DocumentResponse>, ValidationProblem, ProblemHttpResult>> PostValidatedAsync(
+        HttpContext http,
+        PostingKind kind,
+        string key,
+        ValidatedPosting validated,
+        byte[] requestHash,
+        CancellationToken ct,
+        Func<CancellationToken, Task<bool>>? guard = null)
+    {
+        var errors = new Dictionary<string, string[]>();
 
         // Step 2 before the database checks (D2).
         if (await engine.FindExistingAsync(key, requestHash, ct) is { } existing)
@@ -80,6 +100,10 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
             errors[$"lines[{line.LineNo - 1}].itemId"] = UnknownItem;
         }
 
+        // Plan D4/D5: units resolve and convert here, after replay and with the other database 400s, so every 400 still
+        // precedes any 422. The ledger only ever sees base units.
+        var converted = await ConvertAsync(kind, lines, items, errors, ct);
+
         // Every 400 before any 422.
         if (errors.Count > 0)
         {
@@ -108,23 +132,85 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
         var locationId = headers[0].Id;
 
         // The only place an adjustment's signed delta becomes a direction and a positive quantity (plan D2).
+        // Quantities are the converted base quantities; the factor reaches the engine on every line (outflows ignore it).
         var postingLines = lines
-            .Select(l => kind switch
+            .Select(l => (Line: l, Converted: converted[l.LineNo]))
+            .Select(x => kind switch
             {
-                PostingKind.Receipt => new PostingLine(l.LineNo, l.ItemId, counterpartId, locationId, l.Quantity, l.UnitCost),
-                PostingKind.Issue => new PostingLine(l.LineNo, l.ItemId, locationId, counterpartId, l.Quantity, UnitCost: null),
-                PostingKind.Transfer => new PostingLine(l.LineNo, l.ItemId, locationId, headers[1].Id, l.Quantity, UnitCost: null),
-                PostingKind.Adjustment => l.Quantity > 0
-                    ? new PostingLine(l.LineNo, l.ItemId, counterpartId, locationId, l.Quantity, l.UnitCost)
-                    : new PostingLine(l.LineNo, l.ItemId, locationId, counterpartId, -l.Quantity, UnitCost: null),
+                PostingKind.Receipt => new PostingLine(
+                    x.Line.LineNo, x.Line.ItemId, counterpartId, locationId, x.Converted.Quantity, x.Line.UnitCost, x.Converted.Factor),
+                PostingKind.Issue => new PostingLine(
+                    x.Line.LineNo, x.Line.ItemId, locationId, counterpartId, x.Converted.Quantity, UnitCost: null, x.Converted.Factor),
+                PostingKind.Transfer => new PostingLine(
+                    x.Line.LineNo, x.Line.ItemId, locationId, headers[1].Id, x.Converted.Quantity, UnitCost: null, x.Converted.Factor),
+                PostingKind.Adjustment => x.Converted.Quantity > 0
+                    ? new PostingLine(
+                        x.Line.LineNo, x.Line.ItemId, counterpartId, locationId, x.Converted.Quantity, x.Line.UnitCost, x.Converted.Factor)
+                    : new PostingLine(
+                        x.Line.LineNo, x.Line.ItemId, locationId, counterpartId, -x.Converted.Quantity, UnitCost: null, x.Converted.Factor),
                 _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a posting kind."),
             })
             .ToList();
 
         var command = new PostingCommand(
             kind, type, postingLines, key, requestHash, validated.Reference, validated.Notes, user.UserId,
-            kind == PostingKind.Adjustment ? validated.ReasonCode : null);
+            kind == PostingKind.Adjustment ? validated.ReasonCode : null, Guard: guard);
         return ToResult(http, kind, validated, await engine.PostAsync(command, ct));
+    }
+
+    /// <summary>
+    /// Resolves each known item's line unit to a factor (D5) and converts its quantity to base units exactly (D4), keyed
+    /// by <c>LineNo</c>. Adds a 400 per line whose unit isn't the base unit or an active unit of the item, or whose base
+    /// quantity isn't exact to 4 dp or exceeds <see cref="PostingValidation.MaxAmount"/>. Lines with an unknown item are
+    /// skipped: they already have their error.
+    /// </summary>
+    private async Task<Dictionary<int, (decimal Factor, decimal Quantity)>> ConvertAsync(
+        PostingKind kind,
+        List<ValidatedLine> lines,
+        Dictionary<Guid, Item> items,
+        Dictionary<string, string[]> errors,
+        CancellationToken ct)
+    {
+        static bool IsBase(ValidatedLine line, Item item) => line.Unit is null || line.Unit == item.BaseUnit;
+
+        var alternateItems = lines
+            .Where(l => items.TryGetValue(l.ItemId, out var item) && !IsBase(l, item))
+            .Select(l => l.ItemId)
+            .ToList();
+        var factors = alternateItems.Count > 0
+            ? await UnitConversion.ActiveFactorsAsync(db, alternateItems, ct)
+            : new Dictionary<(Guid ItemId, string Code), decimal>();
+
+        var quantityField = kind == PostingKind.Adjustment ? "quantityDelta" : "quantity";
+        var converted = new Dictionary<int, (decimal Factor, decimal Quantity)>();
+        foreach (var line in lines)
+        {
+            if (!items.TryGetValue(line.ItemId, out var item))
+            {
+                continue;
+            }
+
+            var path = $"lines[{line.LineNo - 1}]";
+            var factor = 1m;
+            if (!IsBase(line, item) && !factors.TryGetValue((line.ItemId, line.Unit!), out factor))
+            {
+                errors[$"{path}.unit"] = UnknownUnit;
+                continue;
+            }
+
+            if (UnitConversion.ToBase(line.Quantity, factor) is { } baseQuantity)
+            {
+                converted[line.LineNo] = (factor, baseQuantity);
+            }
+            else
+            {
+                errors[$"{path}.{quantityField}"] = Math.Abs(line.Quantity * factor) > PostingValidation.MaxAmount
+                    ? [$"This is more than {MaxAmountText} {item.BaseUnit}."]
+                    : [$"This doesn't convert to whole 0.0001 {item.BaseUnit}; enter it in {item.BaseUnit}."];
+            }
+        }
+
+        return converted;
     }
 
     /// <summary>
@@ -176,8 +262,11 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
                 return Problems.Validation(new Dictionary<string, string[]> { [$"lines[{index}].{field}"] = BalanceOutOfRange });
             case RetriesExhaustedOutcome:
                 return Problems.ConcurrencyConflict();
+            case GuardFailedOutcome:
+                // Plan D17: the caller's precondition no longer held, so nothing was written.
+                return Problems.ConcurrencyConflict();
             default:
-                // Only ReversalNotLatest is left, and it can't arise from these lines: S9 maps it on its own route.
+                // Only the reversal outcomes are left, and they can't arise from these lines: S9 maps them on its own route.
                 throw new InvalidOperationException($"Unexpected posting outcome: {outcome}.");
         }
     }

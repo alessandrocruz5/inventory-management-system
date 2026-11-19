@@ -61,6 +61,14 @@ internal sealed class InventorySeeder(ITenantScopeFactory scopes, TimeProvider c
         ("MKT", "VINEGAR-REFILL", 12.25m, 34.80m),
     ];
 
+    /// <summary>The demo tenant's alternate units (plan, prompt 03): one row per pair, inserted once and never changed.</summary>
+    internal static readonly (string Sku, string Code, decimal Factor)[] Units =
+    [
+        ("RICE-WHT", "sack", 25m),
+        ("SUGAR-BRN", "sack", 50m),
+        ("EGG-MED", "tray", 30m),
+    ];
+
     /// <summary>The deterministic Idempotency-Key of one opening-stock receipt (spec §13): seed:&lt;tenant&gt;:&lt;sku&gt;:&lt;location&gt;.</summary>
     internal static string OpeningStockKey(string sku, string code) => $"seed:{SeedTenants.Demo:D}:{sku}:{code}";
 
@@ -135,7 +143,49 @@ internal sealed class InventorySeeder(ITenantScopeFactory scopes, TimeProvider c
 
         await db.SaveChangesAsync(cancellationToken);
 
+        await SeedUnitsAsync(db, now, cancellationToken);
+
         await PostOpeningStockAsync(scope.Services, db, cancellationToken);
+    }
+
+    private async Task SeedUnitsAsync(InventoryDbContext db, DateTimeOffset now, CancellationToken ct)
+    {
+        var items = (await db.Items.AsNoTracking()
+                .Select(i => new { i.Sku, i.Id, i.BaseUnit })
+                .ToListAsync(ct))
+            .ToDictionary(i => i.Sku, i => (i.Id, i.BaseUnit), StringComparer.OrdinalIgnoreCase);
+        var existing = (await db.ItemUnits.AsNoTracking()
+                .Select(u => new { u.ItemId, u.Code })
+                .ToListAsync(ct))
+            .Select(u => (u.ItemId, u.Code))
+            .ToHashSet();
+
+        var added = 0;
+        foreach (var (sku, code, factor) in Units)
+        {
+            // IMS-9: a SKU that no longer exists or was renamed is skipped, never a failure. A code that is now the base
+            // unit is skipped too, as CreateItemUnit would reject it.
+            if (!items.TryGetValue(sku, out var item)
+                || existing.Contains((item.Id, code))
+                || string.Equals(item.BaseUnit, code, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            db.ItemUnits.Add(new ItemUnit
+            {
+                ItemId = item.Id,
+                Code = code,
+                Factor = factor,
+                IsActive = true,
+                CreatedAt = now,
+                CreatedBy = null,
+            });
+            added++;
+        }
+
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Item units: {Added} added.", added);
     }
 
     private async Task PostOpeningStockAsync(IServiceProvider services, InventoryDbContext db, CancellationToken ct)

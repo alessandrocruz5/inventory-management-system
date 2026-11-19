@@ -457,6 +457,49 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     }
 
     [Fact]
+    [ProbesRoute("POST /api/items/{id:guid}/units")]
+    public async Task Another_tenants_item_cannot_get_a_unit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var idB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+
+        var response = await clientA.PostAsJsonAsync($"/api/items/{idB}/units", new { code = "case", factor = 12 }, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        var after = (await (await clientB.GetAsync($"/api/items/{idB}", ct)).Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        after["units"]!.AsArray().ShouldBeEmpty();
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/items/{id:guid}/units/{code}/deactivate")]
+    public async Task Another_tenants_item_unit_cannot_be_deactivated()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var idB = (await ItemsTests.CreateAsync(clientB, "B-ONLY", "Tenant B item", "pc", ct))["id"]!.GetValue<Guid>();
+        (await clientB.PostAsJsonAsync($"/api/items/{idB}/units", new { code = "case", factor = 12 }, ct)).StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        var response = await clientA.PostAsync($"/api/items/{idB}/units/case/deactivate", null, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        var after = (await (await clientB.GetAsync($"/api/items/{idB}", ct)).Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        after["units"]![0]!["isActive"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
     [ProbesRoute("GET /api/locations/")]
     public async Task Each_tenant_lists_only_its_own_locations()
     {
@@ -769,6 +812,149 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
         (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe((5m, 50m));
         await using var reversals = new SqlCommand("SELECT COUNT(*) FROM inventory.StockDocuments WHERE Type = 'Reversal'", connection);
         ((int)(await reversals.ExecuteScalarAsync(ct))!).ShouldBe(0);
+    }
+
+    [Fact]
+    [ProbesRoute("GET /api/stocktakes/")]
+    public async Task Each_tenant_lists_only_its_own_stocktakes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var stocktakes = new List<(HttpClient Client, Guid Id)>();
+        foreach (var client in new[] { clientA, clientB })
+        {
+            var location = await PostingTests.NewLocationAsync(client, ct, "SAME-1");
+            stocktakes.Add((client, (await StocktakeTests.StartAsync(client, location, ct))["id"]!.GetValue<Guid>()));
+        }
+
+        foreach (var (client, expected) in stocktakes)
+        {
+            var response = await client.GetAsync(StocktakeTests.Stocktakes, ct);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var list = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+            list["items"]!.AsArray().Select(i => i!["id"]!.GetValue<Guid>()).ShouldBe([expected]);
+            list["total"]!.GetValue<int>().ShouldBe(1);
+        }
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/stocktakes/")]
+    public async Task Another_tenants_location_cannot_start_a_stocktake()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct, "B-ONLY");
+
+        var response = await clientA.PostAsJsonAsync(StocktakeTests.Stocktakes, new { locationId = locationB }, ct);
+
+        await PostingTests.AssertValidationAsync(response, "locationId", ct);
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        await using var count = new SqlCommand("SELECT COUNT(*) FROM inventory.Stocktakes", connection);
+        ((int)(await count.ExecuteScalarAsync(ct))!).ShouldBe(0);
+    }
+
+    [Fact]
+    [ProbesRoute("GET /api/stocktakes/{id:guid}")]
+    public async Task Another_tenants_stocktake_id_is_404()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Staff);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct, "B-ONLY");
+        var idB = (await StocktakeTests.StartAsync(clientB, locationB, ct))["id"]!.GetValue<Guid>();
+
+        var response = await clientA.GetAsync($"{StocktakeTests.Stocktakes}/{idB}", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        problem["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+    }
+
+    [Fact]
+    [ProbesRoute("PUT /api/stocktakes/{id:guid}/lines/{itemId:guid}")]
+    public async Task Another_tenants_stocktake_or_item_id_cannot_be_counted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationA = await PostingTests.NewLocationAsync(clientA, ct, "A-ONLY");
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct, "B-ONLY");
+        var itemA = await PostingTests.NewItemAsync(clientA, "A-ITEM", ct);
+        var itemB = await PostingTests.NewItemAsync(clientB, "B-ITEM", ct);
+        var idA = (await StocktakeTests.StartAsync(clientA, locationA, ct))["id"]!.GetValue<Guid>();
+        var idB = (await StocktakeTests.StartAsync(clientB, locationB, ct))["id"]!.GetValue<Guid>();
+
+        var foreignStocktake = await StocktakeTests.CountAsync(clientA, idB, itemA, new { quantity = 1 }, ct);
+        var foreignItem = await StocktakeTests.CountAsync(clientA, idA, itemB, new { quantity = 1 }, ct);
+
+        foreach (var response in new[] { foreignStocktake, foreignItem })
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        }
+
+        (await clientB.GetFromJsonAsync<JsonNode>($"{StocktakeTests.Stocktakes}/{idB}", ct))!["lines"]!.AsArray().ShouldBeEmpty();
+        (await clientA.GetFromJsonAsync<JsonNode>($"{StocktakeTests.Stocktakes}/{idA}", ct))!["lines"]!.AsArray().ShouldBeEmpty();
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/stocktakes/{id:guid}/cancel")]
+    public async Task Another_tenants_stocktake_id_cannot_be_cancelled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct, "B-ONLY");
+        var idB = (await StocktakeTests.StartAsync(clientB, locationB, ct))["id"]!.GetValue<Guid>();
+
+        var response = await clientA.PostAsync($"{StocktakeTests.Stocktakes}/{idB}/cancel", null, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        (await clientB.GetFromJsonAsync<JsonNode>($"{StocktakeTests.Stocktakes}/{idB}", ct))!["status"]!.GetValue<string>().ShouldBe("Draft");
+    }
+
+    [Fact]
+    [ProbesRoute("POST /api/stocktakes/{id:guid}/post")]
+    public async Task Another_tenants_stocktake_id_cannot_be_posted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = db.CreateApp();
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (b, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct, "B-ONLY");
+        var itemB = await PostingTests.NewItemAsync(clientB, "B-ITEM", ct);
+        await PostingTests.ReceiveAsync(clientB, locationB, itemB, 5m, 10m, ct);
+        var idB = (await StocktakeTests.StartAsync(clientB, locationB, ct))["id"]!.GetValue<Guid>();
+        await StocktakeTests.CountOkAsync(clientB, idB, itemB, new { quantity = 3 }, ct);
+
+        var response = await StocktakeTests.PostAsync(clientA, idB, ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!["type"]!.GetValue<string>().ShouldBe("/problems/not-found");
+        (await clientB.GetFromJsonAsync<JsonNode>($"{StocktakeTests.Stocktakes}/{idB}", ct))!["status"]!.GetValue<string>().ShouldBe("Draft");
+        await using var connection = await LedgerRows.OpenAsync(db, b, ct);
+        (await PostingTests.BalanceAsync(connection, itemB, locationB, ct)).ShouldBe((5m, 50.0000m));
     }
 
     [Fact]

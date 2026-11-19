@@ -200,7 +200,7 @@ A bug that skips the EF filter, such as a raw SQL report or a stray `IgnoreQuery
 
 ## 5. Data model
 
-Five inventory tables, one sequence, and Identity. The sketch below is the contract; turn it into EF Core configurations and migrations, using `migrationBuilder.Sql` for triggers, the sequence, check constraints and RLS.
+Eight inventory tables, one sequence, and Identity. The sketch below is the contract; turn it into EF Core configurations and migrations, using `migrationBuilder.Sql` for triggers, the sequence, check constraints and RLS.
 
 ```sql
 -- schema platform
@@ -214,10 +214,19 @@ inventory.Items (
   TenantId uniqueidentifier, Id uniqueidentifier,
   Sku nvarchar(64) NOT NULL,              -- immutable once the item has a movement
   Name nvarchar(200) NOT NULL,
-  BaseUnit nvarchar(16) NOT NULL,         -- free text, lowercase: pc, kg, l, box
+  BaseUnit nvarchar(16) NOT NULL,         -- free text, lowercase: pc, kg, l, box; immutable once the item has a movement or an alternate unit
   IsActive bit NOT NULL DEFAULT 1,
   CreatedAt, CreatedBy, UpdatedAt, UpdatedBy, RowVersion rowversion,
   PRIMARY KEY (TenantId, Id), UNIQUE (TenantId, Sku))
+
+inventory.ItemUnits (                     -- Sprint 3: alternate units of an item
+  TenantId, ItemId,
+  Code nvarchar(16) NOT NULL,             -- lowercase; never the item's base unit
+  Factor decimal(19,4) NOT NULL CHECK (Factor > 0),  -- base units in one Code; never edited
+  IsActive bit NOT NULL DEFAULT 1,
+  CreatedAt, CreatedBy, UpdatedAt, UpdatedBy,
+  PRIMARY KEY (TenantId, ItemId, Code),
+  FOREIGN KEY (TenantId, ItemId) -> Items)
 
 inventory.Locations (
   TenantId, Id,
@@ -276,11 +285,39 @@ inventory.StockBalances (                     -- projection of the ledger
          OR (OnHand >= 0 AND StockValue >= 0 AND (OnHand <> 0 OR StockValue = 0))
          OR (OnHand < 0 AND AllowNegative = 1)),
   CHECK (IsVirtual = 0 OR StockValue = 0))
+
+inventory.Stocktakes (                        -- Sprint 3: a count of one physical location
+  TenantId, Id uniqueidentifier,
+  LocationId uniqueidentifier NOT NULL,
+  Status varchar(16) NOT NULL CHECK (Status IN ('Draft','Posting','Posted','Cancelled')),
+  Notes nvarchar(500) NULL,
+  PostedDocumentId uniqueidentifier NULL,     -- the CountCorrection adjustment; NULL on a Posted stocktake with no differences
+  CreatedAt, CreatedBy, UpdatedAt, UpdatedBy, RowVersion rowversion,
+  PRIMARY KEY (TenantId, Id),
+  FOREIGN KEY (TenantId, LocationId) -> Locations,
+  FOREIGN KEY (TenantId, PostedDocumentId) -> StockDocuments,
+  CHECK (PostedDocumentId IS NULL OR Status = 'Posted'),
+  UNIQUE (TenantId, LocationId) WHERE Status IN ('Draft','Posting'),   -- one open stocktake per location
+  INDEX IX_Stocktakes_Created (TenantId, CreatedAt))
+
+inventory.StocktakeLines (                    -- base units
+  TenantId, StocktakeId, ItemId,
+  ExpectedQuantity decimal(19,4) NULL,        -- the balance's OnHand when counted; may be negative
+  ExpectedLastMovementId bigint NULL,         -- the balance's LastMovementId when counted
+  CountedQuantity decimal(19,4) NULL,         -- >= 0; NULL until counted
+  UnitCost decimal(19,4) NULL CHECK (UnitCost >= 0),   -- per base unit; used only when the count is above ExpectedQuantity
+  CountedAt datetimeoffset NULL, CountedBy uniqueidentifier NULL,
+  PRIMARY KEY (TenantId, StocktakeId, ItemId),
+  FOREIGN KEY (TenantId, StocktakeId) -> Stocktakes,
+  FOREIGN KEY (TenantId, ItemId) -> Items,
+  CHECK (no count field is set, or CountedQuantity, ExpectedQuantity, CountedAt and CountedBy all are))
 ```
 
 **Rules**
 
 - Every foreign key is composite and includes `TenantId`, so a row can never point at another tenant's row.
+- An item's alternate units (`ItemUnits`) are fixed factors of its base unit: never edited, deactivated not deleted, and an inactive code stays reserved.
+- Stocktakes are work documents, not ledger rows: they post through the engine as one `CountCorrection` adjustment. Each line's difference is `CountedQuantity − ExpectedQuantity`, measured against the balance when that line was counted. A stocktake is cancelled, never deleted.
 - Every `TenantId` column defaults to `CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)`, so raw-SQL inserts get the tenant without passing it. The BLOCK predicate still checks it.
 - Average cost is derived (`StockValue / OnHand`), never stored. It is undefined when `OnHand <= 0`; outflows then use `LastUnitCost`.
 - Virtual locations track quantity only. Their `OnHand` goes negative by design (Supplier ends at minus everything ever received) and `StockValue` stays 0.
@@ -295,10 +332,10 @@ Every stock change is a document posted in one transaction. A posted document is
 
 | Document | From → To | Cost on each movement | Roles |
 | --- | --- | --- | --- |
-| Receipt | Supplier → physical | `quantity × unitCost` from the request | Staff, Admin |
+| Receipt | Supplier → physical | `quantity × unitCost` from the request, in the unit the request names (section 7) | Staff, Admin |
 | Issue | physical → Customer | Moving average at the source (section 7) | Staff, Admin |
 | Transfer | physical A → physical B | Moving average at A | Staff, Admin |
-| Adjustment, positive line | Adjustment → physical | Request `unitCost`; when omitted, `Round4(qty × StockValue / OnHand)`; required when `OnHand <= 0` | Admin |
+| Adjustment, positive line | Adjustment → physical | Request `unitCost` (per the request's unit); when omitted, `Round4(qty × StockValue / OnHand)`; required when `OnHand <= 0` | Admin |
 | Adjustment, negative line | physical → Adjustment | Moving average at the source | Admin |
 | Reversal | Each original movement, revaluations included, with From and To swapped | The original movement's `TotalCost`, exactly | Admin |
 | Revaluation (inside an inflow's document) | physical ↔ Adjustment, quantity 0 | The estimate variance the inflow settles (section 7) | system |
@@ -306,8 +343,8 @@ Every stock change is a document posted in one transaction. A posted document is
 **Posting steps** (inside `PostingEngine`, wrapped in EF's execution strategy so deadlock error 1205 retries up to 3 times)
 
 1. Validate the request: 1–100 lines; each item at most once per document; quantity > 0 and unit cost ≥ 0, each with at most 4 decimals and at most 999,999,999.9999; a transfer's from and to locations differ; items and locations exist, are active and have the right kind. Ids from another tenant behave exactly like ids that don't exist. A line whose Round4(quantity × unitCost) exceeds 999,999,999,999,999.9999 (the decimal(19,4) maximum) fails on `lines[i].unitCost`. The checks that items and locations exist and are active run after step 2, so a replay of a successful post returns the original even if master data has changed since.
-2. Idempotency fast path: look up `(TenantId, IdempotencyKey)`. Same `RequestHash` → return the stored document with `200` and header `Idempotent-Replayed: true`. Different hash → `409 idempotency-key-reused`. The hash is SHA-256 over the HTTP method, the route and the validated request re-serialized canonically: fixed property order, decimals without trailing zeros, absent and null treated alike. Only a successful post consumes a key. The hash covers the validated request, so the lookup runs right after the pure checks of step 1.
-3. Begin the transaction (READ COMMITTED with snapshot reads on). Take the tenant's ledger lock: `sp_getapplock` on `ledger:<TenantId>` in `Shared` mode, owned by the transaction. Rebuild takes it in `Exclusive` mode.
+2. Idempotency fast path: look up `(TenantId, IdempotencyKey)`. Same `RequestHash` → return the stored document with `200` and header `Idempotent-Replayed: true`. Different hash → `409 idempotency-key-reused`. The hash is SHA-256 over the HTTP method, the route and the validated request re-serialized canonically: fixed property order, decimals without trailing zeros, absent and null treated alike. Only a successful post consumes a key. The hash covers the validated request, so the lookup runs right after the pure checks of step 1. Stocktakes post with the server-derived key `stocktake:<id>`; clients may not send keys with that prefix (plan D10).
+3. Begin the transaction (READ COMMITTED with snapshot reads on). Take the tenant's ledger lock: `sp_getapplock` on `ledger:<TenantId>` in `Shared` mode, owned by the transaction. Rebuild takes it in `Exclusive` mode. A caller's guard runs here, after the ledger lock and before step 4 (stocktakes: `UPDLOCK` on the stocktake row, status `Posting` or already `Posted`, and the sheet's `RequestHash` unchanged); a failed guard writes nothing and is `409 concurrency-conflict` (plan D17). Locks are taken in the order ledger → stocktake → document → balances.
 4. Insert the `StockDocuments` row, complete and final, because the trigger forbids a later UPDATE. This claims the key: a parallel duplicate blocks on the unique index until this transaction ends, then gets 2627/2601, rolls back and answers as a replay (step 2). If this transaction rolls back, the duplicate proceeds.
 5. Make sure every balance row the document touches exists: `INSERT … WHERE NOT EXISTS` in `(ItemId, LocationId)` order, copying `IsVirtual` and `AllowNegative` from `Locations`, and swallow unique-key errors 2627/2601 from a concurrent insert.
 6. Lock all touched balance rows in one statement, `WITH (UPDLOCK, ROWLOCK)`, seeking on the clustered key. The clustered key `(TenantId, ItemId, LocationId)`, not the `ORDER BY`, is what makes every transaction lock in the same order and keeps A→B and B→A transfers from deadlocking **\[Likely\]**. Add no index that changes this access path.
@@ -352,6 +389,7 @@ Each physical balance carries `OnHand` and `StockValue`. Inflows add their state
 
 // Receipt or positive adjustment line with a unit cost
 decimal InflowCost(decimal qty, decimal unitCost) => Round4(qty * unitCost);
+// A line in another unit (plan D2): Quantity is in base units, UnitFactor base units per entered unit; cost = InflowCost(Quantity / UnitFactor, unitCost), exactly Round4(entered qty × unitCost).
 
 // Positive adjustment line without a unit cost; only when b.OnHand > 0, otherwise unitCost is required
 decimal DefaultAdjustmentCost(decimal qty, Balance b) => Round4(qty * b.StockValue / b.OnHand);
@@ -467,6 +505,17 @@ Set N receives ₱1,180.0000. Issues take ₱1,154.0000 and revaluations ₱26.0
 
 Without the revaluation, X3 leaves 1 / −70.0000, and X4 would post a cost of −70 that the `TotalCost >= 0` check refuses.
 
+**Vector set U: location U, toggle off, item base unit `pc`, unit `case` = 12**
+
+| Step | Action | Line passed to `Post` (Quantity, UnitCost, UnitFactor) | Movement cost (₱) | U after: qty / value | LastUnitCost |
+| --- | --- | --- | --- | --- | --- |
+| U1 | Receive 1 case @ 500.00 | 12, 500.00, 12 | 500.0000 | 12 / 500.0000 | 41.6667 |
+| U2 | Receive 2.5 case @ 480.00 | 30, 480.00, 12 | 1,200.0000 | 42 / 1,700.0000 | 40.4762 |
+| U3 | Issue 0.5 case | 6, null, 12 | 242.8571 | 36 / 1,457.1429 | 40.4762 |
+| U4 | Issue 36 pc | 36, null, 1 | 1,457.1429 (the remainder) | 0 / 0.0000 | 40.4762 |
+
+The inflow is costed in the entered unit, with no per-base-unit rounding: U1 costs 500.0000, where 12 × Round4(500 / 12) = 12 × 41.6667 would give 500.0004. Received ₱1,700.0000 = issued ₱242.8571 + ₱1,457.1429. Outflows and the ledger stay in base units.
+
 ## 8. Tenancy, auth and security
 
 The tenant comes only from the auth cookie, and isolation is enforced twice: EF Core filters for normal queries, SQL Server row-level security for everything else. Neither layer trusts the other.
@@ -533,8 +582,10 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 | `GET /auth/me` | any | User id, email, role, tenant name |
 | `GET /items` | any | Search by SKU or name; filter `active` |
 | `POST /items` | Admin | Create |
-| `GET /items/{id}` | any | Item with its balance in each physical location |
-| `PUT /items/{id}` | Admin | Edit name and unit; SKU only before the first movement; body carries `version` (rowversion) |
+| `GET /items/{id}` | any | Item with its balance in each physical location and its units |
+| `PUT /items/{id}` | Admin | Edit name and unit; SKU only before the first movement; base unit only before the first movement or alternate unit; body carries `version` (rowversion) |
+| `POST /items/{id}/units` | Admin | Add an alternate unit (`code`, `factor`) |
+| `POST /items/{id}/units/{code}/deactivate` | Admin | Deactivate a unit |
 | `POST /items/{id}/deactivate` | Admin | Only with zero physical stock |
 | `GET /items/{id}/movements` | any | Ledger history, newest first, with running balance per location (window `SUM() OVER`) |
 | `GET /locations` | any | Physical and virtual; virtual ones flagged `isSystem` |
@@ -549,6 +600,12 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 | `GET /stock` | any | Balances by item × physical location with average cost and value; filter by item or location; totals for the whole filter, not just the page |
 | `GET /ledger/health` | Admin | INV-1 to INV-5 results with failing rows |
 | `POST /ledger/rebuild` | Admin | Rebuild and return the diff |
+| `GET /stocktakes` | any | Newest first; filter `status` and `locationId` |
+| `POST /stocktakes` | Staff, Admin | Start a count of one active physical location, prefilled with its stocked items; one open (Draft or Posting) per location |
+| `GET /stocktakes/{id}` | any | Lines in SKU order, each with its count, its snapshot and the current balance |
+| `PUT /stocktakes/{id}/lines/{itemId}` | Staff, Admin | Record a count with the balance snapshot it is measured against; adds the item if it isn't listed; Draft only |
+| `POST /stocktakes/{id}/post` | Admin | Post the differences as one `CountCorrection` adjustment, exactly once (Draft → Posting → Posted); empty body |
+| `POST /stocktakes/{id}/cancel` | Admin | Draft only; idempotent; empty body |
 
 **Request bodies**
 
@@ -556,7 +613,8 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 POST /api/documents/receipts
 Idempotency-Key: 9b3c2e0a-6a77-4c1e-9d0f-2f3e1c8a4b10
 { "locationId": "…", "reference": "DR-10442", "notes": null,
-  "lines": [ { "itemId": "…", "quantity": 10, "unitCost": 100.00 } ] }
+  "lines": [ { "itemId": "…", "quantity": 10, "unitCost": 100.00 },
+             { "itemId": "…", "quantity": 2, "unitCost": 500.00, "unit": "case" } ] }
 
 POST /api/documents/issues
 { "locationId": "…", "reference": null, "notes": "sold at counter",
@@ -569,10 +627,15 @@ POST /api/documents/transfers
 POST /api/documents/adjustments
 { "locationId": "…", "reasonCode": "Damaged", "notes": "water damage",
   "lines": [ { "itemId": "…", "quantityDelta": -2 },
-             { "itemId": "…", "quantityDelta": 5, "unitCost": 42.50 } ] }
+             { "itemId": "…", "quantityDelta": 5, "unitCost": 42.50 },
+             { "itemId": "…", "quantityDelta": -1, "unit": "sack" } ] }
 ```
 
+`unit` is optional on every line: the item's base unit or one of its active units. Quantities and unit costs are in that unit; the document, movements and balances are always in the base unit, and `insufficient-stock` reports base units.
+
 Successful posts return `201 Created` with the full document, its movements with costs, and the resulting balances. Replays return `200` with `Idempotent-Replayed: true`.
+
+**Stocktake bodies.** `POST /stocktakes` takes `{ "locationId": "…", "notes": null }`. `PUT /stocktakes/{id}/lines/{itemId}` takes `{ "quantity": 2, "unit": "sack", "unitCost": null }`: `unit` works as on postings, and `unitCost` is per base unit, used only when the count is above the snapshot. Post and cancel take no body and no `Idempotency-Key`. Every stocktake route except the list returns the stocktake detail. A post that fails leaves the stocktake in Draft: `400` on an uncounted line (`lines[j].quantity`, where `j` is the line's index in SKU order), on no lines or more than 100 differences (`lines`), or the engine's own problems, with line keys mapped to `j`. A post whose sheet changed under it gets `409 concurrency-conflict` and leaves the stocktake as it is. A post with no differences is Posted with no document.
 
 **Problem types** (a relative URI, allowed by RFC 9457: the `type` field is `/problems/<slug>`)
 
@@ -585,6 +648,8 @@ Successful posts return `201 Created` with the full document, its movements with
 | `reversal-not-latest` | 409 | `itemId`, `locationId`, `blockingDocumentId` |
 | `already-reversed` | 409 | `reversalDocumentId` |
 | `cannot-reverse-reversal` | 422 | `reversesDocumentId` |
+| `stocktake-open-exists` | 409 | `stocktakeId` |
+| `stocktake-not-open` | 409 | `stocktakeStatus` |
 | `concurrency-conflict` | 409 | — (after 3 retries, or a stale `version` on an edit) |
 | `insufficient-stock` | 422 | `itemId`, `locationId`, `available`, `requested` |
 | `inactive-item` / `inactive-location` | 422 | the id |
@@ -602,11 +667,13 @@ Eight screens, written for a shop owner who is not technical: plain verbs, peso 
 | `/items` | Items | any (edit: Admin) | List with search; per-row edit and deactivate; create/edit dialog; deactivate with the `stock-not-zero` message when blocked |
 | `/items/:id` | Item detail | any | Balance per location; movement history with running balance; link to each document |
 | `/locations` | Locations | any (edit: Admin) | Physical list with create/edit/deactivate and an Allow negative stock switch (Admin, with a warning); virtual ones read-only with a "System" chip |
-| `/documents/new/:type` | Post stock | Staff, Admin (adjust: Admin) | One form component for all four types (below) |
+| `/documents/new/:type` | Post stock | Staff, Admin (adjust: Admin) | One form component for all four types (below), with a unit per line when the item has units |
 | `/documents`, `/documents/:id` | Documents | any (reverse: Admin) | List with type and date filters; detail with lines, costs, Reverse button, link to the reversal |
+| `/stocktakes` | Count stock | any (start: Staff, Admin) | List with location and status filters; Start a count dialog (opens the count already in progress on `stocktake-open-exists`) |
+| `/stocktakes/:id` | Count sheet | any (post, cancel: Admin) | Expected, counted and signed difference per item; moved-since-count notice; count in any of the item's units; add an item; Admin Post count and Cancel count; link to the correction |
 | `/admin/ledger` | Ledger health | Admin | INV-1 to INV-5 pass/fail with failing rows; Rebuild button with a confirm step and the returned diff |
 
-**Labels.** Use the plain verbs in the navigation and form titles: Receive stock, Use or sell stock, Move stock, Correct stock. Document types keep their technical names in the API.
+**Labels.** Use the plain verbs in the navigation and form titles: Receive stock, Use or sell stock, Move stock, Correct stock, Count stock. Document types keep their technical names in the API.
 
 **Post-stock form**
 
@@ -647,6 +714,9 @@ The tests are the portfolio. Each one below must exist by name, and each proves 
 | T13 | Line editor, money and quantity formatting, idempotency key reuse | Vitest | Frontend logic |
 | T14 | Staff signs in, receives 10 @ ₱100, issues 3, sees 7 and ₱700.00; Admin reverses the issue and sees 10 | Playwright | End to end |
 | T15 | Vector sets N and X; toggle off with a negative balance; Staff tries to flip the toggle | Unit + integration | Estimate costing, revaluation and value conservation; 422 negative-balances-exist; 403 for Staff |
+| T16 | Vector set U; unit errors; replays with a unit | Unit + integration | Inflow cost in the entered unit; exact conversion; byte-stable hashes |
+| T17 | Stocktake snapshot deltas, exactly-once post, crash heal, roles | Integration | D8–D15 |
+| T18 | Staff counts, Admin posts, stock shows the count (375 px) | Playwright | Stocktake end to end |
 
 **Tooling.** xUnit v3, Shouldly, `WebApplicationFactory<Program>`, Testcontainers.MsSql pinned to `mcr.microsoft.com/mssql/server:2025-latest`, `Microsoft.Extensions.TimeProvider.Testing`, NetArchTest.Rules, Vitest, Playwright. Prefer the real database over mocks; use NSubstitute only where a fake is impossible.
 
@@ -732,3 +802,8 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-09: S5c plan amended §6 steps 1, 2 and 8 (overflow guards; replay before the database checks of step 1).
 - 2026-11-17: S14 plan ([[2026-11-17-s14-azure]]) replaced Static Web Apps with nginx on Container Apps and added Data Protection keys in the database.
 - 2026-11-17: Sprint 2 UI redesign ([[2026-11-17-ui-redesign]]) shows /items as a list with per-row actions instead of an AG Grid (D1).
+- 2026-11-18: Sprint 3 (units-stocktakes plan) adds item units (§5, §9) and base-unit immutability.
+- 2026-11-18: Sprint 3 D2 (approved): inflow cost in the entered unit via PostingLine.UnitFactor; vector set U, and `unit` on request lines (§9, T16).
+- 2026-11-18: Sprint 3 D10 (approved): stocktakes (§5, §6, §9, T17).
+- 2026-11-19: IMS-30 code review D17 (approved): stocktake posting guard in §6 step 3.
+- 2026-11-18: Sprint 3 screens (§10) and T18.

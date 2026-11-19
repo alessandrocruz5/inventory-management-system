@@ -97,4 +97,24 @@ describe('ItemsService', () => {
     req.flush(page);
     expect(await promise).toEqual(page);
   });
+
+  it('addUnit posts the code and factor to the encoded item path', async () => {
+    const unit = { code: 'case', factor: 12, isActive: true };
+    const promise = service.addUnit('a/1', { code: 'case', factor: 12 });
+    const req = httpMock.expectOne('/api/items/a%2F1/units');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ code: 'case', factor: 12 });
+    req.flush(unit, { status: 201, statusText: 'Created' });
+    expect(await promise).toEqual(unit);
+  });
+
+  it('deactivateUnit posts to the encoded unit path', async () => {
+    const unit = { code: 'x y', factor: 12, isActive: false };
+    const promise = service.deactivateUnit('a1', 'x y');
+    const req = httpMock.expectOne('/api/items/a1/units/x%20y/deactivate');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBeNull();
+    req.flush(unit);
+    expect(await promise).toEqual(unit);
+  });
 });

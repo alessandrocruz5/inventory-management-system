@@ -15,11 +15,17 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
 
     public DbSet<Item> Items => Set<Item>();
 
+    public DbSet<ItemUnit> ItemUnits => Set<ItemUnit>();
+
     public DbSet<StockDocument> StockDocuments => Set<StockDocument>();
 
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
     public DbSet<StockBalance> StockBalances => Set<StockBalance>();
+
+    public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
+
+    public DbSet<StocktakeLine> StocktakeLines => Set<StocktakeLine>();
 
     /// <summary>Read per query by the "Tenant" filter; throws in a scope with no tenant, so such a query fails loudly.</summary>
     private Guid CurrentTenantId => tenant.TenantId;
@@ -71,6 +77,18 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             item.Property(i => i.CreatedAt).IsRequired();
             item.Property(i => i.RowVersion).IsRowVersion();
             item.HasIndex(i => new { i.TenantId, i.Sku }).IsUnique().HasDatabaseName("UX_Items_Sku");
+        });
+
+        modelBuilder.Entity<ItemUnit>(unit =>
+        {
+            unit.ToTable("ItemUnits", t => t.HasCheckConstraint("CK_ItemUnits_Factor", "[Factor] > 0"));
+            unit.HasKey(u => new { u.TenantId, u.ItemId, u.Code });
+            ConfigureTenantOwned(unit);
+            unit.Property(u => u.Code).HasMaxLength(16).IsRequired();
+            unit.Property(u => u.Factor).HasPrecision(19, 4);
+            unit.Property(u => u.IsActive).HasDefaultValue(true);
+            unit.Property(u => u.CreatedAt).IsRequired();
+            unit.HasOne<Item>().WithMany().HasForeignKey(u => new { u.TenantId, u.ItemId }).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.HasSequence<long>("MovementIds").StartsAt(1).IncrementsBy(1);
@@ -142,6 +160,46 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             balance.HasIndex(b => new { b.TenantId, b.LocationId }).HasDatabaseName("IX_Balances_Location");
             balance.HasOne<Item>().WithMany().HasForeignKey(b => new { b.TenantId, b.ItemId }).OnDelete(DeleteBehavior.NoAction);
             balance.HasOne<Location>().WithMany().HasForeignKey(b => new { b.TenantId, b.LocationId }).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // Mutable work documents (plan D8): no triggers. inventory_app's schema grant has no DELETE.
+        modelBuilder.Entity<Stocktake>(stocktake =>
+        {
+            stocktake.ToTable("Stocktakes", t =>
+            {
+                t.HasCheckConstraint("CK_Stocktakes_Status", "[Status] IN ('Draft', 'Posting', 'Posted', 'Cancelled')");
+                // A Posted stocktake with no differences has no document (D13).
+                t.HasCheckConstraint("CK_Stocktakes_PostedDocument", "[PostedDocumentId] IS NULL OR [Status] = 'Posted'");
+            });
+            stocktake.HasKey(s => new { s.TenantId, s.Id });
+            ConfigureTenantOwned(stocktake);
+            stocktake.Property(s => s.Id).ValueGeneratedOnAdd();
+            stocktake.Property(s => s.Status).HasConversion<string>().HasMaxLength(16).IsUnicode(false).IsRequired();
+            stocktake.Property(s => s.Notes).HasMaxLength(500);
+            stocktake.Property(s => s.CreatedAt).IsRequired();
+            stocktake.Property(s => s.RowVersion).IsRowVersion();
+            stocktake.HasIndex(s => new { s.TenantId, s.LocationId }).IsUnique()
+                .HasFilter("[Status] IN ('Draft', 'Posting')").HasDatabaseName("UX_Stocktakes_Open");
+            stocktake.HasIndex(s => new { s.TenantId, s.CreatedAt }).HasDatabaseName("IX_Stocktakes_Created");
+            stocktake.HasOne<Location>().WithMany().HasForeignKey(s => new { s.TenantId, s.LocationId }).OnDelete(DeleteBehavior.NoAction);
+            stocktake.HasOne<StockDocument>().WithMany().HasForeignKey(s => new { s.TenantId, s.PostedDocumentId }).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<StocktakeLine>(line =>
+        {
+            line.ToTable("StocktakeLines", t =>
+            {
+                // IS NOT NULL is needed: a CHECK passes when its expression is UNKNOWN. ExpectedLastMovementId may stay
+                // null on a counted line, for a balance that never existed.
+                t.HasCheckConstraint("CK_StocktakeLines_Counted",
+                    "([CountedQuantity] IS NULL AND [ExpectedQuantity] IS NULL AND [CountedAt] IS NULL AND [CountedBy] IS NULL AND [ExpectedLastMovementId] IS NULL) " +
+                    "OR ([CountedQuantity] IS NOT NULL AND [CountedQuantity] >= 0 AND [ExpectedQuantity] IS NOT NULL AND [CountedAt] IS NOT NULL AND [CountedBy] IS NOT NULL)");
+                t.HasCheckConstraint("CK_StocktakeLines_UnitCost", "[UnitCost] IS NULL OR [UnitCost] >= 0");
+            });
+            line.HasKey(l => new { l.TenantId, l.StocktakeId, l.ItemId });
+            ConfigureTenantOwned(line);
+            line.HasOne<Stocktake>().WithMany().HasForeignKey(l => new { l.TenantId, l.StocktakeId }).OnDelete(DeleteBehavior.NoAction);
+            line.HasOne<Item>().WithMany().HasForeignKey(l => new { l.TenantId, l.ItemId }).OnDelete(DeleteBehavior.NoAction);
         });
     }
 

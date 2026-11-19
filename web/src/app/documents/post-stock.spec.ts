@@ -19,6 +19,7 @@ interface LineGroup {
     quantity: FormControl<number | null>;
     unitCost: FormControl<number | null>;
     direction: FormControl<string>;
+    unit: FormControl<string>;
   };
 }
 
@@ -47,12 +48,15 @@ describe('PostStock', () => {
   const post = vi.fn();
   const balance = vi.fn();
   const open = vi.fn();
+  const getItem = vi.fn();
   const paramMap = new BehaviorSubject(convertToParamMap({ type: 'receipt' }));
 
   beforeEach(async () => {
     post.mockReset();
     balance.mockReset();
     open.mockReset();
+    getItem.mockReset();
+    getItem.mockResolvedValue({ ...ITEM, balances: [], units: [] });
     balance.mockRejectedValue(new Error('nope'));
     open.mockReturnValue({ afterClosed: () => of(true) });
     paramMap.next(convertToParamMap({ type: 'receipt' }));
@@ -63,7 +67,10 @@ describe('PostStock', () => {
         { provide: ActivatedRoute, useValue: { paramMap } },
         { provide: DocumentsService, useValue: { post } },
         { provide: StockService, useValue: { balance } },
-        { provide: ItemsService, useValue: { list: vi.fn().mockResolvedValue({ items: [] }) } },
+        {
+          provide: ItemsService,
+          useValue: { list: vi.fn().mockResolvedValue({ items: [] }), get: getItem },
+        },
         {
           provide: LocationsService,
           useValue: {
@@ -302,6 +309,101 @@ describe('PostStock', () => {
     expect(el.querySelector('.hint')?.textContent).toContain(
       'Only 5 pc on hand at MAIN. This will take the balance negative.',
     );
+  });
+
+  describe('units', () => {
+    const RICE = { ...ITEM, id: 'i2', sku: 'RICE', baseUnit: 'kg' };
+    const SACK = { code: 'sack', factor: 25, isActive: true };
+    const OLD = { code: 'bag', factor: 5, isActive: false };
+
+    function chooseRice(c: PostStockInternals): FormGroup & LineGroup {
+      const line = c.form.controls.lines.at(0);
+      line.controls.item.setValue(RICE);
+      return line;
+    }
+
+    it('hides the Unit select for an item with no units', async () => {
+      const { fixture, c } = await setup('receipt');
+      chooseRice(c);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('#post-unit-0')).toBeNull();
+      expect(getItem).toHaveBeenCalledExactlyOnceWith('i2');
+    });
+
+    it('shows the Unit select with the active units, and posts the chosen unit', async () => {
+      getItem.mockResolvedValue({ ...RICE, balances: [], units: [SACK, OLD] });
+      post.mockResolvedValue({ id: 'd', type: 'Receipt' });
+      const { fixture, c } = await setup('receipt');
+      c.form.controls.header.controls['locationId'].setValue('l1');
+      const line = chooseRice(c);
+      line.controls.quantity.setValue(1);
+      line.controls.unitCost.setValue(1250);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('#post-unit-0')).not.toBeNull();
+      expect(el.querySelector('label[for="post-unit-0"]')?.textContent).toContain('Unit');
+
+      line.controls.unit.setValue('sack');
+      fixture.detectChanges();
+      expect(el.querySelector('label[for="post-cost-0"]')?.textContent).toContain('per sack');
+      expect(el.querySelector('.post-bar')?.textContent).toContain('₱1,250.00');
+      await c.submit();
+      expect(post.mock.calls[0][2].lines).toEqual([
+        { itemId: 'i2', quantity: 1, unitCost: 1250, unit: 'sack' },
+      ]);
+    });
+
+    it('omits the unit when the base unit is chosen', async () => {
+      getItem.mockResolvedValue({ ...RICE, balances: [], units: [SACK] });
+      post.mockResolvedValue({ id: 'd', type: 'Receipt' });
+      const { fixture, c } = await setup('receipt');
+      c.form.controls.header.controls['locationId'].setValue('l1');
+      const line = chooseRice(c);
+      line.controls.quantity.setValue(25);
+      line.controls.unitCost.setValue(50);
+      await fixture.whenStable();
+      await c.submit();
+      expect(post.mock.calls[0][2].lines).toEqual([{ itemId: 'i2', quantity: 25, unitCost: 50 }]);
+    });
+
+    it('fetches an item once and warns in base units', async () => {
+      getItem.mockResolvedValue({ ...RICE, balances: [], units: [SACK] });
+      balance.mockResolvedValue({ onHand: 40, averageCost: 50 });
+      const { fixture, c } = await setup('issue');
+      c.form.controls.header.controls['locationId'].setValue('l1');
+      const line = chooseRice(c);
+      line.controls.item.setValue(RICE);
+      line.controls.quantity.setValue(2);
+      await fixture.whenStable();
+      line.controls.unit.setValue('sack');
+      fixture.detectChanges();
+      expect(getItem).toHaveBeenCalledTimes(1);
+      const el = fixture.nativeElement as HTMLElement;
+      // 2 sacks = 50 kg > 40 kg on hand; the value is 50 kg x 50.
+      expect(el.querySelector('.hint')?.textContent).toContain('Only 40 kg on hand at MAIN');
+      expect(el.querySelector('.post-bar')?.textContent).toContain('₱2,500.00');
+    });
+
+    it('marks the Unit select on a 400 for lines[0].unit', async () => {
+      getItem.mockResolvedValue({ ...RICE, balances: [], units: [SACK] });
+      const { fixture, c } = await setup('receipt');
+      c.form.controls.header.controls['locationId'].setValue('l1');
+      const line = chooseRice(c);
+      line.controls.quantity.setValue(1);
+      line.controls.unitCost.setValue(1);
+      await fixture.whenStable();
+      line.controls.unit.setValue('sack');
+      post.mockRejectedValue(
+        new HttpErrorResponse({
+          status: 400,
+          error: { type: '/problems/validation', errors: { 'lines[0].unit': ['Unknown unit.'] } },
+        }),
+      );
+      await c.submit();
+      expect(line.controls.unit.errors?.['server']).toBe('Unknown unit.');
+    });
   });
 
   it('labels the fields with the label-above pattern', async () => {
