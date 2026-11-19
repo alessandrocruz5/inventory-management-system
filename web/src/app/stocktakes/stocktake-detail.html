@@ -1,0 +1,171 @@
+<a class="back-link" routerLink="/stocktakes"><mat-icon>arrow_back</mat-icon>Counts</a>
+
+@if (error(); as message) {
+  <p class="banner banner--bad" role="alert"><mat-icon>error</mat-icon>{{ message }}</p>
+}
+
+@if (loading() && !stocktake() && !error()) {
+  <div class="card">
+    <div class="skeleton-row"></div>
+    <div class="skeleton-row"></div>
+    <div class="skeleton-row"></div>
+  </div>
+}
+
+@if (stocktake(); as st) {
+  <div class="title-row">
+    <h1 class="page-title">{{ st.locationName }}</h1>
+    <span class="mono ref">{{ st.locationCode }}</span>
+    <app-status-pill [tone]="statusTone(st.status)" [label]="statusLabel(st.status)" />
+  </div>
+
+  <p class="started muted">
+    Started by {{ startedBy(st) }} · {{ formatDate(st.createdAt) }}
+    @if (st.notes) {
+      · {{ st.notes }}
+    }
+  </p>
+
+  @if (banner(); as message) {
+    <p class="banner banner--bad" role="alert"><mat-icon>error</mat-icon>{{ message }}</p>
+  }
+
+  @if (st.status === 'Posted') {
+    <p class="banner banner--good" role="status" data-testid="posted-notice">
+      <mat-icon>check_circle</mat-icon>
+      @if (st.postedDocumentId) {
+        <span><a [routerLink]="['/documents', st.postedDocumentId]">View the correction</a></span>
+      } @else {
+        <span>No differences — nothing was posted.</span>
+      }
+    </p>
+  }
+  @if (st.status === 'Cancelled') {
+    <p class="banner banner--neutral" role="status">
+      <mat-icon>info</mat-icon>This count was cancelled. Nothing was posted.
+    </p>
+  }
+  @if (isPosting() && isAdmin()) {
+    <p class="banner banner--warn" role="status" data-testid="posting-notice">
+      <mat-icon>info</mat-icon>Posting didn't finish. Post again to complete it.
+    </p>
+  }
+
+  <div class="summary-row">
+    <p class="summary" data-testid="summary">
+      {{ countedCount() }} of {{ st.lines.length }} counted · {{ differenceCount() }}
+      {{ differenceCount() === 1 ? 'difference' : 'differences' }}
+    </p>
+    @if (canPost() || (isAdmin() && isDraft())) {
+      <div class="admin-actions">
+        @if (isAdmin() && isDraft()) {
+          <button
+            mat-stroked-button
+            type="button"
+            data-testid="cancel-count"
+            [disabled]="busy()"
+            (click)="cancel()"
+          >
+            Cancel count
+          </button>
+        }
+        @if (canPost()) {
+          <button
+            mat-flat-button
+            type="button"
+            data-testid="post-count"
+            [disabled]="busy()"
+            (click)="post()"
+          >
+            Post count
+          </button>
+        }
+      </div>
+    }
+  </div>
+
+  @if (isDraft()) {
+    <div class="card add-card">
+      <div class="field">
+        <label class="field-label" for="count-add-item">Add an item</label>
+        <mat-form-field subscriptSizing="dynamic">
+          <input
+            matInput
+            id="count-add-item"
+            placeholder="Search by SKU or name"
+            [formControl]="search"
+            [matAutocomplete]="auto"
+          />
+          <mat-autocomplete
+            #auto="matAutocomplete"
+            [displayWith]="itemLabel"
+            (optionSelected)="addItem($event)"
+          >
+            @for (o of options(); track o.id) {
+              <mat-option [value]="o">{{ o.sku }} · {{ o.name }}</mat-option>
+            }
+          </mat-autocomplete>
+        </mat-form-field>
+      </div>
+    </div>
+  }
+
+  <ng-template #rowBody let-line>
+    <span class="line-head">
+      <span class="line-name">
+        <span class="line-sku mono muted">{{ line.sku }}</span>
+        <span class="line-title">{{ line.name }}</span>
+      </span>
+      @if (line.countedQuantity !== null) {
+        <span
+          class="line-diff num"
+          [class.tone-bad]="line.difference < 0"
+          [class.muted]="line.difference === 0"
+          data-testid="difference"
+          >{{ differenceText(line) }}</span
+        >
+      }
+    </span>
+    <span class="line-figures">
+      @if (line.countedQuantity !== null) {
+        <span data-testid="expected"
+          >Expected {{ formatQuantity(line.expectedQuantity) }} {{ line.baseUnit }}</span
+        >
+        <span data-testid="counted"
+          >Counted {{ formatQuantity(line.countedQuantity) }} {{ line.baseUnit }}</span
+        >
+      } @else {
+        <span class="muted" data-testid="counted">Not counted</span>
+      }
+      @if (estimate(line); as value) {
+        <span class="muted">≈ {{ formatMoney(value) }}</span>
+      }
+    </span>
+    @if (line.movedSinceCount) {
+      <span class="line-note banner banner--warn" data-testid="moved"
+        ><mat-icon>info</mat-icon>Stock moved since this count — recount?</span
+      >
+    }
+  </ng-template>
+
+  <div class="card lines-card">
+    @for (line of st.lines; track line.itemId) {
+      <div class="line" id="line-{{ line.itemId }}" [class.line--flag]="rowErrors()[line.itemId]">
+        @if (isDraft()) {
+          <button class="line-button" type="button" data-testid="line" (click)="openCount(line)">
+            <ng-container *ngTemplateOutlet="rowBody; context: { $implicit: line }" />
+          </button>
+        } @else {
+          <div class="line-button line-button--static" data-testid="line">
+            <ng-container *ngTemplateOutlet="rowBody; context: { $implicit: line }" />
+          </div>
+        }
+        @if (rowErrors()[line.itemId]; as message) {
+          <p class="line-error" role="alert" data-testid="line-error">{{ message }}</p>
+        }
+      </div>
+    } @empty {
+      <p class="empty-state">Nothing to count yet. Add an item above.</p>
+    }
+  </div>
+}

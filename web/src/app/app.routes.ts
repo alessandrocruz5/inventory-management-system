@@ -42,6 +42,16 @@ export const routes: Routes = [
     loadComponent: () => import('./documents/document-detail').then((m) => m.DocumentDetail),
   },
   {
+    path: 'stocktakes',
+    canActivate: [authGuard],
+    loadComponent: () => import('./stocktakes/stocktakes').then((m) => m.Stocktakes),
+  },
+  {
+    path: 'stocktakes/:id',
+    canActivate: [authGuard],
+    loadComponent: () => import('./stocktakes/stocktake-detail').then((m) => m.StocktakeDetail),
+  },
+  {
     path: 'admin/ledger',
     canActivate: [authGuard, adminGuard],
     loadComponent: () => import('./ledger/ledger-health').then((m) => m.LedgerHealth),
