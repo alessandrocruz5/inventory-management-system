@@ -41,6 +41,11 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
     [InlineData("physical-negative-value", "CK_StockBalances_Physical")]
     [InlineData("virtual-value", "CK_StockBalances_VirtualValue")]
     [InlineData("unit-zero-factor", "CK_ItemUnits_Factor")]
+    [InlineData("stocktake-status", "CK_Stocktakes_Status")]
+    [InlineData("stocktake-draft-with-document", "CK_Stocktakes_PostedDocument")]
+    [InlineData("line-counted-without-expected", "CK_StocktakeLines_Counted")]
+    [InlineData("line-negative-count", "CK_StocktakeLines_Counted")]
+    [InlineData("line-negative-cost", "CK_StocktakeLines_UnitCost")]
     public async Task Checks_reject_bad_rows(string @case, string check)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -70,6 +75,14 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
             "physical-negative-value" => () => LedgerRows.AddBalanceAsync(c, item, physical, isVirtual: false, allowNegative: false, 1m, -1m, ct),
             "virtual-value" => () => LedgerRows.AddBalanceAsync(c, item, supplier, isVirtual: true, allowNegative: false, -5m, 1m, ct),
             "unit-zero-factor" => () => AddItemUnitAsync(c, item, "case", 0m, ct),
+            "stocktake-status" => () => AddStocktakeAsync(c, physical, "Open", ct),
+            "stocktake-draft-with-document" => () => AddStocktakeAsync(c, physical, "Draft", ct, postedDocumentId: receipt),
+            "line-counted-without-expected" => async () =>
+                await AddStocktakeLineAsync(c, await AddStocktakeAsync(c, physical, "Draft", ct), item, ct, counted: 5m, stamped: true),
+            "line-negative-count" => async () =>
+                await AddStocktakeLineAsync(c, await AddStocktakeAsync(c, physical, "Draft", ct), item, ct, expected: 0m, counted: -1m, stamped: true),
+            "line-negative-cost" => async () =>
+                await AddStocktakeLineAsync(c, await AddStocktakeAsync(c, physical, "Draft", ct), item, ct, unitCost: -1m),
             _ => throw new ArgumentOutOfRangeException(nameof(@case), @case, null),
         };
 
@@ -97,9 +110,20 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
         await LedgerRows.AddDocumentAsync(c, ct, type: "Adjustment", reasonCode: "CountCorrection");
         await LedgerRows.AddDocumentAsync(c, ct, type: "Reversal", reverses: receipt);
 
+        // An uncounted line; a counted line below zero at a negative-stock location, on a balance that never existed (plan D8).
+        var stocktake = await AddStocktakeAsync(c, negative, "Draft", ct);
+        var other = await LedgerRows.AddItemAsync(c, NewCode("I"), ct);
+        await AddStocktakeLineAsync(c, stocktake, item, ct);
+        await AddStocktakeLineAsync(c, stocktake, other, ct, expected: -2m, counted: 0m, stamped: true);
+        // A Posted stocktake with no differences has no document (D13); one with differences has its adjustment.
+        await AddStocktakeAsync(c, physical, "Posted", ct);
+        await AddStocktakeAsync(c, physical, "Posted", ct, postedDocumentId: receipt);
+
         (await ScalarAsync<int>(c, "SELECT COUNT(*) FROM inventory.StockDocuments", ct)).ShouldBe(3);
         (await ScalarAsync<int>(c, "SELECT COUNT(*) FROM inventory.StockMovements", ct)).ShouldBe(1);
         (await ScalarAsync<int>(c, "SELECT COUNT(*) FROM inventory.StockBalances", ct)).ShouldBe(2);
+        (await ScalarAsync<int>(c, "SELECT COUNT(*) FROM inventory.Stocktakes", ct)).ShouldBe(3);
+        (await ScalarAsync<int>(c, "SELECT COUNT(*) FROM inventory.StocktakeLines", ct)).ShouldBe(2);
     }
 
     [Fact]
@@ -140,6 +164,19 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
         var sameUnit = await Should.ThrowAsync<SqlException>(AddItemUnitAsync(asA, item, "case", 24m, ct));
         sameUnit.Number.ShouldBe(DuplicatePrimaryKey);
         sameUnit.Message.ShouldContain("PK_ItemUnits");
+
+        // One open (Draft or Posting) stocktake per location (plan D12); closed ones don't count.
+        await AddStocktakeAsync(asA, physical, "Draft", ct);
+        var secondDraft = await Should.ThrowAsync<SqlException>(AddStocktakeAsync(asA, physical, "Draft", ct));
+        secondDraft.Number.ShouldBe(DuplicateKey);
+        secondDraft.Message.ShouldContain("UX_Stocktakes_Open");
+        var posting = await Should.ThrowAsync<SqlException>(AddStocktakeAsync(asA, physical, "Posting", ct));
+        posting.Number.ShouldBe(DuplicateKey);
+        posting.Message.ShouldContain("UX_Stocktakes_Open");
+
+        var counted = await LedgerRows.AddLocationAsync(asA, NewCode("L"), ct);
+        await AddStocktakeAsync(asA, counted, "Cancelled", ct);
+        await AddStocktakeAsync(asA, counted, "Draft", ct);
     }
 
     [Fact]
@@ -364,6 +401,43 @@ public sealed class LedgerSchemaTests(DatabaseFixture db)
         factorParameter.Precision = 19;
         factorParameter.Scale = 4;
         factorParameter.Value = factor;
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task<Guid> AddStocktakeAsync(SqlConnection c, Guid location, string status, CancellationToken ct, Guid? postedDocumentId = null)
+    {
+        await using var command = new SqlCommand("""
+            DECLARE @id uniqueidentifier = NEWID();
+            INSERT INTO inventory.Stocktakes (Id, LocationId, Status, PostedDocumentId, CreatedAt, CreatedBy)
+            VALUES (@id, @location, @status, @document, SYSDATETIMEOFFSET(), NEWID());
+            SELECT @id;
+            """, c);
+        command.Parameters.Add("@location", SqlDbType.UniqueIdentifier).Value = location;
+        command.Parameters.Add("@status", SqlDbType.VarChar, 16).Value = status;
+        command.Parameters.Add("@document", SqlDbType.UniqueIdentifier).Value = (object?)postedDocumentId ?? DBNull.Value;
+        return (Guid)(await command.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary><paramref name="stamped"/> sets <c>CountedAt</c> and <c>CountedBy</c>.</summary>
+    private static async Task AddStocktakeLineAsync(SqlConnection c, Guid stocktake, Guid item, CancellationToken ct,
+        decimal? expected = null, decimal? counted = null, decimal? unitCost = null, bool stamped = false)
+    {
+        await using var command = new SqlCommand("""
+            INSERT INTO inventory.StocktakeLines (StocktakeId, ItemId, ExpectedQuantity, CountedQuantity, UnitCost, CountedAt, CountedBy)
+            VALUES (@stocktake, @item, @expected, @counted, @unitCost,
+                    CASE WHEN @stamped = 1 THEN SYSDATETIMEOFFSET() END, CASE WHEN @stamped = 1 THEN NEWID() END);
+            """, c);
+        command.Parameters.Add("@stocktake", SqlDbType.UniqueIdentifier).Value = stocktake;
+        command.Parameters.Add("@item", SqlDbType.UniqueIdentifier).Value = item;
+        foreach (var (name, value) in new[] { ("@expected", expected), ("@counted", counted), ("@unitCost", unitCost) })
+        {
+            var parameter = command.Parameters.Add(name, SqlDbType.Decimal);
+            parameter.Precision = 19;
+            parameter.Scale = 4;
+            parameter.Value = (object?)value ?? DBNull.Value;
+        }
+
+        command.Parameters.Add("@stamped", SqlDbType.Bit).Value = stamped;
         await command.ExecuteNonQueryAsync(ct);
     }
 

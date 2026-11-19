@@ -97,6 +97,19 @@ internal static class Problems
         type: ProblemTypes.Uri(ProblemTypes.CannotReverseReversal),
         extensions: new Dictionary<string, object?> { ["reversesDocumentId"] = reversesDocumentId });
 
+    public static ProblemHttpResult StocktakeOpenExists(Guid stocktakeId) => TypedResults.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "A stocktake is already open here",
+        type: ProblemTypes.Uri(ProblemTypes.StocktakeOpenExists),
+        extensions: new Dictionary<string, object?> { ["stocktakeId"] = stocktakeId });
+
+    /// <summary>The extension is <c>stocktakeStatus</c>, not <c>status</c>: that name is the HTTP status member of every problem.</summary>
+    public static ProblemHttpResult StocktakeNotOpen(StocktakeStatus status) => TypedResults.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "This stocktake is closed",
+        type: ProblemTypes.Uri(ProblemTypes.StocktakeNotOpen),
+        extensions: new Dictionary<string, object?> { ["stocktakeStatus"] = status.ToString() });
+
     /// <summary>SQL Server 2601 (unique index) or 2627 (unique constraint): a racing insert took the key.</summary>
     public static bool IsUniqueViolation(DbUpdateException exception) => exception.InnerException is SqlException { Number: 2601 or 2627 };
 }

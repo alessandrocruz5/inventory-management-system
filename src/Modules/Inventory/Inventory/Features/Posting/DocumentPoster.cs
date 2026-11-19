@@ -55,6 +55,15 @@ internal sealed class DocumentPoster(InventoryDbContext db, PostingEngine engine
         }
 
         var requestHash = hash(validated);
+        return await PostValidatedAsync(http, kind, key, validated, requestHash, ct);
+    }
+
+    /// <summary>Steps 2–10 for a posting already through step 1's pure checks, under <paramref name="key"/>. Stocktakes post
+    /// here with a server-derived key (plan D10); PostAsync calls it after reading and checking the client's header.</summary>
+    public async Task<Results<Created<DocumentResponse>, Ok<DocumentResponse>, ValidationProblem, ProblemHttpResult>> PostValidatedAsync(
+        HttpContext http, PostingKind kind, string key, ValidatedPosting validated, byte[] requestHash, CancellationToken ct)
+    {
+        var errors = new Dictionary<string, string[]>();
 
         // Step 2 before the database checks (D2).
         if (await engine.FindExistingAsync(key, requestHash, ct) is { } existing)

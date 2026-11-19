@@ -58,6 +58,19 @@ describe('problemMessage', () => {
     }
   });
 
+  it('maps the stocktake slugs', () => {
+    expect(
+      problemMessage({ type: '/problems/stocktake-open-exists', status: 409, stocktakeId: 'x' }),
+    ).toBe(PROBLEM_MESSAGES['stocktake-open-exists']);
+    expect(
+      problemMessage({
+        type: '/problems/stocktake-not-open',
+        status: 409,
+        stocktakeStatus: 'Posted',
+      }),
+    ).toBe(PROBLEM_MESSAGES['stocktake-not-open']);
+  });
+
   it.each([
     'idempotency-key-missing',
     'idempotency-key-reused',
