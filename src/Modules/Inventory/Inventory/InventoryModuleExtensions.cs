@@ -27,6 +27,13 @@ using Inventory.Features.Posting.PostTransfer;
 using Inventory.Features.Reversals.ReverseDocument;
 using Inventory.Features.Stock;
 using Inventory.Features.Stock.ListStock;
+using Inventory.Features.Stocktakes;
+using Inventory.Features.Stocktakes.CancelStocktake;
+using Inventory.Features.Stocktakes.CountStocktakeLine;
+using Inventory.Features.Stocktakes.GetStocktake;
+using Inventory.Features.Stocktakes.ListStocktakes;
+using Inventory.Features.Stocktakes.PostStocktake;
+using Inventory.Features.Stocktakes.StartStocktake;
 using Inventory.Persistence;
 using Inventory.Seeding;
 
@@ -78,6 +85,13 @@ public static class InventoryModuleExtensions
         builder.Services.AddScoped<GetDocumentHandler>();
         builder.Services.AddScoped<GetLedgerHealthHandler>();
         builder.Services.AddScoped<RebuildLedgerHandler>();
+        builder.Services.AddScoped<StocktakeReader>();
+        builder.Services.AddScoped<StartStocktakeHandler>();
+        builder.Services.AddScoped<ListStocktakesHandler>();
+        builder.Services.AddScoped<GetStocktakeHandler>();
+        builder.Services.AddScoped<CountStocktakeLineHandler>();
+        builder.Services.AddScoped<CancelStocktakeHandler>();
+        builder.Services.AddScoped<PostStocktakeHandler>();
         return builder;
     }
 
@@ -89,6 +103,7 @@ public static class InventoryModuleExtensions
         endpoints.MapStockEndpoints();
         endpoints.MapDocumentQueryEndpoints();
         endpoints.MapLedgerEndpoints();
+        endpoints.MapStocktakeEndpoints();
         return endpoints;
     }
 }

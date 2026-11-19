@@ -200,7 +200,7 @@ A bug that skips the EF filter, such as a raw SQL report or a stray `IgnoreQuery
 
 ## 5. Data model
 
-Six inventory tables, one sequence, and Identity. The sketch below is the contract; turn it into EF Core configurations and migrations, using `migrationBuilder.Sql` for triggers, the sequence, check constraints and RLS.
+Eight inventory tables, one sequence, and Identity. The sketch below is the contract; turn it into EF Core configurations and migrations, using `migrationBuilder.Sql` for triggers, the sequence, check constraints and RLS.
 
 ```sql
 -- schema platform
@@ -285,12 +285,39 @@ inventory.StockBalances (                     -- projection of the ledger
          OR (OnHand >= 0 AND StockValue >= 0 AND (OnHand <> 0 OR StockValue = 0))
          OR (OnHand < 0 AND AllowNegative = 1)),
   CHECK (IsVirtual = 0 OR StockValue = 0))
+
+inventory.Stocktakes (                        -- Sprint 3: a count of one physical location
+  TenantId, Id uniqueidentifier,
+  LocationId uniqueidentifier NOT NULL,
+  Status varchar(16) NOT NULL CHECK (Status IN ('Draft','Posting','Posted','Cancelled')),
+  Notes nvarchar(500) NULL,
+  PostedDocumentId uniqueidentifier NULL,     -- the CountCorrection adjustment; NULL on a Posted stocktake with no differences
+  CreatedAt, CreatedBy, UpdatedAt, UpdatedBy, RowVersion rowversion,
+  PRIMARY KEY (TenantId, Id),
+  FOREIGN KEY (TenantId, LocationId) -> Locations,
+  FOREIGN KEY (TenantId, PostedDocumentId) -> StockDocuments,
+  CHECK (PostedDocumentId IS NULL OR Status = 'Posted'),
+  UNIQUE (TenantId, LocationId) WHERE Status IN ('Draft','Posting'),   -- one open stocktake per location
+  INDEX IX_Stocktakes_Created (TenantId, CreatedAt))
+
+inventory.StocktakeLines (                    -- base units
+  TenantId, StocktakeId, ItemId,
+  ExpectedQuantity decimal(19,4) NULL,        -- the balance's OnHand when counted; may be negative
+  ExpectedLastMovementId bigint NULL,         -- the balance's LastMovementId when counted
+  CountedQuantity decimal(19,4) NULL,         -- >= 0; NULL until counted
+  UnitCost decimal(19,4) NULL CHECK (UnitCost >= 0),   -- per base unit; used only when the count is above ExpectedQuantity
+  CountedAt datetimeoffset NULL, CountedBy uniqueidentifier NULL,
+  PRIMARY KEY (TenantId, StocktakeId, ItemId),
+  FOREIGN KEY (TenantId, StocktakeId) -> Stocktakes,
+  FOREIGN KEY (TenantId, ItemId) -> Items,
+  CHECK (no count field is set, or CountedQuantity, ExpectedQuantity, CountedAt and CountedBy all are))
 ```
 
 **Rules**
 
 - Every foreign key is composite and includes `TenantId`, so a row can never point at another tenant's row.
 - An item's alternate units (`ItemUnits`) are fixed factors of its base unit: never edited, deactivated not deleted, and an inactive code stays reserved.
+- Stocktakes are work documents, not ledger rows: they post through the engine as one `CountCorrection` adjustment. Each line's difference is `CountedQuantity − ExpectedQuantity`, measured against the balance when that line was counted. A stocktake is cancelled, never deleted.
 - Every `TenantId` column defaults to `CAST(SESSION_CONTEXT(N'TenantId') AS uniqueidentifier)`, so raw-SQL inserts get the tenant without passing it. The BLOCK predicate still checks it.
 - Average cost is derived (`StockValue / OnHand`), never stored. It is undefined when `OnHand <= 0`; outflows then use `LastUnitCost`.
 - Virtual locations track quantity only. Their `OnHand` goes negative by design (Supplier ends at minus everything ever received) and `StockValue` stays 0.
@@ -316,8 +343,8 @@ Every stock change is a document posted in one transaction. A posted document is
 **Posting steps** (inside `PostingEngine`, wrapped in EF's execution strategy so deadlock error 1205 retries up to 3 times)
 
 1. Validate the request: 1–100 lines; each item at most once per document; quantity > 0 and unit cost ≥ 0, each with at most 4 decimals and at most 999,999,999.9999; a transfer's from and to locations differ; items and locations exist, are active and have the right kind. Ids from another tenant behave exactly like ids that don't exist. A line whose Round4(quantity × unitCost) exceeds 999,999,999,999,999.9999 (the decimal(19,4) maximum) fails on `lines[i].unitCost`. The checks that items and locations exist and are active run after step 2, so a replay of a successful post returns the original even if master data has changed since.
-2. Idempotency fast path: look up `(TenantId, IdempotencyKey)`. Same `RequestHash` → return the stored document with `200` and header `Idempotent-Replayed: true`. Different hash → `409 idempotency-key-reused`. The hash is SHA-256 over the HTTP method, the route and the validated request re-serialized canonically: fixed property order, decimals without trailing zeros, absent and null treated alike. Only a successful post consumes a key. The hash covers the validated request, so the lookup runs right after the pure checks of step 1.
-3. Begin the transaction (READ COMMITTED with snapshot reads on). Take the tenant's ledger lock: `sp_getapplock` on `ledger:<TenantId>` in `Shared` mode, owned by the transaction. Rebuild takes it in `Exclusive` mode.
+2. Idempotency fast path: look up `(TenantId, IdempotencyKey)`. Same `RequestHash` → return the stored document with `200` and header `Idempotent-Replayed: true`. Different hash → `409 idempotency-key-reused`. The hash is SHA-256 over the HTTP method, the route and the validated request re-serialized canonically: fixed property order, decimals without trailing zeros, absent and null treated alike. Only a successful post consumes a key. The hash covers the validated request, so the lookup runs right after the pure checks of step 1. Stocktakes post with the server-derived key `stocktake:<id>`; clients may not send keys with that prefix (plan D10).
+3. Begin the transaction (READ COMMITTED with snapshot reads on). Take the tenant's ledger lock: `sp_getapplock` on `ledger:<TenantId>` in `Shared` mode, owned by the transaction. Rebuild takes it in `Exclusive` mode. A caller's guard runs here, after the ledger lock and before step 4 (stocktakes: `UPDLOCK` on the stocktake row, status `Posting` or already `Posted`, and the sheet's `RequestHash` unchanged); a failed guard writes nothing and is `409 concurrency-conflict` (plan D17). Locks are taken in the order ledger → stocktake → document → balances.
 4. Insert the `StockDocuments` row, complete and final, because the trigger forbids a later UPDATE. This claims the key: a parallel duplicate blocks on the unique index until this transaction ends, then gets 2627/2601, rolls back and answers as a replay (step 2). If this transaction rolls back, the duplicate proceeds.
 5. Make sure every balance row the document touches exists: `INSERT … WHERE NOT EXISTS` in `(ItemId, LocationId)` order, copying `IsVirtual` and `AllowNegative` from `Locations`, and swallow unique-key errors 2627/2601 from a concurrent insert.
 6. Lock all touched balance rows in one statement, `WITH (UPDLOCK, ROWLOCK)`, seeking on the clustered key. The clustered key `(TenantId, ItemId, LocationId)`, not the `ORDER BY`, is what makes every transaction lock in the same order and keeps A→B and B→A transfers from deadlocking **\[Likely\]**. Add no index that changes this access path.
@@ -573,6 +600,12 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 | `GET /stock` | any | Balances by item × physical location with average cost and value; filter by item or location; totals for the whole filter, not just the page |
 | `GET /ledger/health` | Admin | INV-1 to INV-5 results with failing rows |
 | `POST /ledger/rebuild` | Admin | Rebuild and return the diff |
+| `GET /stocktakes` | any | Newest first; filter `status` and `locationId` |
+| `POST /stocktakes` | Staff, Admin | Start a count of one active physical location, prefilled with its stocked items; one open (Draft or Posting) per location |
+| `GET /stocktakes/{id}` | any | Lines in SKU order, each with its count, its snapshot and the current balance |
+| `PUT /stocktakes/{id}/lines/{itemId}` | Staff, Admin | Record a count with the balance snapshot it is measured against; adds the item if it isn't listed; Draft only |
+| `POST /stocktakes/{id}/post` | Admin | Post the differences as one `CountCorrection` adjustment, exactly once (Draft → Posting → Posted); empty body |
+| `POST /stocktakes/{id}/cancel` | Admin | Draft only; idempotent; empty body |
 
 **Request bodies**
 
@@ -602,6 +635,8 @@ POST /api/documents/adjustments
 
 Successful posts return `201 Created` with the full document, its movements with costs, and the resulting balances. Replays return `200` with `Idempotent-Replayed: true`.
 
+**Stocktake bodies.** `POST /stocktakes` takes `{ "locationId": "…", "notes": null }`. `PUT /stocktakes/{id}/lines/{itemId}` takes `{ "quantity": 2, "unit": "sack", "unitCost": null }`: `unit` works as on postings, and `unitCost` is per base unit, used only when the count is above the snapshot. Post and cancel take no body and no `Idempotency-Key`. Every stocktake route except the list returns the stocktake detail. A post that fails leaves the stocktake in Draft: `400` on an uncounted line (`lines[j].quantity`, where `j` is the line's index in SKU order), on no lines or more than 100 differences (`lines`), or the engine's own problems, with line keys mapped to `j`. A post whose sheet changed under it gets `409 concurrency-conflict` and leaves the stocktake as it is. A post with no differences is Posted with no document.
+
 **Problem types** (a relative URI, allowed by RFC 9457: the `type` field is `/problems/<slug>`)
 
 | Slug | Status | Extra fields |
@@ -613,6 +648,8 @@ Successful posts return `201 Created` with the full document, its movements with
 | `reversal-not-latest` | 409 | `itemId`, `locationId`, `blockingDocumentId` |
 | `already-reversed` | 409 | `reversalDocumentId` |
 | `cannot-reverse-reversal` | 422 | `reversesDocumentId` |
+| `stocktake-open-exists` | 409 | `stocktakeId` |
+| `stocktake-not-open` | 409 | `stocktakeStatus` |
 | `concurrency-conflict` | 409 | — (after 3 retries, or a stale `version` on an edit) |
 | `insufficient-stock` | 422 | `itemId`, `locationId`, `available`, `requested` |
 | `inactive-item` / `inactive-location` | 422 | the id |
@@ -676,6 +713,7 @@ The tests are the portfolio. Each one below must exist by name, and each proves 
 | T14 | Staff signs in, receives 10 @ ₱100, issues 3, sees 7 and ₱700.00; Admin reverses the issue and sees 10 | Playwright | End to end |
 | T15 | Vector sets N and X; toggle off with a negative balance; Staff tries to flip the toggle | Unit + integration | Estimate costing, revaluation and value conservation; 422 negative-balances-exist; 403 for Staff |
 | T16 | Vector set U; unit errors; replays with a unit | Unit + integration | Inflow cost in the entered unit; exact conversion; byte-stable hashes |
+| T17 | Stocktake snapshot deltas, exactly-once post, crash heal, roles | Integration | D8–D15 |
 
 **Tooling.** xUnit v3, Shouldly, `WebApplicationFactory<Program>`, Testcontainers.MsSql pinned to `mcr.microsoft.com/mssql/server:2025-latest`, `Microsoft.Extensions.TimeProvider.Testing`, NetArchTest.Rules, Vitest, Playwright. Prefer the real database over mocks; use NSubstitute only where a fake is impossible.
 
@@ -763,3 +801,5 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-17: Sprint 2 UI redesign ([[2026-11-17-ui-redesign]]) shows /items as a list with per-row actions instead of an AG Grid (D1).
 - 2026-11-18: Sprint 3 (units-stocktakes plan) adds item units (§5, §9) and base-unit immutability.
 - 2026-11-18: Sprint 3 D2 (approved): inflow cost in the entered unit via PostingLine.UnitFactor; vector set U, and `unit` on request lines (§9, T16).
+- 2026-11-18: Sprint 3 D10 (approved): stocktakes (§5, §6, §9, T17).
+- 2026-11-19: IMS-30 code review D17 (approved): stocktake posting guard in §6 step 3.

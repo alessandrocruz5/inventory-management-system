@@ -19,6 +19,9 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
     'Stock of this item has moved since this document, so it can no longer be reversed. Post a correcting document instead.',
   'already-reversed': 'This document has already been reversed.',
   'cannot-reverse-reversal': 'A reversal cannot be reversed. Post a new document instead.',
+  'stocktake-open-exists':
+    'This location already has a stocktake in progress. Open it to continue counting.',
+  'stocktake-not-open': 'This stocktake has already been posted or cancelled.',
 };
 
 export const DEFAULT_PROBLEM_MESSAGE = 'Something went wrong. Please try again.';

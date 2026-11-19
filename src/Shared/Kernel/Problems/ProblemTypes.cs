@@ -48,6 +48,12 @@ public static class ProblemTypes
     /// <summary>The document is itself a reversal, which can't be reversed (spec §6).</summary>
     public const string CannotReverseReversal = "cannot-reverse-reversal";
 
+    /// <summary>The location already has an open stocktake (plan D12).</summary>
+    public const string StocktakeOpenExists = "stocktake-open-exists";
+
+    /// <summary>The stocktake isn't in a state that allows this (plan D10/D12).</summary>
+    public const string StocktakeNotOpen = "stocktake-not-open";
+
     /// <summary>The problem <c>type</c> for a slug.</summary>
     public static string Uri(string slug) => Prefix + slug;
 }
