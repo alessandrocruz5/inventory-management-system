@@ -629,4 +629,90 @@ public sealed class PostingValidationTests
         errors.Keys.ShouldBe(["lines[0].unitCost"]);
         errors["lines[0].unitCost"].ShouldBe(["The line total is too large."]);
     }
+
+    [Fact]
+    public void A_unit_is_trimmed_and_lowercased()
+    {
+        ValidReceipt(Receipt(new PostReceiptLine(Item, 1m, 500m, " Case "))).Lines[0].Unit.ShouldBe("case");
+        ValidIssue(Issue(new PostIssueLine(Item, 1m, "KG"))).Lines[0].Unit.ShouldBe("kg");
+        ValidTransfer(Transfer(new PostTransferLine(Item, 1m, " Sack"))).Lines[0].Unit.ShouldBe("sack");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void An_absent_or_blank_unit_is_null(string? unit)
+    {
+        ValidReceipt(Receipt(new PostReceiptLine(Item, 1m, 10m, unit))).Lines[0].Unit.ShouldBeNull();
+        ValidAdjustment(Adjustment(new PostAdjustmentLine(Item, -1m, null, unit))).Lines[0].Unit.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_unit_of_16_characters_passes()
+    {
+        ValidReceipt(Receipt(new PostReceiptLine(Item, 1m, 10m, $" {new string('u', 16)} "))).Lines[0].Unit.ShouldBe(new string('u', 16));
+    }
+
+    [Fact]
+    public void A_unit_over_16_characters_fails()
+    {
+        var unit = new string('u', 17);
+
+        var errors = ReceiptErrors(Receipt(new PostReceiptLine(Item, 1m, 10m, unit)));
+        errors.Keys.ShouldBe(["lines[0].unit"]);
+        errors["lines[0].unit"].ShouldBe(["Unit must be at most 16 characters."]);
+
+        IssueErrors(Issue(new PostIssueLine(Item, 1m, unit))).Keys.ShouldBe(["lines[0].unit"]);
+        TransferErrors(Transfer(new PostTransferLine(Item, 1m, unit))).Keys.ShouldBe(["lines[0].unit"]);
+        AdjustmentErrors(Adjustment(new PostAdjustmentLine(Item, -1m, null, unit))).Keys.ShouldBe(["lines[0].unit"]);
+    }
+
+    [Fact]
+    public void A_unit_error_is_collected_with_the_other_line_errors()
+    {
+        ReceiptErrors(Receipt(new PostReceiptLine(Item, 0m, 10m, new string('u', 17))))
+            .Keys.ShouldBe(["lines[0].quantity", "lines[0].unit"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void An_adjustment_line_keeps_its_unit()
+    {
+        var posting = ValidAdjustment(Adjustment(
+            new PostAdjustmentLine(Item, -2m, null, "Sack"),
+            new PostAdjustmentLine(OtherItem, 1.5m, 480m, "case")));
+
+        posting.Lines.ShouldBe(
+        [
+            new ValidatedLine(1, Item, -2m, null, "sack"),
+            new ValidatedLine(2, OtherItem, 1.5m, 480m, "case"),
+        ]);
+    }
+
+    [Fact]
+    public void A_stocktake_idempotency_key_is_reserved()
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        PostingValidation.IdempotencyKey("stocktake:abc", errors, out var missing).ShouldBeNull();
+
+        missing.ShouldBeFalse();
+        errors.Keys.ShouldBe(["Idempotency-Key"]);
+        errors["Idempotency-Key"].ShouldBe(["This key prefix is reserved."]);
+        PostingValidation.StocktakeKeyPrefix.ShouldBe("stocktake:");
+    }
+
+    [Theory]
+    [InlineData("Stocktake:abc")]
+    [InlineData("x-stocktake:")]
+    [InlineData("stocktake")]
+    public void A_key_that_only_resembles_the_stocktake_prefix_is_accepted(string header)
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        PostingValidation.IdempotencyKey(header, errors, out var missing).ShouldBe(header);
+
+        missing.ShouldBeFalse();
+        errors.ShouldBeEmpty();
+    }
 }

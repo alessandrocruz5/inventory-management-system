@@ -28,7 +28,7 @@ import {
   firstValueFrom,
   takeUntil,
 } from 'rxjs';
-import { Item, ItemsService } from '../items/items.service';
+import { Item, ItemDetail, ItemUnit, ItemsService } from '../items/items.service';
 import { Location, LocationsService } from '../locations/locations.service';
 import { ConfirmDialog, ConfirmDialogData } from '../shared/confirm-dialog';
 import {
@@ -49,6 +49,7 @@ import {
   PostingHeader,
   PostingLine,
   amountValidator,
+  baseQuantity,
   buildPostingBody,
   duplicateItemLines,
   isOutflow,
@@ -98,6 +99,7 @@ export class PostStock {
   protected readonly reasons = ADJUSTMENT_REASONS;
   protected readonly reasonLabel = reasonLabel;
   protected readonly formatMoney = formatMoney;
+  protected readonly formatQuantity = formatQuantity;
 
   protected readonly type = signal<PostingType>('receipt');
   protected readonly title = computed(() => POSTING_TITLES[this.type()]);
@@ -109,6 +111,10 @@ export class PostStock {
   protected readonly posting = signal(false);
   protected readonly message = signal<string | null>(null);
   protected readonly originalDocumentId = signal<string | null>(null);
+
+  // Item details (for their units), fetched once per item id.
+  private readonly details = signal<ReadonlyMap<string, ItemDetail>>(new Map());
+  private readonly detailsPending = new Set<string>();
 
   private readonly tick = signal(0);
   private readonly removed = new Subject<FormGroup>();
@@ -200,7 +206,8 @@ export class PostStock {
     );
     const code = this.locations().find((l) => l.id === sourceId)?.code ?? '';
     const at = code ? ` at ${code}` : '';
-    if (isOutflow(this.type(), line) && line.quantity != null && line.quantity > have) {
+    const want = baseQuantity(line);
+    if (isOutflow(this.type(), line) && want != null && want > have) {
       return {
         tone: 'bad',
         icon: 'error',
@@ -265,7 +272,7 @@ export class PostStock {
       const message = over
         .map(
           (i) =>
-            `Line ${i + 1} asks for ${formatQuantity(lines[i].quantity!)} but only ${formatQuantity(this.onHand()[i]!)} is on hand.`,
+            `Line ${i + 1} asks for ${formatQuantity(baseQuantity(lines[i])!)} but only ${formatQuantity(this.onHand()[i]!)} is on hand.`,
         )
         .join(' ');
       const ok = await firstValueFrom(
@@ -333,6 +340,7 @@ export class PostStock {
       mark(group.controls.item, fields.itemId);
       mark(group.controls.quantity, fields.quantity);
       mark(group.controls.unitCost, fields.unitCost);
+      mark(group.controls.unit, fields.unit);
     }
     this.message.set(e.message ?? e.header.lines ?? null);
     this.originalDocumentId.set(e.originalDocumentId);
@@ -382,11 +390,15 @@ export class PostStock {
         amountValidator({ allowZero: true }),
       ]),
       direction: new FormControl<LineDirection>('add', { nonNullable: true }),
+      // The chosen unit's code; '' is the item's base unit.
+      unit: new FormControl('', { nonNullable: true }),
     });
     const gone = this.removed.pipe(filter((g) => g === group));
 
     group.controls.item.valueChanges.pipe(takeUntil(gone)).subscribe((value) => {
+      group.controls.unit.setValue('');
       if (typeof value !== 'string') {
+        void this.loadDetail(value.id);
         this.refreshOnHand(group);
       } else {
         this.setBalance(group, null);
@@ -411,12 +423,48 @@ export class PostStock {
 
   private lineValue(group: ReturnType<PostStock['makeLine']>): PostingLine {
     const item = group.controls.item.value;
+    const itemId = typeof item === 'object' ? item.id : null;
+    const chosen = group.controls.unit.value;
+    const unit = chosen ? this.activeUnits(itemId).find((u) => u.code === chosen) : undefined;
     return {
-      itemId: typeof item === 'object' ? item.id : null,
+      itemId,
       quantity: group.controls.quantity.value,
       unitCost: group.controls.unitCost.value,
       direction: group.controls.direction.value,
+      unit: unit?.code ?? null,
+      factor: unit?.factor ?? 1,
     };
+  }
+
+  private activeUnits(itemId: string | null): ItemUnit[] {
+    const units = itemId === null ? undefined : this.details().get(itemId)?.units;
+    return (units ?? []).filter((u) => u.isActive);
+  }
+
+  private async loadDetail(itemId: string): Promise<void> {
+    if (this.details().has(itemId) || this.detailsPending.has(itemId)) {
+      return;
+    }
+    this.detailsPending.add(itemId);
+    try {
+      const detail = await this.itemsService.get(itemId);
+      this.details.update((m) => new Map(m).set(itemId, detail));
+    } catch {
+      // The line stays in the base unit; the next pick of this item tries again.
+    } finally {
+      this.detailsPending.delete(itemId);
+    }
+  }
+
+  /** The item's active units besides the base unit; empty hides the Unit select. */
+  protected unitChoices(group: ReturnType<PostStock['makeLine']>): ItemUnit[] {
+    const item = group.controls.item.value;
+    return this.activeUnits(typeof item === 'object' ? item.id : null);
+  }
+
+  /** The unit the quantity is entered in: the chosen unit, else the item's base unit. */
+  protected entryUnitOf(group: ReturnType<PostStock['makeLine']>): string {
+    return this.lineValue(group).unit ?? this.unitOf(group);
   }
 
   protected unitOf(group: ReturnType<PostStock['makeLine']>): string {

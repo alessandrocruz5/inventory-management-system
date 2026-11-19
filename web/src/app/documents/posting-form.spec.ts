@@ -28,7 +28,15 @@ const header: PostingHeader = {
 };
 
 function line(over: Partial<PostingLine> = {}): PostingLine {
-  return { itemId: 'item-1', quantity: 2, unitCost: 5.5, direction: 'add', ...over };
+  return {
+    itemId: 'item-1',
+    quantity: 2,
+    unitCost: 5.5,
+    direction: 'add',
+    unit: null,
+    factor: 1,
+    ...over,
+  };
 }
 
 const TYPES: PostingType[] = ['receipt', 'issue', 'transfer', 'adjustment'];
@@ -102,6 +110,34 @@ describe('line editor', () => {
     ]);
   });
 
+  it('leaves the unit out of a base line and sends it for a case line', () => {
+    const body = buildPostingBody('receipt', header, [
+      line(),
+      line({ itemId: 'item-2', quantity: 1, unitCost: 1250, unit: 'case', factor: 25 }),
+    ]);
+    expect(body).toEqual({
+      locationId: 'loc-1',
+      reference: 'PO-1',
+      notes: null,
+      lines: [
+        { itemId: 'item-1', quantity: 2, unitCost: 5.5 },
+        { itemId: 'item-2', quantity: 1, unitCost: 1250, unit: 'case' },
+      ],
+    });
+    const base = (body as { lines: object[] }).lines[0];
+    expect(Object.keys(base)).toEqual(['itemId', 'quantity', 'unitCost']);
+    const issue = buildPostingBody('issue', header, [line({ unit: 'case', factor: 25 })]);
+    expect((issue as { lines: object[] }).lines).toEqual([
+      { itemId: 'item-1', quantity: 2, unit: 'case' },
+    ]);
+    const adjust = buildPostingBody('adjustment', header, [
+      line({ direction: 'remove', unit: 'case', factor: 25 }),
+    ]);
+    expect((adjust as { lines: object[] }).lines).toEqual([
+      { itemId: 'item-1', quantityDelta: -2, unitCost: null, unit: 'case' },
+    ]);
+  });
+
   it('classifies unit cost, outflow and source location', () => {
     const add = { direction: 'add' as const };
     const remove = { direction: 'remove' as const };
@@ -134,6 +170,16 @@ describe('line editor', () => {
         [1, 1],
       ),
     ).toEqual([0]);
+  });
+
+  it('compares the quantity in base units with on-hand', () => {
+    // 2 cases of 25 = 50 base units.
+    const lines = [line({ quantity: 2, unit: 'case', factor: 25 })];
+    expect(linesOverOnHand('issue', lines, [49])).toEqual([0]);
+    expect(linesOverOnHand('issue', lines, [50])).toEqual([]);
+    expect(
+      linesOverOnHand('issue', [line({ quantity: 0.3, unit: 'x', factor: 0.1 })], [0.03]),
+    ).toEqual([]);
   });
 
   it('finds the second and later occurrences of an item', () => {
@@ -206,6 +252,22 @@ describe('line editor', () => {
       });
       expect(result.message).toBe('There is not enough stock for one of the lines.');
       expect(result.renewKey).toBe(false);
+    });
+
+    it('maps lines[i].unit onto the unit field', () => {
+      const result = postingErrors(
+        'receipt',
+        {
+          type: '/problems/validation',
+          errors: { 'lines[0].unit': ['Unknown unit.'], 'lines[1].quantity': ['Not whole.'] },
+        },
+        lines,
+      );
+      expect(result.lines).toEqual({
+        0: { unit: 'Unknown unit.' },
+        1: { quantity: 'Not whole.' },
+      });
+      expect(result.message).toBeNull();
     });
 
     it('omits the unit when none is given', () => {
@@ -336,6 +398,17 @@ describe('postingTotal', () => {
   it('ignores a null quantity', () => {
     const lines = [line({ quantity: null, unitCost: 50 }), line({ quantity: 2, unitCost: 5 })];
     expect(postingTotal('receipt', lines, [null, null])).toBe(10);
+  });
+
+  it('values an issue in base units at the average cost', () => {
+    // 2 cases of 25 base units at 4.5 per base unit.
+    const lines = [line({ quantity: 2, unit: 'case', factor: 25 })];
+    expect(postingTotal('issue', lines, [4.5])).toBe(225);
+  });
+
+  it('keeps a unit-cost line at quantity x unit cost in the entered unit', () => {
+    const lines = [line({ quantity: 1, unitCost: 1250, unit: 'sack', factor: 25 })];
+    expect(postingTotal('receipt', lines, [null])).toBe(1250);
   });
 
   it('rounds to 4 decimal places', () => {

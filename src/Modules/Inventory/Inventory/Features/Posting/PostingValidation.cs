@@ -13,9 +13,11 @@ namespace Inventory.Features.Posting;
 
 /// <summary>
 /// A line that passed step 1. <c>LineNo</c> is its 1-based position in the request. <c>Quantity</c> is greater than
-/// zero, except on an adjustment, where it is the request's signed <c>quantityDelta</c> (never zero).
+/// zero, except on an adjustment, where it is the request's signed <c>quantityDelta</c> (never zero). <c>Unit</c>:
+/// normalized code, or null for the base unit (plan D5); <c>Quantity</c> is in that unit until <c>DocumentPoster</c>
+/// converts it.
 /// </summary>
-internal sealed record ValidatedLine(int LineNo, Guid ItemId, decimal Quantity, decimal? UnitCost);
+internal sealed record ValidatedLine(int LineNo, Guid ItemId, decimal Quantity, decimal? UnitCost, string? Unit = null);
 
 /// <summary>
 /// A request that passed step 1, with its text normalized (trimmed, empty → null). On a transfer, <c>LocationId</c> is
@@ -44,9 +46,13 @@ internal static class PostingValidation
 
     public const int MaxLines = 100;
 
+    /// <summary>Reserved for the server's stocktake postings (<c>stocktake:&lt;id&gt;</c>, plan D10); a client key with it is a 400.</summary>
+    internal const string StocktakeKeyPrefix = "stocktake:";
+
     private const int MaxReferenceLength = 100;
     private const int MaxNotesLength = 500;
     private const int MaxKeyLength = 64;
+    private const int MaxUnitLength = 16;
 
     private static readonly string MaxAmountText = MaxAmount.ToString("N4", CultureInfo.InvariantCulture);
 
@@ -59,7 +65,7 @@ internal static class PostingValidation
             request.Reference,
             request.Notes,
             request.Lines,
-            line => (line.ItemId, line.Quantity, line.UnitCost),
+            line => (line.ItemId, line.Quantity, line.UnitCost, line.Unit),
             withUnitCost: true,
             errors);
 
@@ -70,7 +76,7 @@ internal static class PostingValidation
             request.Reference,
             request.Notes,
             request.Lines,
-            line => (line.ItemId, line.Quantity, null),
+            line => (line.ItemId, line.Quantity, null, line.Unit),
             withUnitCost: false,
             errors);
 
@@ -93,7 +99,7 @@ internal static class PostingValidation
             request.Reference,
             request.Notes,
             request.Lines,
-            line => (line.ItemId, line.Quantity, null),
+            line => (line.ItemId, line.Quantity, null, line.Unit),
             (path, quantity, unitCost) => StandardAmounts(path, quantity, unitCost, withUnitCost: false, errors),
             errors);
 
@@ -117,7 +123,7 @@ internal static class PostingValidation
             request.Reference,
             request.Notes,
             request.Lines,
-            line => (line.ItemId, line.QuantityDelta, line.UnitCost),
+            line => (line.ItemId, line.QuantityDelta, line.UnitCost, line.Unit),
             (path, quantityDelta, unitCost) => AdjustmentAmounts(path, quantityDelta, unitCost, errors),
             errors);
 
@@ -130,7 +136,8 @@ internal static class PostingValidation
     /// Checks the header as sent: no trimming or case folding. No value, or one empty or whitespace value, returns null
     /// with <paramref name="missing"/> set (<c>idempotency-key-missing</c>). More than one value, or a value that doesn't
     /// fit <c>varchar(64)</c> as printable ASCII, returns null with <c>errors["Idempotency-Key"]</c> (<c>validation</c>):
-    /// joining repeated headers would post under a key the client never sent.
+    /// joining repeated headers would post under a key the client never sent. A key starting with
+    /// <see cref="StocktakeKeyPrefix"/> (ordinal) is also a <c>validation</c> error: the server owns that prefix (plan D10).
     /// </summary>
     public static string? IdempotencyKey(StringValues header, Dictionary<string, string[]> errors, out bool missing)
     {
@@ -155,6 +162,12 @@ internal static class PostingValidation
             return null;
         }
 
+        if (value.StartsWith(StocktakeKeyPrefix, StringComparison.Ordinal))
+        {
+            errors["Idempotency-Key"] = ["This key prefix is reserved."];
+            return null;
+        }
+
         return value;
     }
 
@@ -163,7 +176,7 @@ internal static class PostingValidation
         string? reference,
         string? notes,
         IReadOnlyList<TLine?>? lines,
-        Func<TLine, (Guid? ItemId, decimal? Quantity, decimal? UnitCost)> read,
+        Func<TLine, (Guid? ItemId, decimal? Quantity, decimal? UnitCost, string? Unit)> read,
         bool withUnitCost,
         Dictionary<string, string[]> errors)
         where TLine : class
@@ -198,15 +211,15 @@ internal static class PostingValidation
     }
 
     /// <summary>
-    /// The reference, notes and lines shared by every posting: text, the line count, null lines and item ids. Each
-    /// line's quantity and unit cost go through <paramref name="amounts"/>, which returns a null quantity when it
-    /// added an error; only lines with a valid quantity are returned.
+    /// The reference, notes and lines shared by every posting: text, the line count, null lines, item ids and units.
+    /// Each line's quantity and unit cost go through <paramref name="amounts"/>, which returns a null quantity when it
+    /// added an error; only lines with a valid quantity and unit are returned.
     /// </summary>
     private static (string? Reference, string? Notes, List<ValidatedLine> Lines) Body<TLine>(
         string? reference,
         string? notes,
         IReadOnlyList<TLine?>? lines,
-        Func<TLine, (Guid? ItemId, decimal? Quantity, decimal? UnitCost)> read,
+        Func<TLine, (Guid? ItemId, decimal? Quantity, decimal? UnitCost, string? Unit)> read,
         Func<string, decimal?, decimal?, (decimal? Quantity, decimal? UnitCost)> amounts,
         Dictionary<string, string[]> errors)
         where TLine : class
@@ -236,7 +249,7 @@ internal static class PostingValidation
                     continue;
                 }
 
-                var (itemId, quantity, unitCost) = read(line);
+                var (itemId, quantity, unitCost, unit) = read(line);
 
                 var item = itemId.GetValueOrDefault();
                 if (item == Guid.Empty)
@@ -249,9 +262,10 @@ internal static class PostingValidation
                 }
 
                 var (cleanQuantity, cleanCost) = amounts(path, quantity, unitCost);
-                if (cleanQuantity is { } validQuantity)
+                var unitValid = Unit(unit, $"{path}.unit", errors, out var cleanUnit);
+                if (cleanQuantity is { } validQuantity && unitValid)
                 {
-                    validLines.Add(new ValidatedLine(i + 1, item, validQuantity, cleanCost));
+                    validLines.Add(new ValidatedLine(i + 1, item, validQuantity, cleanCost, cleanUnit));
                 }
             }
         }
@@ -365,6 +379,24 @@ internal static class PostingValidation
         }
 
         return trimmed;
+    }
+
+    /// <summary>
+    /// A line's unit code (plan D5): trimmed and lowercased invariantly, empty becomes null (the base unit). Returns
+    /// false after adding an error when longer than <see cref="MaxUnitLength"/>. Whether the item has the unit is a
+    /// database check in <c>DocumentPoster</c>.
+    /// </summary>
+    private static bool Unit(string? value, string key, Dictionary<string, string[]> errors, out string? unit)
+    {
+        var trimmed = value?.Trim();
+        unit = string.IsNullOrEmpty(trimmed) ? null : trimmed.ToLowerInvariant();
+        if (unit is { Length: > MaxUnitLength })
+        {
+            errors[key] = [$"Unit must be at most {MaxUnitLength} characters."];
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>Returns the value when it is present, in range and has at most 4 dp; otherwise adds an error.</summary>

@@ -305,10 +305,10 @@ Every stock change is a document posted in one transaction. A posted document is
 
 | Document | From → To | Cost on each movement | Roles |
 | --- | --- | --- | --- |
-| Receipt | Supplier → physical | `quantity × unitCost` from the request | Staff, Admin |
+| Receipt | Supplier → physical | `quantity × unitCost` from the request, in the unit the request names (section 7) | Staff, Admin |
 | Issue | physical → Customer | Moving average at the source (section 7) | Staff, Admin |
 | Transfer | physical A → physical B | Moving average at A | Staff, Admin |
-| Adjustment, positive line | Adjustment → physical | Request `unitCost`; when omitted, `Round4(qty × StockValue / OnHand)`; required when `OnHand <= 0` | Admin |
+| Adjustment, positive line | Adjustment → physical | Request `unitCost` (per the request's unit); when omitted, `Round4(qty × StockValue / OnHand)`; required when `OnHand <= 0` | Admin |
 | Adjustment, negative line | physical → Adjustment | Moving average at the source | Admin |
 | Reversal | Each original movement, revaluations included, with From and To swapped | The original movement's `TotalCost`, exactly | Admin |
 | Revaluation (inside an inflow's document) | physical ↔ Adjustment, quantity 0 | The estimate variance the inflow settles (section 7) | system |
@@ -362,6 +362,7 @@ Each physical balance carries `OnHand` and `StockValue`. Inflows add their state
 
 // Receipt or positive adjustment line with a unit cost
 decimal InflowCost(decimal qty, decimal unitCost) => Round4(qty * unitCost);
+// A line in another unit (plan D2): Quantity is in base units, UnitFactor base units per entered unit; cost = InflowCost(Quantity / UnitFactor, unitCost), exactly Round4(entered qty × unitCost).
 
 // Positive adjustment line without a unit cost; only when b.OnHand > 0, otherwise unitCost is required
 decimal DefaultAdjustmentCost(decimal qty, Balance b) => Round4(qty * b.StockValue / b.OnHand);
@@ -477,6 +478,17 @@ Set N receives ₱1,180.0000. Issues take ₱1,154.0000 and revaluations ₱26.0
 
 Without the revaluation, X3 leaves 1 / −70.0000, and X4 would post a cost of −70 that the `TotalCost >= 0` check refuses.
 
+**Vector set U: location U, toggle off, item base unit `pc`, unit `case` = 12**
+
+| Step | Action | Line passed to `Post` (Quantity, UnitCost, UnitFactor) | Movement cost (₱) | U after: qty / value | LastUnitCost |
+| --- | --- | --- | --- | --- | --- |
+| U1 | Receive 1 case @ 500.00 | 12, 500.00, 12 | 500.0000 | 12 / 500.0000 | 41.6667 |
+| U2 | Receive 2.5 case @ 480.00 | 30, 480.00, 12 | 1,200.0000 | 42 / 1,700.0000 | 40.4762 |
+| U3 | Issue 0.5 case | 6, null, 12 | 242.8571 | 36 / 1,457.1429 | 40.4762 |
+| U4 | Issue 36 pc | 36, null, 1 | 1,457.1429 (the remainder) | 0 / 0.0000 | 40.4762 |
+
+The inflow is costed in the entered unit, with no per-base-unit rounding: U1 costs 500.0000, where 12 × Round4(500 / 12) = 12 × 41.6667 would give 500.0004. Received ₱1,700.0000 = issued ₱242.8571 + ₱1,457.1429. Outflows and the ledger stay in base units.
+
 ## 8. Tenancy, auth and security
 
 The tenant comes only from the auth cookie, and isolation is enforced twice: EF Core filters for normal queries, SQL Server row-level security for everything else. Neither layer trusts the other.
@@ -568,7 +580,8 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 POST /api/documents/receipts
 Idempotency-Key: 9b3c2e0a-6a77-4c1e-9d0f-2f3e1c8a4b10
 { "locationId": "…", "reference": "DR-10442", "notes": null,
-  "lines": [ { "itemId": "…", "quantity": 10, "unitCost": 100.00 } ] }
+  "lines": [ { "itemId": "…", "quantity": 10, "unitCost": 100.00 },
+             { "itemId": "…", "quantity": 2, "unitCost": 500.00, "unit": "case" } ] }
 
 POST /api/documents/issues
 { "locationId": "…", "reference": null, "notes": "sold at counter",
@@ -581,8 +594,11 @@ POST /api/documents/transfers
 POST /api/documents/adjustments
 { "locationId": "…", "reasonCode": "Damaged", "notes": "water damage",
   "lines": [ { "itemId": "…", "quantityDelta": -2 },
-             { "itemId": "…", "quantityDelta": 5, "unitCost": 42.50 } ] }
+             { "itemId": "…", "quantityDelta": 5, "unitCost": 42.50 },
+             { "itemId": "…", "quantityDelta": -1, "unit": "sack" } ] }
 ```
+
+`unit` is optional on every line: the item's base unit or one of its active units. Quantities and unit costs are in that unit; the document, movements and balances are always in the base unit, and `insufficient-stock` reports base units.
 
 Successful posts return `201 Created` with the full document, its movements with costs, and the resulting balances. Replays return `200` with `Idempotent-Replayed: true`.
 
@@ -659,6 +675,7 @@ The tests are the portfolio. Each one below must exist by name, and each proves 
 | T13 | Line editor, money and quantity formatting, idempotency key reuse | Vitest | Frontend logic |
 | T14 | Staff signs in, receives 10 @ ₱100, issues 3, sees 7 and ₱700.00; Admin reverses the issue and sees 10 | Playwright | End to end |
 | T15 | Vector sets N and X; toggle off with a negative balance; Staff tries to flip the toggle | Unit + integration | Estimate costing, revaluation and value conservation; 422 negative-balances-exist; 403 for Staff |
+| T16 | Vector set U; unit errors; replays with a unit | Unit + integration | Inflow cost in the entered unit; exact conversion; byte-stable hashes |
 
 **Tooling.** xUnit v3, Shouldly, `WebApplicationFactory<Program>`, Testcontainers.MsSql pinned to `mcr.microsoft.com/mssql/server:2025-latest`, `Microsoft.Extensions.TimeProvider.Testing`, NetArchTest.Rules, Vitest, Playwright. Prefer the real database over mocks; use NSubstitute only where a fake is impossible.
 
@@ -745,3 +762,4 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-17: S14 plan ([[2026-11-17-s14-azure]]) replaced Static Web Apps with nginx on Container Apps and added Data Protection keys in the database.
 - 2026-11-17: Sprint 2 UI redesign ([[2026-11-17-ui-redesign]]) shows /items as a list with per-row actions instead of an AG Grid (D1).
 - 2026-11-18: Sprint 3 (units-stocktakes plan) adds item units (§5, §9) and base-unit immutability.
+- 2026-11-18: Sprint 3 D2 (approved): inflow cost in the entered unit via PostingLine.UnitFactor; vector set U, and `unit` on request lines (§9, T16).

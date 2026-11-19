@@ -26,6 +26,10 @@ export interface PostingLine {
   quantity: number | null;
   unitCost: number | null;
   direction: LineDirection;
+  /** The entered unit; null means the item's base unit (and then no `unit` is sent). */
+  unit: string | null;
+  /** Base units per entered unit; 1 for the base unit. */
+  factor: number;
 }
 
 export const POSTING_TITLES: Record<PostingType, string> = {
@@ -69,6 +73,23 @@ export function sourceLocationId(type: PostingType, header: PostingHeader): stri
   return type === 'transfer' ? header.fromLocationId : header.locationId;
 }
 
+/** Rounds to 4 dp, AwayFromZero (the server's rounding). */
+function round4(value: number): number {
+  return (Math.sign(value) * Math.round(Math.abs(value) * 10000)) / 10000;
+}
+
+/** The line's quantity in the item's base unit; null while the quantity is empty or not a number. */
+export function baseQuantity(line: Pick<PostingLine, 'quantity' | 'factor'>): number | null {
+  return line.quantity !== null && Number.isFinite(line.quantity)
+    ? round4(line.quantity * line.factor)
+    : null;
+}
+
+/** `{ unit }` for a line entered in a non-base unit, else nothing (a base line's body is unchanged). */
+function unitPart(line: Pick<PostingLine, 'unit'>): { unit?: string } {
+  return line.unit !== null ? { unit: line.unit } : {};
+}
+
 function blankToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
@@ -91,6 +112,7 @@ export function buildPostingBody(
           itemId: l.itemId!,
           quantity: l.quantity!,
           unitCost: l.unitCost!,
+          ...unitPart(l),
         })),
       } satisfies ReceiptBody;
     case 'issue':
@@ -98,7 +120,7 @@ export function buildPostingBody(
         locationId: header.locationId!,
         reference,
         notes,
-        lines: lines.map((l) => ({ itemId: l.itemId!, quantity: l.quantity! })),
+        lines: lines.map((l) => ({ itemId: l.itemId!, quantity: l.quantity!, ...unitPart(l) })),
       } satisfies IssueBody;
     case 'transfer':
       return {
@@ -106,7 +128,7 @@ export function buildPostingBody(
         toLocationId: header.toLocationId!,
         reference,
         notes,
-        lines: lines.map((l) => ({ itemId: l.itemId!, quantity: l.quantity! })),
+        lines: lines.map((l) => ({ itemId: l.itemId!, quantity: l.quantity!, ...unitPart(l) })),
       } satisfies TransferBody;
     case 'adjustment':
       return {
@@ -118,6 +140,7 @@ export function buildPostingBody(
           itemId: l.itemId!,
           quantityDelta: l.direction === 'add' ? l.quantity! : -l.quantity!,
           unitCost: l.direction === 'add' ? l.unitCost : null,
+          ...unitPart(l),
         })),
       } satisfies AdjustmentBody;
   }
@@ -131,7 +154,8 @@ export function linesOverOnHand(
   const result: number[] = [];
   lines.forEach((line, i) => {
     const have = onHand[i];
-    if (isOutflow(type, line) && line.quantity != null && have != null && line.quantity > have) {
+    const want = baseQuantity(line);
+    if (isOutflow(type, line) && want != null && have != null && want > have) {
       result.push(i);
     }
   });
@@ -196,7 +220,7 @@ export class IdempotencyKey {
 
 export interface PostingErrors {
   header: Partial<Record<keyof PostingHeader | 'lines', string>>;
-  lines: Record<number, Partial<Record<'itemId' | 'quantity' | 'unitCost', string>>>;
+  lines: Record<number, Partial<Record<'itemId' | 'quantity' | 'unitCost' | 'unit', string>>>;
   message: string | null;
   originalDocumentId: string | null;
   renewKey: boolean;
@@ -211,17 +235,18 @@ const HEADER_KEYS: readonly string[] = [
   'notes',
 ];
 
-const LINE_KEY = /^lines\[(\d+)\]\.(itemId|quantity|quantityDelta|unitCost)$/;
+const LINE_KEY = /^lines\[(\d+)\]\.(itemId|quantity|quantityDelta|unitCost|unit)$/;
 
 function asRecord(body: unknown): Record<string, unknown> {
   return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
 }
 
+/** `baseUnits[i]` is line i's item base unit: `insufficient-stock` reports `available`/`requested` in base units. */
 export function postingErrors(
   type: PostingType,
   body: unknown,
   lines: readonly PostingLine[],
-  units: readonly (string | null)[] = [],
+  baseUnits: readonly (string | null)[] = [],
 ): PostingErrors {
   void type;
   const result: PostingErrors = {
@@ -232,7 +257,11 @@ export function postingErrors(
     renewKey: false,
   };
   const fields = asRecord(body);
-  const setLine = (i: number, field: 'itemId' | 'quantity' | 'unitCost', text: string): void => {
+  const setLine = (
+    i: number,
+    field: 'itemId' | 'quantity' | 'unitCost' | 'unit',
+    text: string,
+  ): void => {
     (result.lines[i] ??= {})[field] ??= text;
   };
 
@@ -254,7 +283,7 @@ export function postingErrors(
           const field =
             line[2] === 'quantityDelta'
               ? 'quantity'
-              : (line[2] as 'itemId' | 'quantity' | 'unitCost');
+              : (line[2] as 'itemId' | 'quantity' | 'unitCost' | 'unit');
           setLine(Number(line[1]), field, text);
         } else {
           unmapped = true;
@@ -268,7 +297,7 @@ export function postingErrors(
       const requested = fields['requested'];
       lines.forEach((line, i) => {
         if (line.itemId !== null && line.itemId === fields['itemId']) {
-          const unit = units[i] ? ` ${units[i]}` : '';
+          const unit = baseUnits[i] ? ` ${baseUnits[i]}` : '';
           const have =
             typeof available === 'number' ? formatQuantity(available) : String(available);
           const want =
@@ -306,7 +335,8 @@ export function postingTotalLabel(type: PostingType): 'Total cost' | 'Value at a
 
 /**
  * The sticky-bar total (display only; the server costs the posting). Per line:
- * usesUnitCost -> quantity x (unitCost ?? 0); otherwise quantity x (averageCosts[i] ?? 0).
+ * usesUnitCost -> quantity x (unitCost ?? 0), the cost being per entered unit; otherwise
+ * quantity x factor x (averageCosts[i] ?? 0), the average cost being per base unit.
  * Lines with a null or non-finite quantity count as 0. Rounded to 4 dp, AwayFromZero.
  */
 export function postingTotal(
@@ -316,9 +346,12 @@ export function postingTotal(
 ): number {
   let total = 0;
   lines.forEach((line, i) => {
-    const quantity = line.quantity !== null && Number.isFinite(line.quantity) ? line.quantity : 0;
-    const cost = usesUnitCost(type, line) ? (line.unitCost ?? 0) : (averageCosts[i] ?? 0);
-    total += quantity * cost;
+    if (usesUnitCost(type, line)) {
+      const quantity = line.quantity !== null && Number.isFinite(line.quantity) ? line.quantity : 0;
+      total += quantity * (line.unitCost ?? 0);
+    } else {
+      total += (baseQuantity(line) ?? 0) * (averageCosts[i] ?? 0);
+    }
   });
-  return (Math.sign(total) * Math.round(Math.abs(total) * 10000)) / 10000;
+  return round4(total);
 }
