@@ -1,0 +1,19 @@
+{
+  "rows": [
+    { "name": "qwen3-30b-a3b-local", "group": "local", "endpoint": "http://localhost:11434/v1", "model": "qwen3:30b-a3b", "timeoutSeconds": 110 },
+    { "name": "qwen3-8b-local", "group": "local", "endpoint": "http://localhost:11434/v1", "model": "qwen3:8b", "timeoutSeconds": 110 },
+    { "name": "llama3.1-8b-local", "group": "local", "endpoint": "http://localhost:11434/v1", "model": "llama3.1:8b", "timeoutSeconds": 110 },
+    { "name": "gpt-oss-20b-local", "group": "local", "endpoint": "http://localhost:11434/v1", "model": "gpt-oss:20b", "timeoutSeconds": 110 },
+    {
+      "name": "gpt-oss-120b-groq",
+      "group": "hosted",
+      "endpoint": "https://api.groq.com/openai/v1",
+      "model": "openai/gpt-oss-120b",
+      "apiKeySecret": "Groq:ApiKey",
+      "requestsPerMinute": 25,
+      "tokensPerMinute": 7000,
+      "timeoutSeconds": 60,
+      "subsetOnly": true
+    }
+  ]
+}
