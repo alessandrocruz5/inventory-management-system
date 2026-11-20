@@ -45,6 +45,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: dotnet test
+      - name: Eval harness calibration (T20)
+        run: dotnet run --project tests/Assistant.Evals -- --check
       - run: npm ci
         working-directory: web
       - run: npm test -- --watch=false
