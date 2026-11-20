@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 ### Added
 
 - Inventory read contract: `IInventoryReader` and snapshot records in `Inventory.Contracts`, so other modules read stock data without touching Inventory internals (IMS-33).
+- Assistant API: `GET /api/assistant/status` and `POST /api/assistant/chat`, read-only Q&A over the caller's tenant through role-gated inventory tools, with per-user rate limiting, request size, round, time and reply limits, and telemetry that omits prompt text (IMS-34).
 
 ## [0.3.0] - 2026-11-19
 
