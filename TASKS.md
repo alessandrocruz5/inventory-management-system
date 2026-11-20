@@ -136,5 +136,14 @@ Epic: IMS-27 · Branch base: `develop` · Plan: [[2026-11-18-units-stocktakes]]
 - [x] IMS-30 — Stocktakes API · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 09, 10, 11, 12 · depends: IMS-29 · model: opus (merged 2026-11-19) Stocktakes: `Stocktakes`/`StocktakeLines` tables (RLS, `UX_Stocktakes_Open`), start (prefilled), list, detail, count (unit conversion, snapshot), cancel, post (one CountCorrection, server key `stocktake:<id>`, engine `Guard` D17); slugs `stocktake-open-exists`/`stocktake-not-open` in §9, Kernel and Angular. Downstream: IMS-31 uses `/api/stocktakes` (`StocktakeSummary`, `StocktakeLine`); Admin-only post and cancel.
 - [x] IMS-31 — Stocktake screens · Added · plan: [[2026-11-18-units-stocktakes]] prompts: 13, 14, 15 · depends: IMS-30 · model: sonnet (merged 2026-11-19) `/stocktakes` list (filters, Start a count) and `/stocktakes/:id` count sheet (count in any unit, moved-since-count notice, Admin Post/Cancel, link to the correction), "Count stock" nav, T18 Playwright spec (375 px). Downstream: none. Gotchas: at 375 px `/stock` is a stacked list (no AG Grid cols) and a correction's document lines are unsigned movements.
 
+## Sprint 4 — Evaluated, hardened AI assistant over the ledger   (planned 2026-11-20)
+Epic: IMS-32 · Branch base: `develop` · Plan: [[2026-11-20-ai-assistant]]
+- [ ] IMS-33 — Inventory read contract · Added · plan: [[2026-11-20-ai-assistant]] prompts: 01, 02 · depends: — · model: opus
+- [ ] IMS-34 — Assistant API: read-only Q&A, hardened and observable · Added · plan: [[2026-11-20-ai-assistant]] prompts: 03, 04, 05, 06, 07, 08, 09 · depends: IMS-33 · model: opus
+- [ ] IMS-35 — Draft documents (API) · Added · plan: [[2026-11-20-ai-assistant]] prompts: 10, 11 · depends: IMS-34 · model: sonnet
+- [ ] IMS-36 — Assistant chat page and form prefill · Added · plan: [[2026-11-20-ai-assistant]] prompts: 12, 13, 14 · depends: IMS-35 · model: sonnet
+- [ ] IMS-37 — Evaluation harness · Added · plan: [[2026-11-20-ai-assistant]] prompts: 15, 16, 17, 18 · depends: IMS-35 · model: opus
+- [ ] IMS-38 — Evaluation results write-up · Added · plan: [[2026-11-20-ai-assistant]] prompts: 19 · depends: IMS-36, IMS-37 · model: sonnet
+
 ## Hotfixes
 - [x] IMS-19 — Bump Aspire packages to 13.6.5 (GHSA-f7vh-h5g3-7jrh) · Fixed · files: src/AppHost/AppHost.csproj, src/Modules/Inventory/Inventory/Inventory.csproj, src/Modules/Platform/Platform/Platform.csproj · depends: — · model: haiku (merged 2026-11-12)
