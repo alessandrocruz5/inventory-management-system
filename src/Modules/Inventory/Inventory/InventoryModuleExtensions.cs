@@ -60,6 +60,7 @@ public static class InventoryModuleExtensions
         builder.EnrichSqlServerDbContext<InventoryDbContext>(settings => settings.DisableRetry = true);
         builder.Services.AddScoped<IModuleMigrator, InventoryMigrator>();
         builder.Services.AddScoped<IInventoryModule, InventoryModule>();
+        builder.Services.AddScoped<IInventoryReader, InventoryReader>();
         builder.Services.AddScoped<PostingEngine>();
         builder.Services.AddScoped<IDataSeeder, InventorySeeder>();
         builder.Services.AddScoped<ListItemsHandler>();
