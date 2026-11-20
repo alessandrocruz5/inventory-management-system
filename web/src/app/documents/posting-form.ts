@@ -1,6 +1,6 @@
 import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { problemFieldErrors, problemMessage, problemSlug } from '../core/problems/problem-messages';
-import { AdjustmentReason, formatQuantity } from '../shared/format';
+import { ADJUSTMENT_REASONS, AdjustmentReason, formatQuantity } from '../shared/format';
 import {
   AdjustmentBody,
   IssueBody,
@@ -198,6 +198,106 @@ export function amountValidator(options: { allowZero: boolean }): ValidatorFn {
     }
     return null;
   };
+}
+
+export interface DraftPrefill {
+  header: PostingHeader;
+  lines: {
+    itemId: string;
+    quantity: number;
+    unitCost: number | null;
+    unit: string | null;
+    direction: LineDirection;
+  }[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function locationIdOf(value: unknown): string | null {
+  return isRecord(value) && typeof value['id'] === 'string' && value['id'] !== ''
+    ? value['id']
+    : null;
+}
+
+function textOf(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Parses the assistant's draft (navigation state, so untrusted) into form values. Returns null
+ * unless it is well formed and is a draft of `type`; the caller then ignores it entirely.
+ * An adjustment line must carry a direction; the other types have no direction.
+ */
+export function draftToPrefill(type: PostingType, value: unknown): DraftPrefill | null {
+  if (!isRecord(value) || value['type'] !== type || !Array.isArray(value['lines'])) {
+    return null;
+  }
+  const raw: unknown[] = value['lines'];
+  if (raw.length < 1 || raw.length > MAX_LINES) {
+    return null;
+  }
+
+  const header: PostingHeader = {
+    locationId: null,
+    fromLocationId: null,
+    toLocationId: null,
+    reasonCode: null,
+    reference: textOf(value['reference']),
+    notes: textOf(value['notes']),
+  };
+  if (type === 'transfer') {
+    header.fromLocationId = locationIdOf(value['fromLocation']);
+    header.toLocationId = locationIdOf(value['toLocation']);
+    if (header.fromLocationId === null || header.toLocationId === null) {
+      return null;
+    }
+  } else {
+    header.locationId = locationIdOf(value['location']);
+    if (header.locationId === null) {
+      return null;
+    }
+  }
+  const reason = value['reasonCode'];
+  if (type === 'adjustment' && ADJUSTMENT_REASONS.includes(reason as AdjustmentReason)) {
+    header.reasonCode = reason as AdjustmentReason;
+  }
+
+  const lines: DraftPrefill['lines'] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry)) {
+      return null;
+    }
+    const { itemId, quantity, unitCost, unit, direction } = entry;
+    if (typeof itemId !== 'string' || itemId === '') {
+      return null;
+    }
+    if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+      return null;
+    }
+    if (
+      unitCost !== null &&
+      unitCost !== undefined &&
+      (typeof unitCost !== 'number' || !Number.isFinite(unitCost) || unitCost < 0)
+    ) {
+      return null;
+    }
+    if (unit !== null && unit !== undefined && typeof unit !== 'string') {
+      return null;
+    }
+    if (type === 'adjustment' && direction !== 'add' && direction !== 'remove') {
+      return null;
+    }
+    lines.push({
+      itemId,
+      quantity,
+      unitCost: unitCost ?? null,
+      unit: unit ?? null,
+      direction: type === 'adjustment' ? (direction as LineDirection) : 'add',
+    });
+  }
+  return { header, lines };
 }
 
 export class IdempotencyKey {

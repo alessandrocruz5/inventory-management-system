@@ -406,6 +406,198 @@ describe('PostStock', () => {
     });
   });
 
+  describe('assistant draft prefill', () => {
+    const RICE = { ...ITEM, id: 'i2', sku: 'RICE', name: 'Rice', baseUnit: 'kg' };
+    const SACK = { code: 'sack', factor: 25, isActive: true };
+    const receiptDraft = (extra: Record<string, unknown> = {}) => ({
+      type: 'receipt',
+      location: { id: 'l1', code: 'MAIN', name: 'Main' },
+      reasonCode: null,
+      reference: 'PO-7',
+      notes: null,
+      lines: [
+        {
+          itemId: 'i2',
+          sku: 'RICE',
+          itemName: 'Rice',
+          baseUnit: 'kg',
+          quantity: 2,
+          unit: 'sack',
+          unitCost: 3650,
+          direction: null,
+        },
+      ],
+      warnings: [],
+      ...extra,
+    });
+
+    async function setupWith(
+      type: string,
+      state: unknown,
+      navigation: Record<string, unknown> = { trigger: 'imperative', previousNavigation: {} },
+    ): Promise<{ fixture: ComponentFixture<PostStock>; c: PostStockInternals }> {
+      vi.spyOn(TestBed.inject(Router), 'currentNavigation').mockReturnValue({
+        extras: { state: { assistantDraft: state } },
+        ...navigation,
+      } as never);
+      const result = await setup(type);
+      await result.fixture.whenStable();
+      result.fixture.detectChanges();
+      return result;
+    }
+
+    const notice = (fixture: ComponentFixture<PostStock>): string | undefined =>
+      (fixture.nativeElement as HTMLElement).querySelector('.banner--neutral')?.textContent?.trim();
+
+    beforeEach(() => {
+      getItem.mockResolvedValue({ ...RICE, balances: [], units: [SACK] });
+    });
+
+    it('fills the header and line from a receipt draft and shows the notice', async () => {
+      const { fixture, c } = await setupWith('receipt', receiptDraft());
+      const h = c.form.controls.header.controls;
+      expect(h['locationId'].value).toBe('l1');
+      expect(h['reference'].value).toBe('PO-7');
+      expect(h['notes'].value).toBe('');
+      expect(c.form.controls.lines.length).toBe(1);
+      const line = c.form.controls.lines.at(0);
+      expect(line.controls.item.value).toMatchObject({ id: 'i2', sku: 'RICE' });
+      expect(line.controls.unit.value).toBe('sack');
+      expect(line.controls.quantity.value).toBe(2);
+      expect(line.controls.unitCost.value).toBe(3650);
+      expect(getItem).toHaveBeenCalledTimes(1);
+      expect(notice(fixture)).toContain(
+        'Filled in by the assistant. Check each line before you post.',
+      );
+    });
+
+    it('adds a line per draft line and fills an adjustment direction', async () => {
+      getItem.mockImplementation((id: string) =>
+        Promise.resolve({ ...ITEM, id, sku: id, balances: [], units: [] }),
+      );
+      const line = (itemId: string, direction: string) => ({
+        itemId,
+        sku: itemId,
+        itemName: itemId,
+        baseUnit: 'pc',
+        quantity: 1,
+        unit: null,
+        unitCost: direction === 'add' ? 5 : null,
+        direction,
+      });
+      const { c } = await setupWith(
+        'adjustment',
+        receiptDraft({
+          type: 'adjustment',
+          reasonCode: 'Damaged',
+          lines: [line('a', 'add'), line('b', 'remove')],
+        }),
+      );
+      expect(c.form.controls.header.controls['reasonCode'].value).toBe('Damaged');
+      expect(c.form.controls.lines.length).toBe(2);
+      expect(c.form.controls.lines.at(0).controls.direction.value).toBe('add');
+      expect(c.form.controls.lines.at(0).controls.unitCost.value).toBe(5);
+      expect(c.form.controls.lines.at(1).controls.direction.value).toBe('remove');
+      expect(c.form.controls.lines.at(1).controls.unitCost.value).toBeNull();
+    });
+
+    it('ignores a draft whose type does not match the route', async () => {
+      const { fixture, c } = await setupWith('issue', receiptDraft());
+      expect(c.form.controls.lines.length).toBe(1);
+      expect(c.form.controls.lines.at(0).controls.item.value).toBe('');
+      expect(c.form.controls.header.controls['locationId'].value).toBeNull();
+      expect(notice(fixture)).toBeUndefined();
+      expect(getItem).not.toHaveBeenCalled();
+    });
+
+    it('ignores a malformed draft', async () => {
+      const { fixture, c } = await setupWith('receipt', receiptDraft({ lines: [] }));
+      expect(c.form.controls.lines.length).toBe(1);
+      expect(c.form.controls.header.controls['locationId'].value).toBeNull();
+      expect(notice(fixture)).toBeUndefined();
+      const { c: c2 } = await setupWith('receipt', 'not a draft');
+      expect(c2.form.controls.header.controls['locationId'].value).toBeNull();
+    });
+
+    it('leaves an unknown location blank', async () => {
+      const { c } = await setupWith(
+        'receipt',
+        receiptDraft({ location: { id: 'zzz', code: 'ZZ', name: 'Gone' } }),
+      );
+      expect(c.form.controls.header.controls['locationId'].value).toBeNull();
+      expect(c.form.controls.lines.at(0).controls.quantity.value).toBe(2);
+    });
+
+    it('skips a unit that is not active on the item', async () => {
+      getItem.mockResolvedValue({
+        ...RICE,
+        balances: [],
+        units: [{ ...SACK, isActive: false }],
+      });
+      const { c } = await setupWith('receipt', receiptDraft());
+      expect(c.form.controls.lines.at(0).controls.unit.value).toBe('');
+    });
+
+    it('marks a line whose item cannot be fetched', async () => {
+      let fail: (reason: Error) => void = () => undefined;
+      getItem.mockReturnValue(new Promise((_, reject) => (fail = reject)));
+      const { fixture, c } = await setupWith('receipt', receiptDraft());
+      // The form has rendered by the time a real request fails.
+      fail(new Error('404'));
+      await fixture.whenStable();
+      const item = c.form.controls.lines.at(0).controls.item;
+      expect(item.errors?.['server']).toBe('This item is no longer available.');
+      expect(item.value).toBe('');
+    });
+
+    it('ignores the draft the router restores on a reload', async () => {
+      // A reload is the app's first navigation, and the router refills extras.state from history.
+      const { fixture, c } = await setupWith('receipt', receiptDraft(), {
+        trigger: 'imperative',
+        previousNavigation: null,
+      });
+      expect(c.form.controls.header.controls['locationId'].value).toBeNull();
+      expect(c.form.controls.lines.at(0).controls.item.value).toBe('');
+      expect(notice(fixture)).toBeUndefined();
+      expect(getItem).not.toHaveBeenCalled();
+    });
+
+    it('ignores the draft restored by back and forward', async () => {
+      const { fixture, c } = await setupWith('receipt', receiptDraft(), {
+        trigger: 'popstate',
+        previousNavigation: {},
+      });
+      expect(c.form.controls.header.controls['locationId'].value).toBeNull();
+      expect(notice(fixture)).toBeUndefined();
+    });
+
+    it('behaves as before with no navigation state', async () => {
+      const { fixture, c } = await setup('receipt');
+      fixture.detectChanges();
+      expect(c.form.controls.lines.length).toBe(1);
+      expect(c.form.controls.lines.at(0).controls.item.value).toBe('');
+      expect(notice(fixture)).toBeUndefined();
+      expect(getItem).not.toHaveBeenCalled();
+    });
+
+    it('posts a prefilled form through the normal path, with an Idempotency-Key', async () => {
+      post.mockResolvedValue({ id: 'd1', type: 'Receipt' });
+      const { c } = await setupWith('receipt', receiptDraft());
+      await c.submit();
+      expect(post).toHaveBeenCalledTimes(1);
+      const [type, key, body] = post.mock.calls[0];
+      expect(type).toBe('receipt');
+      expect(typeof key).toBe('string');
+      expect(key.length).toBeGreaterThan(0);
+      expect(body).toEqual({
+        locationId: 'l1',
+        reference: 'PO-7',
+        notes: null,
+        lines: [{ itemId: 'i2', quantity: 2, unitCost: 3650, unit: 'sack' }],
+      });
+    });
+  });
+
   it('labels the fields with the label-above pattern', async () => {
     const { fixture } = await setup('receipt');
     fixture.detectChanges();
