@@ -138,7 +138,7 @@ Epic: IMS-27 · Branch base: `develop` · Plan: [[2026-11-18-units-stocktakes]]
 
 ## Sprint 4 — Evaluated, hardened AI assistant over the ledger   (planned 2026-11-20)
 Epic: IMS-32 · Branch base: `develop` · Plan: [[2026-11-20-ai-assistant]]
-- [ ] IMS-33 — Inventory read contract · Added · plan: [[2026-11-20-ai-assistant]] prompts: 01, 02 · depends: — · model: opus
+- [x] IMS-33 — Inventory read contract · Added · plan: [[2026-11-20-ai-assistant]] prompts: 01, 02 · depends: — · model: opus (merged 2026-11-20) `IInventoryReader` + 16 snapshot records in `Inventory.Contracts`; `InventoryReader` maps the 8 read handlers by hand (no PostedBy/Version), 404 → null, ValidationProblem → ArgumentException; 7 reader tests. Downstream: IMS-34 reads inventory only through `IInventoryReader`.
 - [ ] IMS-34 — Assistant API: read-only Q&A, hardened and observable · Added · plan: [[2026-11-20-ai-assistant]] prompts: 03, 04, 05, 06, 07, 08, 09 · depends: IMS-33 · model: opus
 - [ ] IMS-35 — Draft documents (API) · Added · plan: [[2026-11-20-ai-assistant]] prompts: 10, 11 · depends: IMS-34 · model: sonnet
 - [ ] IMS-36 — Assistant chat page and form prefill · Added · plan: [[2026-11-20-ai-assistant]] prompts: 12, 13, 14 · depends: IMS-35 · model: sonnet

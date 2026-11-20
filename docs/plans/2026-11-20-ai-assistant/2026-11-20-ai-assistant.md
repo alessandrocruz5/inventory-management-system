@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: in-progress
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -340,3 +340,6 @@ dotnet run --project tests/Assistant.Evals -- --rows groq --subset
 - 2026-11-20: planned
 - 2026-11-20: applied Codex audit (1 applied, 0 disputed)
 - 2026-11-20: audited, 1 fix applied (server-side reply cap, D12)
+- 2026-11-20: IMS-33 started; rollback point b9e55f038222d471b670998295e4582a144e9b76
+- 2026-11-20: 01 done (opus, 0 retries): IInventoryReader + 16 snapshot records in Inventory.Contracts; InventoryReader maps the 8 read handlers field by field (no PostedBy/Version), 404 → null, ValidationProblem → ArgumentException; registered scoped. 682 tests green.
+- 2026-11-20: 02 done (sonnet, 0 retries): InventoryReaderTests, 7 tests green (stable over 2 runs); full suite 689 green.

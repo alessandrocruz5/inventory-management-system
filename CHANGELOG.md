@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 
 ## [Unreleased]
 
+### Added
+
+- Inventory read contract: `IInventoryReader` and snapshot records in `Inventory.Contracts`, so other modules read stock data without touching Inventory internals (IMS-33).
+
 ## [0.3.0] - 2026-11-19
 
 ### Added
