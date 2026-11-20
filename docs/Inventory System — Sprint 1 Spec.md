@@ -601,7 +601,7 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 | `GET /documents/{id}` | any | Lines, movement costs, reversal link either way |
 | `GET /stock` | any | Balances by item × physical location with average cost and value; filter by item or location; totals for the whole filter, not just the page |
 | `GET /assistant/status` | any | Whether a model is configured, and its name |
-| `POST /assistant/chat` | any | One assistant turn over read-only tools; body `{ messages: [{ role, content }] }`; returns `{ reply, toolCalls, usage, model }` |
+| `POST /assistant/chat` | any | One assistant turn over read-only tools; body `{ messages: [{ role, content }] }`; returns `{ reply, toolCalls, drafts, usage, model }` |
 | `GET /ledger/health` | Admin | INV-1 to INV-5 results with failing rows |
 | `POST /ledger/rebuild` | Admin | Rebuild and return the diff |
 | `GET /stocktakes` | any | Newest first; filter `status` and `locationId` |
@@ -641,7 +641,7 @@ Successful posts return `201 Created` with the full document, its movements with
 
 **Stocktake bodies.** `POST /stocktakes` takes `{ "locationId": "…", "notes": null }`. `PUT /stocktakes/{id}/lines/{itemId}` takes `{ "quantity": 2, "unit": "sack", "unitCost": null }`: `unit` works as on postings, and `unitCost` is per base unit, used only when the count is above the snapshot. Post and cancel take no body and no `Idempotency-Key`. Every stocktake route except the list returns the stocktake detail. A post that fails leaves the stocktake in Draft: `400` on an uncounted line (`lines[j].quantity`, where `j` is the line's index in SKU order), on no lines or more than 100 differences (`lines`), or the engine's own problems, with line keys mapped to `j`. A post whose sheet changed under it gets `409 concurrency-conflict` and leaves the stocktake as it is. A post with no differences is Posted with no document.
 
-**Assistant bodies.** Roles are `user` and `assistant`, and the last one is `user`. At most 20 messages; a user message is 1–2,000 chars, an assistant message ≤ 8,000, and the total ≤ 24,000 (otherwise `400 validation` with `messages[i].role` or `messages[i].content`, or `messages`). At most 5 tool rounds and a 90 s budget per turn. A reply is at most 8,000 chars, so it always fits back into the history. A longer one is cut and ends with `[Reply cut off: too long.]`. 10 turns a minute per user. The server stores no conversation.
+**Assistant bodies.** Roles are `user` and `assistant`, and the last one is `user`. At most 20 messages; a user message is 1–2,000 chars, an assistant message ≤ 8,000, and the total ≤ 24,000 (otherwise `400 validation` with `messages[i].role` or `messages[i].content`, or `messages`). At most 5 tool rounds and a 90 s budget per turn. A reply is at most 8,000 chars, so it always fits back into the history. A longer one is cut and ends with `[Reply cut off: too long.]`. 10 turns a minute per user. The server stores no conversation. `drafts` holds up to 3 validated document drafts (receipt, issue, transfer; adjustment for Admin) with ids, codes and names. The user posts a draft through the post-stock form; the assistant never posts.
 
 **Problem types** (a relative URI, allowed by RFC 9457: the `type` field is `/problems/<slug>`)
 

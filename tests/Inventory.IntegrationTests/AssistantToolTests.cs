@@ -240,8 +240,8 @@ public sealed class AssistantToolTests(DatabaseFixture db)
 
         admin.ShouldContain("get_ledger_health");
         staff.ShouldNotContain("get_ledger_health");
-        staff.Count.ShouldBe(7);
-        admin.Count.ShouldBe(8);
+        staff.Count.ShouldBe(8);
+        admin.Count.ShouldBe(9);
         catalog.For("anything-else").Select(t => t.Name).ShouldNotContain("get_ledger_health");
 
         var health = await CallAsync(scope, RoleNames.Admin, "get_ledger_health", ct);

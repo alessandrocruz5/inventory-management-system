@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
+using Assistant.Drafts;
 using Assistant.Prompting;
 using Assistant.Tools;
 
@@ -24,6 +25,7 @@ namespace Assistant.Features.Chat;
 internal sealed class ChatHandler(
     AssistantModel model,
     ToolCatalog catalog,
+    DraftCollector drafts,
     ICurrentUser user,
     TimeProvider clock,
     IOptions<AssistantOptions> options,
@@ -124,6 +126,7 @@ internal sealed class ChatHandler(
         return TypedResults.Ok(new AssistantChatResponse(
             reply,
             SummarizeToolCalls(response, offered),
+            [.. drafts.Drafts],
             usage,
             options.Value.Model ?? response.ModelId ?? "unknown"));
     }
@@ -206,7 +209,7 @@ internal sealed class ChatHandler(
         ];
     }
 
-    /// <summary>No exception, and no top-level <c>error</c> property (a <see cref="ToolError"/>).</summary>
+    /// <summary>No exception, no top-level <c>error</c> property (a <see cref="ToolError"/>), and no <c>ok: false</c> (a refused draft).</summary>
     private static bool Succeeded(FunctionResultContent result)
     {
         if (result.Exception is not null)
@@ -218,6 +221,12 @@ internal sealed class ChatHandler(
             ? json
             : JsonSerializer.SerializeToElement(result.Result, ToolJson.Options);
 
-        return element.ValueKind != JsonValueKind.Object || !element.TryGetProperty("error", out _);
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        return !element.TryGetProperty("error", out _)
+            && !(element.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False);
     }
 }

@@ -1,9 +1,12 @@
+using Assistant.Drafts;
+
 namespace Assistant.Features.Chat;
 
-/// <summary>One turn's answer. <see cref="Reply"/> is plain text of at most 8,000 chars (plan D12, D20).</summary>
+/// <summary>One turn's answer. <see cref="Reply"/> is plain text of at most 8,000 chars (plan D12, D20). <see cref="Drafts"/> are validated, never posted.</summary>
 internal sealed record AssistantChatResponse(
     string Reply,
     IReadOnlyList<ToolCallSummary> ToolCalls,
+    IReadOnlyList<DocumentDraft> Drafts,
     AssistantUsage Usage,
     string Model);
 

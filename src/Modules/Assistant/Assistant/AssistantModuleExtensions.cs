@@ -1,6 +1,7 @@
 using System.ClientModel;
 using System.Threading.RateLimiting;
 
+using Assistant.Drafts;
 using Assistant.Features.Chat;
 using Assistant.Features.Status;
 using Assistant.Tools;
@@ -57,6 +58,9 @@ public static class AssistantModuleExtensions
         }
 
         builder.Services.AddScoped<InventoryTools>();
+        builder.Services.AddScoped<DraftValidator>();
+        builder.Services.AddScoped<DraftCollector>();
+        builder.Services.AddScoped<DraftTool>();
         builder.Services.AddScoped<ToolCatalog>();
         builder.Services.AddSingleton<AssistantModel>();
         builder.Services.AddScoped<ChatHandler>();

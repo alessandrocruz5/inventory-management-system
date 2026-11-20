@@ -121,6 +121,77 @@ public sealed class AssistantTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Chat_returns_drafts_and_posts_nothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var model = new ScriptedChatClient(
+            new ScriptedChatClient.CallTools(new ScriptedChatClient.ToolCall("draft_document", new
+            {
+                type = "receipt",
+                location = "WH-1",
+                lines = new[] { new { sku = "RICE-25", quantity = 2, unit = "sack", unitCost = 1250 } },
+            })),
+            new ScriptedChatClient.Reply("I drafted a receipt for 2 sacks."));
+        await using var app = CreateApp(db, model);
+        var (_, email) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var client = await DatabaseFixture.SignInAsync(app, email);
+        var location = await PostingTests.NewLocationAsync(client, ct, "WH-1");
+        var item = await PostingTests.NewItemAsync(client, "RICE-25", ct);
+        (await client.PostAsJsonAsync($"/api/items/{item}/units", new { code = "sack", factor = 25 }, ct)).StatusCode.ShouldBe(HttpStatusCode.Created);
+        var documentsBefore = await (await client.GetAsync("/api/documents", ct)).Content.ReadAsStringAsync(ct);
+        var stockBefore = await (await client.GetAsync("/api/stock", ct)).Content.ReadAsStringAsync(ct);
+
+        var response = await AskAsync(client, "Draft a receipt of 2 sacks of rice at WH-1.", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var body = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        body["toolCalls"]!.AsArray().ShouldHaveSingleItem()!["succeeded"]!.GetValue<bool>().ShouldBeTrue();
+        var draft = body["drafts"]!.AsArray().ShouldHaveSingleItem()!;
+        draft["type"]!.GetValue<string>().ShouldBe("receipt");
+        draft["location"]!["id"]!.GetValue<Guid>().ShouldBe(location);
+        draft["location"]!["code"]!.GetValue<string>().ShouldBe("WH-1");
+        var line = draft["lines"]!.AsArray().ShouldHaveSingleItem()!;
+        line["sku"]!.GetValue<string>().ShouldBe("RICE-25");
+        line["unit"]!.GetValue<string>().ShouldBe("sack");
+        line["quantity"]!.GetValue<decimal>().ShouldBe(2m);
+
+        var documentsAfter = await (await client.GetAsync("/api/documents", ct)).Content.ReadAsStringAsync(ct);
+        JsonNode.Parse(documentsAfter)!["total"]!.GetValue<int>().ShouldBe(JsonNode.Parse(documentsBefore)!["total"]!.GetValue<int>());
+        (await (await client.GetAsync("/api/stock", ct)).Content.ReadAsStringAsync(ct)).ShouldBe(stockBefore);
+    }
+
+    [Fact]
+    public async Task A_refused_draft_is_not_returned()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var model = new ScriptedChatClient(
+            new ScriptedChatClient.CallTools(new ScriptedChatClient.ToolCall("draft_document", new
+            {
+                type = "adjustment",
+                location = "WH-1",
+                reasonCode = "Damaged",
+                lines = new[] { new { sku = "X-1", quantity = 1, direction = "remove" } },
+            })),
+            new ScriptedChatClient.Reply("I can't draft an adjustment for you."));
+        await using var app = CreateApp(db, model);
+        var (tenant, adminEmail) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var admin = await DatabaseFixture.SignInAsync(app, adminEmail);
+        await PostingTests.NewLocationAsync(admin, ct, "WH-1");
+        await PostingTests.NewItemAsync(admin, "X-1", ct);
+        var (_, staffEmail) = await PostingTests.AddUserAsync(app, tenant, Roles.Staff);
+        using var staff = await DatabaseFixture.SignInAsync(app, staffEmail);
+
+        var response = await AskAsync(staff, "Write off one X-1 at WH-1.", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var body = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))!;
+        body["drafts"]!.AsArray().ShouldBeEmpty();
+        var call = body["toolCalls"]!.AsArray().ShouldHaveSingleItem()!;
+        call["name"]!.GetValue<string>().ShouldBe("draft_document");
+        call["succeeded"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Chat_is_unavailable_when_not_configured()
     {
         var ct = TestContext.Current.CancellationToken;
