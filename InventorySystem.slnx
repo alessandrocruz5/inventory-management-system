@@ -9,6 +9,9 @@
     <Project Path="src/Modules/Inventory/Inventory.Contracts/Inventory.Contracts.csproj" />
     <Project Path="src/Modules/Inventory/Inventory/Inventory.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Assistant/">
+    <Project Path="src/Modules/Assistant/Assistant/Assistant.csproj" />
+  </Folder>
   <Folder Name="/src/Modules/Platform/">
     <Project Path="src/Modules/Platform/Platform.Contracts/Platform.Contracts.csproj" />
     <Project Path="src/Modules/Platform/Platform/Platform.csproj" />

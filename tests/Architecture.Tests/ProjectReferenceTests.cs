@@ -8,7 +8,9 @@ public sealed class ProjectReferenceTests
 {
     private static readonly string Root = FindRoot();
 
-    private static readonly string[] ModuleNames = ["Inventory", "Platform"];
+    // Assistant has no Contracts project (plan D6), so ModuleContracts("Assistant") points at a path that does not
+    // exist. Contracts_reference_only_Kernel_and_other_contracts only reads references *from* contracts: harmless.
+    private static readonly string[] ModuleNames = ["Inventory", "Platform", "Assistant"];
 
     private static string FindRoot()
     {
