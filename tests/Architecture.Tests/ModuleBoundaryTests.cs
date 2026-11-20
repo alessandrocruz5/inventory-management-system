@@ -10,6 +10,7 @@ public sealed class ModuleBoundaryTests
 {
     private static readonly Assembly InventoryAssembly = typeof(global::Inventory.InventoryModuleExtensions).Assembly;
     private static readonly Assembly PlatformAssembly = typeof(global::Platform.PlatformModuleExtensions).Assembly;
+    private static readonly Assembly AssistantAssembly = typeof(global::Assistant.AssistantModuleExtensions).Assembly;
     private static readonly Assembly KernelAssembly = LoadKernel();
 
     private static Assembly LoadKernel()
@@ -29,9 +30,16 @@ public sealed class ModuleBoundaryTests
     [Theory]
     [InlineData("Inventory")]
     [InlineData("Platform")]
+    [InlineData("Assistant")]
     public void Module_implementations_expose_only_their_registration_class(string module)
     {
-        var assembly = module == "Inventory" ? InventoryAssembly : PlatformAssembly;
+        var assembly = module switch
+        {
+            "Inventory" => InventoryAssembly,
+            "Platform" => PlatformAssembly,
+            "Assistant" => AssistantAssembly,
+            _ => throw new ArgumentOutOfRangeException(nameof(module), module, null),
+        };
 
         // EF Core scaffolds migrations as `public partial class`, so `.Migrations` namespaces are exempt.
         var publicTypes = Types.InAssembly(assembly).That().ArePublic().GetTypes()
@@ -87,5 +95,36 @@ public sealed class ModuleBoundaryTests
             .ShouldNot().HaveDependencyOn("System.Security.Claims")
             .GetResult();
         platform.IsSuccessful.ShouldBeTrue(Failing(platform));
+
+        // Assistant reads the user through Kernel.Tenancy.ICurrentUser.
+        var assistant = Types.InAssembly(AssistantAssembly)
+            .ShouldNot().HaveDependencyOn("System.Security.Claims")
+            .GetResult();
+        assistant.IsSuccessful.ShouldBeTrue(Failing(assistant));
+    }
+
+    // Plan D8: drafts are proposals; only the post-stock form writes.
+    [Fact]
+    public void Assistant_has_no_write_or_sql_path()
+    {
+        // "Inventory.Contracts.IInventoryModule" is a full-name prefix match; it does not match IInventoryReader.
+        var result = Types.InAssembly(AssistantAssembly)
+            .ShouldNot().HaveDependencyOnAny(
+                "Microsoft.EntityFrameworkCore",
+                "Microsoft.Data.SqlClient",
+                "System.Data",
+                "Inventory.Contracts.IInventoryModule")
+            .GetResult();
+
+        result.IsSuccessful.ShouldBeTrue(Failing(result));
+    }
+
+    [Fact]
+    public void Assistant_reads_inventory_only_through_its_contracts()
+    {
+        var referenced = AssistantAssembly.GetReferencedAssemblies().Select(a => a.Name).ToList();
+
+        referenced.ShouldNotContain("Inventory");
+        referenced.ShouldNotContain("Platform");
     }
 }

@@ -27,6 +27,7 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
     {
         ["POST /api/auth/login"] = "anonymous; reads no tenant data",
         ["POST /api/auth/logout"] = "signs out; reads no tenant data",
+        ["GET /api/assistant/status"] = "reads configuration only; no tenant data",
     };
 
     private static readonly string[] SeededCodes = ["ADJ", "CUS", "SUP"];
@@ -1005,6 +1006,61 @@ public sealed class TenantIsolationTests(DatabaseFixture db)
             MaxPoolSize = 1,
             ApplicationName = "t5-" + Guid.NewGuid().ToString("N")[..8],
         }.ConnectionString);
+
+    [Fact]
+    [ProbesRoute("POST /api/assistant/chat")]
+    public async Task Assistant_tools_read_only_the_callers_tenant()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var bOnly = "B-ONLY-" + Guid.NewGuid().ToString("N")[..8];
+        // A chat body carries no ids, so tenant B's ids can only reach the tools through the model: this script does that.
+        // B's document id is only known after B posts, so the script is bound to the app late.
+        var late = new LateBoundChatClient();
+        await using var app = AssistantTests.CreateApp(db, late);
+        var (_, emailA) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        var (_, emailB) = await DatabaseFixture.CreateTenantWithUserAsync(app, Roles.Admin);
+        using var clientA = await DatabaseFixture.SignInAsync(app, emailA);
+        using var clientB = await DatabaseFixture.SignInAsync(app, emailB);
+        var locationA = await PostingTests.NewLocationAsync(clientA, ct);
+        var locationB = await PostingTests.NewLocationAsync(clientB, ct);
+        var sameA = await PostingTests.NewItemAsync(clientA, "SAME-1", ct);
+        var sameB = await PostingTests.NewItemAsync(clientB, "SAME-1", ct);
+        var onlyB = (await ItemsTests.CreateAsync(clientB, bOnly, "B secret item", "pc", ct))["id"]!.GetValue<Guid>();
+        await PostingTests.ReceiveAsync(clientA, locationA, sameA, 5m, 10m, ct);
+        var posted = await PostingTests.PostDocumentAsync(clientB, PostingTests.Receipts, PostingTests.NewKey(),
+            new { locationId = locationB, reference = "B-SECRET-REF", notes = (string?)null, lines = new[] { PostingTests.Line(sameB, 9m, 10m), PostingTests.Line(onlyB, 1m, 10m) } }, ct);
+        posted.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var documentB = (await posted.Content.ReadFromJsonAsync<JsonNode>(ct))!["id"]!.GetValue<Guid>();
+        var model = new ScriptedChatClient(
+            new ScriptedChatClient.CallTools(
+                new ScriptedChatClient.ToolCall("get_stock", new { sku = bOnly }),
+                new ScriptedChatClient.ToolCall("get_item", new { sku = bOnly }),
+                new ScriptedChatClient.ToolCall("get_document", new { documentId = documentB.ToString() }),
+                new ScriptedChatClient.ToolCall("get_item_history", new { sku = bOnly }),
+                new ScriptedChatClient.ToolCall("get_stock", new { sku = "SAME-1" })),
+            new ScriptedChatClient.Reply("done"));
+        late.Inner = model;
+
+        var response = await AssistantTests.AskAsync(clientA, "Look everything up.", ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        model.Turns.Count.ShouldBe(2);
+        var results = AssistantTests.ToolResults(model.Turns[1]);
+        results.Count.ShouldBe(5);
+        foreach (var result in results.Take(4))
+        {
+            result!["error"]!.GetValue<string>().ShouldBe("not-found");
+        }
+
+        // A's own SAME-1 only: 5 on hand, never B's 9.
+        var own = results[4]!["rows"]!.AsArray().ShouldHaveSingleItem()!;
+        own["sku"]!.GetValue<string>().ShouldBe("SAME-1");
+        own["onHand"]!.GetValue<decimal>().ShouldBe(5m);
+        results[4]!["total"]!.GetValue<int>().ShouldBe(1);
+        var everything = string.Concat(model.ToolResultsJson());
+        everything.ShouldNotContain("B secret item");
+        everything.ShouldNotContain("B-SECRET-REF");
+    }
 
     private static Task<HttpResponseMessage> Login(HttpClient client, string email) =>
         client.PostAsJsonAsync("/api/auth/login", new { email, password = DatabaseFixture.UserPassword }, TestContext.Current.CancellationToken);

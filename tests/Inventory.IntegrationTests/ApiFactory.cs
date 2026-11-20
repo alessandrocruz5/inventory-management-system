@@ -1,6 +1,9 @@
+using Assistant;
+
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -17,6 +20,9 @@ internal sealed class ApiFactory(string connectionString, params (string Key, st
     /// <summary>When set, counts the API's EF Core execution-strategy retries, so a test can see a retried deadlock (T3).</summary>
     internal RetryLog? Retries { get; init; }
 
+    /// <summary>When set, replaces the assistant's model client, so a test scripts every model reply and never contacts a real model.</summary>
+    internal IChatClient? ChatModel { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -32,6 +38,15 @@ internal sealed class ApiFactory(string connectionString, params (string Key, st
             {
                 s.RemoveAll<TimeProvider>();
                 s.AddSingleton(clock);
+            });
+        }
+
+        if (ChatModel is { } model)
+        {
+            builder.ConfigureTestServices(s =>
+            {
+                s.RemoveAllKeyed<IChatClient>(AssistantOptions.ModelServiceKey);
+                s.AddKeyedSingleton(AssistantOptions.ModelServiceKey, model);
             });
         }
 
