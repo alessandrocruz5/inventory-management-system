@@ -6,6 +6,13 @@
 </header>
 
 <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  @if (prefilled()) {
+    <p class="banner banner--neutral" role="status">
+      <mat-icon>auto_awesome</mat-icon>
+      <span>Filled in by the assistant. Check each line before you post.</span>
+    </p>
+  }
+
   @if (message() || originalDocumentId()) {
     <p class="banner banner--bad" role="alert">
       <mat-icon>error</mat-icon>

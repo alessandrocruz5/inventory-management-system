@@ -46,11 +46,13 @@ import {
   MAX_LINES,
   POSTING_SUBTITLES,
   POSTING_TITLES,
+  DraftPrefill,
   PostingHeader,
   PostingLine,
   amountValidator,
   baseQuantity,
   buildPostingBody,
+  draftToPrefill,
   duplicateItemLines,
   isOutflow,
   linesOverOnHand,
@@ -111,6 +113,12 @@ export class PostStock {
   protected readonly posting = signal(false);
   protected readonly message = signal<string | null>(null);
   protected readonly originalDocumentId = signal<string | null>(null);
+  protected readonly prefilled = signal(false);
+
+  // The assistant's draft. Untrusted: it is parsed on the first reset and then dropped.
+  private navDraft: unknown = this.draftFromNavigation();
+  private resets = 0;
+  private readonly locationsReady = this.loadLocations();
 
   // Item details (for their units), fetched once per item id.
   private readonly details = signal<ReadonlyMap<string, ItemDetail>>(new Map());
@@ -177,8 +185,6 @@ export class PostStock {
           this.reset(type as PostingType);
         }
       });
-
-    void this.loadLocations();
   }
 
   protected showUnitCost(line: ReturnType<PostStock['makeLine']>): boolean {
@@ -357,6 +363,8 @@ export class PostStock {
     this.key = new IdempotencyKey();
     this.message.set(null);
     this.originalDocumentId.set(null);
+    this.prefilled.set(false);
+    const generation = ++this.resets;
     this.form.controls.header.reset();
     const h = this.form.controls.header.controls;
     const set = (control: AbstractControl, required: boolean): void => {
@@ -375,6 +383,82 @@ export class PostStock {
     this.options.set([[]]);
     this.onHand.set([null]);
     this.averageCost.set([null]);
+
+    const draft = this.navDraft;
+    this.navDraft = undefined;
+    const prefill = draft === undefined ? null : draftToPrefill(type, draft);
+    if (prefill) {
+      void this.applyPrefill(prefill, generation);
+    }
+  }
+
+  /**
+   * The router restores history.state into `extras.state` on a reload and on back/forward, so a
+   * reload would prefill. Only a fresh in-app navigation counts: it is `imperative` and has a
+   * previous navigation (a reload is the app's first one).
+   */
+  private draftFromNavigation(): unknown {
+    const nav = this.router.currentNavigation();
+    return nav?.trigger === 'imperative' && nav.previousNavigation !== null
+      ? nav.extras.state?.['assistantDraft']
+      : undefined;
+  }
+
+  /** Fills the form from a draft. It only fills: the person checks it and posts it as usual. */
+  private async applyPrefill(prefill: DraftPrefill, generation: number): Promise<void> {
+    await this.locationsReady;
+    if (generation !== this.resets) {
+      return;
+    }
+    const known = new Set(this.locations().map((l) => l.id));
+    const pick = (id: string | null): string | null => (id !== null && known.has(id) ? id : null);
+    const h = this.form.controls.header.controls;
+    h.locationId.setValue(pick(prefill.header.locationId));
+    h.fromLocationId.setValue(pick(prefill.header.fromLocationId));
+    h.toLocationId.setValue(pick(prefill.header.toLocationId));
+    h.reasonCode.setValue(prefill.header.reasonCode);
+    h.reference.setValue(prefill.header.reference);
+    h.notes.setValue(prefill.header.notes);
+
+    const lines = this.form.controls.lines;
+    const groups = prefill.lines.map((_, i) => {
+      if (i > 0) {
+        this.addLine();
+      }
+      return lines.at(i);
+    });
+    this.prefilled.set(true);
+    await Promise.all(prefill.lines.map((line, i) => this.fillLine(groups[i], line, generation)));
+  }
+
+  private async fillLine(
+    group: ReturnType<PostStock['makeLine']>,
+    line: DraftPrefill['lines'][number],
+    generation: number,
+  ): Promise<void> {
+    let detail: ItemDetail;
+    try {
+      detail = await this.itemsService.get(line.itemId);
+    } catch {
+      if (generation === this.resets) {
+        group.controls.item.setErrors({ server: 'This item is no longer available.' });
+        group.controls.item.markAsTouched();
+      }
+      return;
+    }
+    if (generation !== this.resets) {
+      return;
+    }
+    // Cache the detail first so choosing the item doesn't fetch it again, and its units are known.
+    this.details.update((m) => new Map(m).set(detail.id, detail));
+    group.controls.direction.setValue(line.direction);
+    group.controls.item.setValue(detail);
+    const active = this.activeUnits(detail.id).some((u) => u.code === line.unit);
+    group.controls.unit.setValue(line.unit !== null && active ? line.unit : '');
+    group.controls.quantity.setValue(line.quantity);
+    if (line.direction === 'add') {
+      group.controls.unitCost.setValue(line.unitCost);
+    }
   }
 
   private makeLine() {

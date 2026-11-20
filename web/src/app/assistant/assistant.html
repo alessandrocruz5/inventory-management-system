@@ -1,0 +1,95 @@
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Assistant</h1>
+    <p class="page-subtitle">Ask questions about your stock in plain words.</p>
+  </div>
+  <div class="page-actions">
+    <button
+      mat-button
+      type="button"
+      (click)="clear()"
+      [disabled]="conversation().length === 0 || sending()"
+    >
+      Clear conversation
+    </button>
+  </div>
+</header>
+
+@if (configured() === false) {
+  <p class="banner" role="status">{{ notConfiguredMessage }}</p>
+}
+
+<section class="card chat">
+  <div class="messages" aria-live="polite">
+    @if (conversation().length === 0) {
+      <div class="empty">
+        <h2>Ask about your stock</h2>
+        <p class="muted">It reads your records and can draft documents for you to post.</p>
+        <div class="suggestions">
+          @for (s of suggestions; track s) {
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="configured() !== true"
+              (click)="useSuggestion(s)"
+            >
+              {{ s }}
+            </button>
+          }
+        </div>
+      </div>
+    }
+    @for (entry of conversation(); track $index) {
+      <div
+        class="entry"
+        [class.user]="entry.role === 'user'"
+        [class.assistant]="entry.role === 'assistant'"
+      >
+        <div class="bubble">{{ entry.content }}</div>
+        @for (d of entry.drafts ?? []; track $index) {
+          <app-draft-card [draft]="d" />
+        }
+        @if (entry.toolCalls?.length) {
+          <div class="chips">
+            @for (call of entry.toolCalls; track $index) {
+              <span class="chip" [class.failed]="!call.succeeded">{{ toolLabel(call.name) }}</span>
+            }
+          </div>
+        }
+      </div>
+    }
+    @if (sending()) {
+      <div class="progress">
+        <mat-progress-bar mode="indeterminate" />
+        <span class="muted">Thinking…</span>
+      </div>
+    }
+  </div>
+
+  @if (error(); as message) {
+    <p class="error" role="alert">{{ message }}</p>
+  }
+
+  <div class="composer">
+    <textarea
+      class="input"
+      rows="2"
+      aria-label="Message"
+      placeholder="Ask a question…"
+      [maxLength]="maxChars"
+      [value]="draft()"
+      [disabled]="configured() !== true"
+      (input)="onInput($any($event.target).value)"
+      (keydown)="onKeydown($event)"
+    ></textarea>
+    <div class="composer-row">
+      <span class="muted counter">{{ draft().length.toLocaleString('en-US') }} / 2,000</span>
+      <button mat-flat-button type="button" [disabled]="!canSend()" (click)="send()">Send</button>
+    </div>
+  </div>
+</section>
+
+<p class="muted footnote">
+  Answers come from your records. The assistant can't post anything: check every draft before you
+  post it.
+</p>
