@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-20-ai-assistant]]"
 id: 18
 unit: IMS-37
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: [17]
@@ -94,3 +94,4 @@ dotnet run --project tests/Assistant.Evals -- --rows qwen3-30b-a3b-local --subse
 ```
 - The smoke run writes `/tmp/claude-1000/evals-smoke/qwen3-30b-a3b-local.jsonl` and `matrix.md`. Stopping it with Ctrl+C mid-run and rerunning with `--resume` skips the answered ids.
 - `git grep -n 'gsk_'` prints nothing.
+- 2026-11-21: 18 done (sonnet, 0 retries): matrix.json (5 rows), Throttle (sliding 60 s window, avg of last 3 questions), Report (JSONL checkpoint, --resume, matrix.md with † for subset-only rows), EvalRunner (real-time pacing, 503 retry/daily-limit stop, per-client timeout = row + 30 s, timeout graded as failure), Program (--rows/--subset/--out/--resume/--hardware, user-secrets + env), README. Smoke on qwen3:30b-a3b subset: 14/20, 20 JSONL lines, resume skipped all 20, Groq row skipped without key. Gotcha: HttpClient.Timeout can't change after the first request, so the runner signs in with its own client. --check holds; 753 tests green.
