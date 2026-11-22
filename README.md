@@ -1,6 +1,8 @@
 # inventory-management-system
 General Inventory Management System with AI capabilities
 
+Live URL: https://web.purplesky-914b6fa4.southeastasia.azurecontainerapps.io/login
+
 ## End-to-end tests
 Playwright specs in `tests/e2e` cover the stock flow (T14: receive, issue, reverse), the `/admin/ledger` page as Admin and Staff, and the post-stock form at 375 px. CI's `e2e` job runs them on every PR.
 
