@@ -727,6 +727,7 @@ The tests are the portfolio. Each one below must exist by name, and each proves 
 | T17 | Stocktake snapshot deltas, exactly-once post, crash heal, roles | Integration | D8–D15 |
 | T18 | Staff counts, Admin posts, stock shows the count (375 px) | Playwright | Stocktake end to end |
 | T19 | Assistant: tools in the caller's tenant, role-gated tools, no identity in tool results, history and size limits, tool-round cap, reply cap, timeout, rate limit, no writes | Integration | Plan [[2026-11-20-ai-assistant]] R3 |
+| T20 | Eval harness calibration: oracle 100%, near-miss and silent fail every answerable question, no writes in any row | Harness (CI) | Plan [[2026-11-20-ai-assistant]] R7 |
 
 **Tooling.** xUnit v3, Shouldly, `WebApplicationFactory<Program>`, Testcontainers.MsSql pinned to `mcr.microsoft.com/mssql/server:2025-latest`, `Microsoft.Extensions.TimeProvider.Testing`, NetArchTest.Rules, Vitest, Playwright. Prefer the real database over mocks; use NSubstitute only where a fake is impossible.
 
