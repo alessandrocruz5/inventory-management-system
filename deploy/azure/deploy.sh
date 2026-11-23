@@ -192,7 +192,7 @@ run_job seed
 echo "==> Warming up $WEB_URL"
 deadline=$((SECONDS + 300))
 while :; do
-  code="$(curl -s -o /dev/null -w '%{http_code}' "$WEB_URL/api/auth/me" || true)"
+  code="$(curl -4 -s -m 20 -o /dev/null -w '%{http_code}' "$WEB_URL/api/auth/me" || true)"
   [[ "$code" == 401 ]] && break
   ((SECONDS < deadline)) || die "$WEB_URL/api/auth/me did not return 401 within 5 minutes (last: ${code:-none})"
   echo "    /api/auth/me: ${code:-no response}"
