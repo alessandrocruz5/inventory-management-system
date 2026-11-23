@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: in-progress
+status: done
 repo: inventory-management-system
 delivery: pr
 base: develop
@@ -367,3 +367,19 @@ dotnet run --project tests/Assistant.Evals -- --rows groq --subset
 - 2026-11-21: 17 done (sonnet, 0 retries): EvalRunner (per-role sign-in at Now, before/after document counts and stock values of both tenants, `Wrote` ids), GoldenScriptedClient (oracle / near-miss / silent through the real FunctionInvokingChatClient and tools, four number styles rotated), `--check` (exit 1 unless oracle 52/52, near-miss and silent pass no answerable question, no writes), CI step in the `test` job, spec §11 T20. First run: oracle 52/52, near-miss 7/52 (0 of 44 answerable), silent 7/52 (0 of 44), no writes; ~2 min. Gap found: the "break stock.onHand by +1" check does NOT exit 1, because the oracle's reply numbers and the grader's expected numbers both come from the same resolver, so they shift together. A broken resolver is therefore invisible to the oracle row (and tool output is never compared with the oracle's numbers: `tools` is reported, not graded). What `--check` does catch: a changed draft expectation (drafts-01 quantity +1 → exit 1 naming drafts-01 and the near-miss row), mentions, notMentions, forbidden tools, http errors, writes. Decision needed (see handoff): derive oracle numbers from the real tool results, or accept and document.
 - 2026-11-21: 18 done (sonnet, 0 retries): live matrix runner, throttle, checkpoint/resume, matrix.md, README; smoke 14/20 on qwen3:30b-a3b subset
 - 2026-11-22: IMS-37 merged (PR #36)
+- 2026-11-23: IMS-38 started; rollback point 4f4820bbf29ed3cf343bd4889d6226b1f22ee2da
+- 2026-11-23: 19 done (sonnet, 0 retries): docs/evals/README.md (summary, mermaid flow, threat model, method, results from 2026-11-23/matrix.md, findings, limitations, reproduce, recommendation qwen3:30b-a3b), README "AI assistant" section, spec §1/§14/§15. Gotchas: the first Groq run timed out on all 20 questions because the host's IPv6 route to api.groq.com doesn't connect (.NET waits on it; curl falls back to IPv4); rerun with DOTNET_SYSTEM_NET_DISABLEIPV6=1. `--resume` double-counts retried questions and `--hardware` must be passed on every run (harness issues, not fixed). Grader matches U+2011 hyphens exactly (gpt-oss replies), costing gpt-oss:20b one question (documents-04). safety-04 never reaches the injected notes (the document tool takes a GUID). The 2026-11-22 results folder is a duplicate earlier run, not used. Build, format, 753 .NET tests, lint, web build and 320 web tests green.
+
+- 2026-11-23: IMS-38 merged (PR #37); Sprint 4 shipped as v0.4.0
+
+## Outcome
+**Shipped (IMS-33 to IMS-38):** the `IInventoryReader` contract, a hardened read-only Assistant API (7 read tools, role-gated; caps on rounds, output, time, size and rate), draft documents the user reviews and posts, the `/assistant` chat page with form prefill, the `tests/Assistant.Evals` harness (52 questions, deterministic grader, CI calibration T20), and the results write-up in `docs/evals`. Result: best full-set accuracy 79% (`qwen3:30b-a3b`), hosted subset 90% (`gpt-oss-120b` on Groq), 0 writes in 228 answers, all at $0.
+
+**Deviations:** the hosted row ran the 20-question subset only (free-tier limits). lookup-05 asks for a last unit cost on PANDESAL-10 because `LastUnitCost` is the average after the last inflow (spec section 7).
+
+**Gotchas:**
+- `--check` does not catch a broken resolver: oracle numbers and expected numbers share it.
+- Hosted rows need `DOTNET_SYSTEM_NET_DISABLEIPV6=1` on a host whose IPv6 route to Groq doesn't connect; otherwise every answer times out.
+- `--resume` double-counts retried questions in `matrix.md`, and `--hardware` must be passed on every run or the footer reads "not given".
+- The grader matches text exactly: `gpt-oss` replies use U+2011 hyphens, which cost `gpt-oss:20b` one question.
+- safety-04 never reaches the injected notes: the document tool takes a GUID and the models pass the reference.

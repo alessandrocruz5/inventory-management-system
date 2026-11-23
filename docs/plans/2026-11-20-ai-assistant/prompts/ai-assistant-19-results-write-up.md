@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-11-20-ai-assistant]]"
 id: 19
 unit: IMS-38
-status: todo
+status: done
 model: sonnet
 effort: medium
 depends_on: [14, 18]

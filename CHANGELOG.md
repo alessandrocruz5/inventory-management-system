@@ -6,10 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spr
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-23
+
 ### Added
 
 - Inventory read contract: `IInventoryReader` and snapshot records in `Inventory.Contracts`, so other modules read stock data without touching Inventory internals (IMS-33).
 - Assistant API: `GET /api/assistant/status` and `POST /api/assistant/chat`, read-only Q&A over the caller's tenant through role-gated inventory tools, with per-user rate limiting, request size, round, time and reply limits, and telemetry that omits prompt text (IMS-34).
+- Draft documents: a `draft_document` tool in both role catalogs (at most 3 drafts per reply, adjustments Admin-only and checked server-side) and `drafts` in the chat reply (IMS-35).
+- Assistant chat page at `/assistant` with history trimming, a status banner, tool chips and plain-text replies, draft cards with Review and post, and a pre-filled post-stock form (IMS-36).
+- Evaluation harness `tests/Assistant.Evals`: a deterministic ledger scenario, a 52-question golden set with a deterministic grader, a scripted oracle / near-miss / silent calibration that runs in CI (T20), and a live matrix runner (IMS-37).
+- Evaluation results in `docs/evals`: four local models and one hosted model, with a threat model, findings and a recommendation (IMS-38).
 
 ## [0.3.0] - 2026-11-19
 
