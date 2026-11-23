@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ServiceDefaults\ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Modules\Assistant\Assistant\Assistant.csproj" />
     <ProjectReference Include="..\Modules\Inventory\Inventory\Inventory.csproj" />
     <ProjectReference Include="..\Modules\Platform\Platform\Platform.csproj" />
   </ItemGroup>
@@ -22,6 +23,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Platform.IntegrationTests" />
     <InternalsVisibleTo Include="Inventory.IntegrationTests" />
+    <InternalsVisibleTo Include="Assistant.Evals" />
   </ItemGroup>
 
 </Project>

@@ -23,7 +23,7 @@ The ledger goes first because everything later posts through it or reads from it
 | Retail pack: variants, price lists, bins | Sprint 3 **\[Guessing\]** | Sprint 1 already demos the core as a retail shop |
 | Lots, expiry, FEFO | Sprint 3+ **\[Guessing\]** | Changes the balance key and the costing grain |
 | POs, reservations, reorder alerts | Sprint 3+ **\[Guessing\]** | Need the outbox and background jobs |
-| AI tools + evaluation matrix | Sprint 4+ **\[Guessing\]** | Needs real ledger data and a golden question set |
+| AI tools + evaluation matrix | Sprint 4: done, results in [docs/evals/README.md](evals/README.md) | Needs real ledger data and a golden question set |
 
 Sprint 2's food pack should need nothing from the ledger except new virtual location kinds: Consumption, Scrap and Production **\[Likely\]**. If it needs more, the sprint 1 contract missed something.
 
@@ -174,6 +174,8 @@ inventory/
           Domain/             CostingPolicy, PostingRules, invariants (no EF, no ASP.NET, no SQL)
           Features/           one folder per endpoint: Endpoint.cs, Handler.cs, Request.cs, Response.cs
           Persistence/        InventoryDbContext, configurations, migrations, PostingEngine (transaction, locks, raw SQL)
+      Assistant/
+        Assistant/            Chat endpoint, read-only tools, model pipeline; no Contracts project. Reads Inventory only through `Inventory.Contracts.IInventoryReader` and never writes (T12 enforces both)
   web/                        Angular app
   tests/
     Inventory.UnitTests/
@@ -598,6 +600,8 @@ All routes sit under `/api`, require a signed-in user unless marked public, and 
 | `GET /documents` | any | Filter by type and posted-at range |
 | `GET /documents/{id}` | any | Lines, movement costs, reversal link either way |
 | `GET /stock` | any | Balances by item × physical location with average cost and value; filter by item or location; totals for the whole filter, not just the page |
+| `GET /assistant/status` | any | Whether a model is configured, and its name |
+| `POST /assistant/chat` | any | One assistant turn over read-only tools; body `{ messages: [{ role, content }] }`; returns `{ reply, toolCalls, drafts, usage, model }` |
 | `GET /ledger/health` | Admin | INV-1 to INV-5 results with failing rows |
 | `POST /ledger/rebuild` | Admin | Rebuild and return the diff |
 | `GET /stocktakes` | any | Newest first; filter `status` and `locationId` |
@@ -637,6 +641,8 @@ Successful posts return `201 Created` with the full document, its movements with
 
 **Stocktake bodies.** `POST /stocktakes` takes `{ "locationId": "…", "notes": null }`. `PUT /stocktakes/{id}/lines/{itemId}` takes `{ "quantity": 2, "unit": "sack", "unitCost": null }`: `unit` works as on postings, and `unitCost` is per base unit, used only when the count is above the snapshot. Post and cancel take no body and no `Idempotency-Key`. Every stocktake route except the list returns the stocktake detail. A post that fails leaves the stocktake in Draft: `400` on an uncounted line (`lines[j].quantity`, where `j` is the line's index in SKU order), on no lines or more than 100 differences (`lines`), or the engine's own problems, with line keys mapped to `j`. A post whose sheet changed under it gets `409 concurrency-conflict` and leaves the stocktake as it is. A post with no differences is Posted with no document.
 
+**Assistant bodies.** Roles are `user` and `assistant`, and the last one is `user`. At most 20 messages; a user message is 1–2,000 chars, an assistant message ≤ 8,000, and the total ≤ 24,000 (otherwise `400 validation` with `messages[i].role` or `messages[i].content`, or `messages`). At most 5 tool rounds and a 90 s budget per turn. A reply is at most 8,000 chars, so it always fits back into the history. A longer one is cut and ends with `[Reply cut off: too long.]`. 10 turns a minute per user. The server stores no conversation. `drafts` holds up to 3 validated document drafts (receipt, issue, transfer; adjustment for Admin) with ids, codes and names. The user posts a draft through the post-stock form; the assistant never posts.
+
 **Problem types** (a relative URI, allowed by RFC 9457: the `type` field is `/problems/<slug>`)
 
 | Slug | Status | Extra fields |
@@ -655,6 +661,9 @@ Successful posts return `201 Created` with the full document, its movements with
 | `inactive-item` / `inactive-location` | 422 | the id |
 | `stock-not-zero` | 422 | balances that block deactivation |
 | `negative-balances-exist` | 422 | balances that block turning the toggle off |
+| `assistant-not-configured` | 503 | — |
+| `assistant-unavailable` | 503 | `Retry-After` header when known |
+| `rate-limited` | 429 | `Retry-After` header |
 
 ## 10. Angular UI
 
@@ -717,6 +726,8 @@ The tests are the portfolio. Each one below must exist by name, and each proves 
 | T16 | Vector set U; unit errors; replays with a unit | Unit + integration | Inflow cost in the entered unit; exact conversion; byte-stable hashes |
 | T17 | Stocktake snapshot deltas, exactly-once post, crash heal, roles | Integration | D8–D15 |
 | T18 | Staff counts, Admin posts, stock shows the count (375 px) | Playwright | Stocktake end to end |
+| T19 | Assistant: tools in the caller's tenant, role-gated tools, no identity in tool results, history and size limits, tool-round cap, reply cap, timeout, rate limit, no writes | Integration | Plan [[2026-11-20-ai-assistant]] R3 |
+| T20 | Eval harness calibration: oracle 100%, near-miss and silent fail every answerable question, no writes in any row | Harness (CI) | Plan [[2026-11-20-ai-assistant]] R7 |
 
 **Tooling.** xUnit v3, Shouldly, `WebApplicationFactory<Program>`, Testcontainers.MsSql pinned to `mcr.microsoft.com/mssql/server:2025-latest`, `Microsoft.Extensions.TimeProvider.Testing`, NetArchTest.Rules, Vitest, Playwright. Prefer the real database over mocks; use NSubstitute only where a fake is impossible.
 
@@ -785,7 +796,7 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 | Jira project | IMS | One story per slice; the key alone is the branch name and starts the PR title |
 | Sprint length | No date; the sprint is bound by scope | Ends at section 13; section 12 sets what slips first |
 | Auth | Identity cookies now, Entra External ID later | The swap stays behind `ICurrentUser` and `ITenantContext` |
-| Goal after the core | Hiring: build the AI evaluation matrix | Sprint 4+ measures accuracy, latency and cost across local and hosted open-weight models |
+| Goal after the core | Hiring: build the AI evaluation matrix | Sprint 4+ measures accuracy, latency and cost across local and hosted open-weight models. Sprint 4: built; results in docs/evals |
 | Verticals | Retail demo first; food-service pack in sprint 2 | Seed is a retail shop; unit conversions and stocktakes move to sprint 2 with food |
 | Repo host | GitHub | CI is GitHub Actions |
 | Negative stock | Per-location toggle | Slice S10, vector sets N and X, test T15 |
@@ -807,3 +818,5 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-18: Sprint 3 D10 (approved): stocktakes (§5, §6, §9, T17).
 - 2026-11-19: IMS-30 code review D17 (approved): stocktake posting guard in §6 step 3.
 - 2026-11-18: Sprint 3 screens (§10) and T18.
+- 2026-11-20: Sprint 4 ([[2026-11-20-ai-assistant]]) adds the Assistant module (§4), its routes and slugs (§9) and T19 (§11).
+- 2026-11-23: Sprint 4 evaluation results ([[2026-11-20-ai-assistant]]).

@@ -22,6 +22,9 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
   'stocktake-open-exists':
     'This location already has a stocktake in progress. Open it to continue counting.',
   'stocktake-not-open': 'This stocktake has already been posted or cancelled.',
+  'assistant-not-configured': "The assistant isn't set up on this server.",
+  'assistant-unavailable': "The assistant's model didn't respond. Try again in a moment.",
+  'rate-limited': "You're sending messages too quickly. Wait a minute, then try again.",
 };
 
 export const DEFAULT_PROBLEM_MESSAGE = 'Something went wrong. Please try again.';

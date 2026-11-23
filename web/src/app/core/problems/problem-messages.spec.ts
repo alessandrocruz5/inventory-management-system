@@ -71,6 +71,14 @@ describe('problemMessage', () => {
     ).toBe(PROBLEM_MESSAGES['stocktake-not-open']);
   });
 
+  it('maps the assistant slugs', () => {
+    for (const slug of ['assistant-not-configured', 'assistant-unavailable', 'rate-limited']) {
+      expect(problemMessage({ type: `/problems/${slug}`, status: 503 })).toBe(
+        PROBLEM_MESSAGES[slug],
+      );
+    }
+  });
+
   it.each([
     'idempotency-key-missing',
     'idempotency-key-reused',

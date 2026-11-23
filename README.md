@@ -1,6 +1,18 @@
 # inventory-management-system
 General Inventory Management System with AI capabilities
 
+## AI assistant
+A read-only chat assistant at `/assistant` answers stock, history and document questions through 7 tools over your own tenant, and drafts documents (receipts, issues, and adjustments for Admins) that open pre-filled in the post-stock form. A person reviews and posts every draft; the assistant never writes. It talks to any OpenAI-compatible endpoint, so it runs for $0 on a local model.
+
+**Dev setup ($0):**
+1. Install [Ollama](https://ollama.com), then `ollama pull qwen3:30b-a3b` (the model in `src/Api/appsettings.Development.json`).
+2. `aspire run`, sign in, and open `/assistant`.
+
+The deployed stack (Docker Compose and Azure) shows "not set up" by design: no model endpoint is configured there.
+
+**Data privacy (Philippine Data Privacy Act):** pointing production at a hosted model sends tenant data to that provider. Do a privacy review first. The evaluation runs only on the seeded demo data.
+
+Accuracy, latency and a threat model across local and hosted models: [docs/evals/README.md](docs/evals/README.md).
 Live URL: https://web.purplesky-914b6fa4.southeastasia.azurecontainerapps.io/login
 
 ## End-to-end tests

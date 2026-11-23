@@ -54,6 +54,15 @@ public static class ProblemTypes
     /// <summary>The stocktake isn't in a state that allows this (plan D10/D12).</summary>
     public const string StocktakeNotOpen = "stocktake-not-open";
 
+    /// <summary>The assistant has no model endpoint configured (plan D14).</summary>
+    public const string AssistantNotConfigured = "assistant-not-configured";
+
+    /// <summary>The model timed out, failed or was rate-limited upstream (plan D13).</summary>
+    public const string AssistantUnavailable = "assistant-unavailable";
+
+    /// <summary>The caller sent too many requests in the window (plan D12).</summary>
+    public const string RateLimited = "rate-limited";
+
     /// <summary>The problem <c>type</c> for a slug.</summary>
     public static string Uri(string slug) => Prefix + slug;
 }

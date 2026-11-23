@@ -6,6 +6,7 @@ import {
   PostingLine,
   amountValidator,
   buildPostingBody,
+  draftToPrefill,
   duplicateItemLines,
   isOutflow,
   linesOverOnHand,
@@ -431,5 +432,118 @@ describe('POSTING_SUBTITLES', () => {
     for (const type of types) {
       expect(POSTING_SUBTITLES[type].length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('draftToPrefill', () => {
+  const loc = (id: string) => ({ id, code: id.toUpperCase(), name: id });
+  const line = (extra: Record<string, unknown> = {}) => ({
+    itemId: 'i1',
+    sku: 'SKU-1',
+    itemName: 'Widget',
+    baseUnit: 'kg',
+    quantity: 2,
+    unit: null,
+    unitCost: null,
+    direction: null,
+    ...extra,
+  });
+  const draft = (type: string, extra: Record<string, unknown> = {}) => ({
+    type,
+    location: loc('l1'),
+    reasonCode: null,
+    reference: null,
+    notes: null,
+    lines: [line()],
+    warnings: [],
+    ...extra,
+  });
+
+  it('maps a receipt with a unit and a unit cost', () => {
+    const d = draft('receipt', {
+      reference: 'PO-1',
+      lines: [line({ unit: 'sack', unitCost: 3650 })],
+    });
+    expect(draftToPrefill('receipt', d)).toEqual({
+      header: {
+        locationId: 'l1',
+        fromLocationId: null,
+        toLocationId: null,
+        reasonCode: null,
+        reference: 'PO-1',
+        notes: '',
+      },
+      lines: [{ itemId: 'i1', quantity: 2, unitCost: 3650, unit: 'sack', direction: 'add' }],
+    });
+  });
+
+  it('maps an issue', () => {
+    const p = draftToPrefill('issue', draft('issue', { notes: 'for the bakery' }));
+    expect(p?.header.locationId).toBe('l1');
+    expect(p?.header.notes).toBe('for the bakery');
+    expect(p?.lines[0]).toEqual({
+      itemId: 'i1',
+      quantity: 2,
+      unitCost: null,
+      unit: null,
+      direction: 'add',
+    });
+  });
+
+  it('maps a transfer', () => {
+    const p = draftToPrefill(
+      'transfer',
+      draft('transfer', { location: undefined, fromLocation: loc('l1'), toLocation: loc('l2') }),
+    );
+    expect(p?.header.fromLocationId).toBe('l1');
+    expect(p?.header.toLocationId).toBe('l2');
+    expect(p?.header.locationId).toBeNull();
+  });
+
+  it('maps an adjustment with its direction and reason', () => {
+    const p = draftToPrefill(
+      'adjustment',
+      draft('adjustment', { reasonCode: 'Damaged', lines: [line({ direction: 'remove' })] }),
+    );
+    expect(p?.header.reasonCode).toBe('Damaged');
+    expect(p?.lines[0].direction).toBe('remove');
+  });
+
+  it('ignores an unknown reason code', () => {
+    const p = draftToPrefill(
+      'adjustment',
+      draft('adjustment', { reasonCode: 'Stolen', lines: [line({ direction: 'add' })] }),
+    );
+    expect(p?.header.reasonCode).toBeNull();
+  });
+
+  it('returns null when the draft is not usable', () => {
+    const hundredOne = Array.from({ length: 101 }, () => line());
+    expect(draftToPrefill('issue', draft('receipt'))).toBeNull();
+    expect(draftToPrefill('receipt', draft('receipt', { lines: [] }))).toBeNull();
+    expect(draftToPrefill('receipt', draft('receipt', { lines: hundredOne }))).toBeNull();
+    expect(
+      draftToPrefill('receipt', draft('receipt', { lines: [line({ quantity: -1 })] })),
+    ).toBeNull();
+    expect(
+      draftToPrefill('receipt', draft('receipt', { lines: [line({ quantity: 0 })] })),
+    ).toBeNull();
+    expect(
+      draftToPrefill('receipt', draft('receipt', { lines: [line({ unitCost: -1 })] })),
+    ).toBeNull();
+    expect(
+      draftToPrefill('receipt', draft('receipt', { lines: [line({ itemId: undefined })] })),
+    ).toBeNull();
+    expect(
+      draftToPrefill('receipt', draft('receipt', { lines: [line({ quantity: Infinity })] })),
+    ).toBeNull();
+    expect(draftToPrefill('receipt', draft('receipt', { location: null }))).toBeNull();
+    expect(
+      draftToPrefill('adjustment', draft('adjustment', { lines: [line({ direction: null })] })),
+    ).toBeNull();
+    expect(draftToPrefill('receipt', null)).toBeNull();
+    expect(draftToPrefill('receipt', 'receipt')).toBeNull();
+    expect(draftToPrefill('receipt', [])).toBeNull();
+    expect(draftToPrefill('receipt', undefined)).toBeNull();
   });
 });

@@ -1,6 +1,8 @@
 using Api.Setup;
 using Api.Tenancy;
 
+using Assistant;
+
 using Inventory;
 
 using Kernel.Tenancy;
@@ -17,6 +19,7 @@ builder.Services.AddOpenApi();
 
 builder.AddPlatformModule();
 builder.AddInventoryModule();
+builder.AddAssistantModule();
 
 builder.Services.AddSingleton(TimeProvider.System);
 
@@ -48,6 +51,8 @@ app.UseStatusCodePages();
 app.UseAuthentication();
 app.UseMiddleware<TenantMiddleware>();
 app.UseAuthorization();
+// After authorization, so the assistant's rate-limit partition is the signed-in user (plan D12).
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {
@@ -60,5 +65,6 @@ app.MapDefaultEndpoints();
 var api = app.MapGroup("/api").RequireAuthorization();
 api.MapPlatformEndpoints();
 api.MapInventoryEndpoints();
+api.MapAssistantEndpoints();
 
 app.Run();
