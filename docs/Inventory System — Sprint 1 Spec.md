@@ -23,7 +23,7 @@ The ledger goes first because everything later posts through it or reads from it
 | Retail pack: variants, price lists, bins | Sprint 3 **\[Guessing\]** | Sprint 1 already demos the core as a retail shop |
 | Lots, expiry, FEFO | Sprint 3+ **\[Guessing\]** | Changes the balance key and the costing grain |
 | POs, reservations, reorder alerts | Sprint 3+ **\[Guessing\]** | Need the outbox and background jobs |
-| AI tools + evaluation matrix | Sprint 4+ **\[Guessing\]** | Needs real ledger data and a golden question set |
+| AI tools + evaluation matrix | Sprint 4: done, results in [docs/evals/README.md](evals/README.md) | Needs real ledger data and a golden question set |
 
 Sprint 2's food pack should need nothing from the ledger except new virtual location kinds: Consumption, Scrap and Production **\[Likely\]**. If it needs more, the sprint 1 contract missed something.
 
@@ -796,7 +796,7 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 | Jira project | IMS | One story per slice; the key alone is the branch name and starts the PR title |
 | Sprint length | No date; the sprint is bound by scope | Ends at section 13; section 12 sets what slips first |
 | Auth | Identity cookies now, Entra External ID later | The swap stays behind `ICurrentUser` and `ITenantContext` |
-| Goal after the core | Hiring: build the AI evaluation matrix | Sprint 4+ measures accuracy, latency and cost across local and hosted open-weight models |
+| Goal after the core | Hiring: build the AI evaluation matrix | Sprint 4+ measures accuracy, latency and cost across local and hosted open-weight models. Sprint 4: built; results in docs/evals |
 | Verticals | Retail demo first; food-service pack in sprint 2 | Seed is a retail shop; unit conversions and stocktakes move to sprint 2 with food |
 | Repo host | GitHub | CI is GitHub Actions |
 | Negative stock | Per-location toggle | Slice S10, vector sets N and X, test T15 |
@@ -819,3 +819,4 @@ Your answers, recorded so Claude Code and later sprints don't reopen them.
 - 2026-11-19: IMS-30 code review D17 (approved): stocktake posting guard in §6 step 3.
 - 2026-11-18: Sprint 3 screens (§10) and T18.
 - 2026-11-20: Sprint 4 ([[2026-11-20-ai-assistant]]) adds the Assistant module (§4), its routes and slugs (§9) and T19 (§11).
+- 2026-11-23: Sprint 4 evaluation results ([[2026-11-20-ai-assistant]]).
